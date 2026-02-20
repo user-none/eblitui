@@ -1,0 +1,64 @@
+//kage:unit pixels
+
+package main
+
+// Phosphor Glow / Bloom shader
+// Simulates CRT phosphor glow where bright pixels bleed into neighbors
+// Uses a 5x5 gaussian blur weighted by brightness
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	origin, size := imageSrcRegionOnTexture()
+
+	// Original pixel
+	original := imageSrc0At(srcPos)
+
+	// Bloom radius in pixels
+	radius := 2.0
+
+	// Gaussian weights for 5x5 kernel (sigma ~1.0)
+	weights := [5]float{0.06136, 0.24477, 0.38774, 0.24477, 0.06136}
+
+	// Accumulate blurred glow
+	glow := vec3(0.0)
+	totalWeight := 0.0
+
+	for y := 0; y < 5; y++ {
+		for x := 0; x < 5; x++ {
+			offset := vec2(
+				(float(x)-2.0)*radius,
+				(float(y)-2.0)*radius,
+			)
+			samplePos := srcPos + offset
+
+			// Clamp to source region
+			samplePos = clamp(samplePos, origin, origin+size-1.0)
+
+			sampled := imageSrc0At(samplePos)
+
+			// Weight by gaussian and pixel brightness
+			w := weights[x] * weights[y]
+			brightness := max(sampled.r, max(sampled.g, sampled.b))
+
+			// Only bloom bright pixels (threshold at 0.5)
+			bloomAmount := max(0.0, brightness-0.5) * 2.0
+
+			glow += sampled.rgb * w * bloomAmount
+			totalWeight += w * bloomAmount
+		}
+	}
+
+	// Normalize glow
+	if totalWeight > 0.0 {
+		glow /= totalWeight
+	}
+
+	// Blend glow with original
+	// Glow intensity
+	intensity := 0.4
+	result := original.rgb + glow*intensity
+
+	// Soft clamp to avoid harsh clipping
+	result = result / (1.0 + result*0.1)
+
+	return vec4(result, original.a)
+}

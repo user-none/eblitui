@@ -1,0 +1,24 @@
+//kage:unit pixels
+
+package main
+
+// Scanlines shader - darkens every other row for retro CRT effect
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	// Sample the source texture
+	clr := imageSrc0At(srcPos)
+
+	// Scanline intensity (0.0 = no effect, 1.0 = fully black lines)
+	intensity := 0.25
+
+	// Use destination position for consistent scanlines regardless of scaling
+	// Every other row gets darkened
+	scanline := mod(dstPos.y, 2.0)
+
+	// Darken odd rows
+	if scanline < 1.0 {
+		clr.rgb *= (1.0 - intensity)
+	}
+
+	return clr
+}

@@ -1,0 +1,111 @@
+//kage:unit pixels
+
+package main
+
+// xBR 2x pixel art scaling
+// Uses srcPos offsets instead of floor() to avoid corruption
+//
+// lines 72, 83, 94, and 105 control aggressiveness. The formula is:
+// 
+//   t = 0.2 + t * 0.8
+// 
+//   This means: t = MIN + t * (1.0 - MIN)
+// 
+//   How to tune:
+//   ┌──────────────┬────────────────────────────┬───────────────────┐
+//   │ First number │           Effect           │       Range       │
+//   ├──────────────┼────────────────────────────┼───────────────────┤
+//   │ 0.0          │ Least aggressive           │ 0% to 100% blend  │
+//   ├──────────────┼────────────────────────────┼───────────────────┤
+//   │ 0.2          │ Current setting            │ 20% to 100% blend │
+//   ├──────────────┼────────────────────────────┼───────────────────┤
+//   │ 0.4          │ More aggressive            │ 40% to 100% blend │
+//   ├──────────────┼────────────────────────────┼───────────────────┤
+//   │ 1.0          │ Maximum (full replacement) │ 100% always       │
+//   └──────────────┴────────────────────────────┴───────────────────┘
+//   Examples:
+//   - t = 0.0 + t * 1.0 → Subtle (pure position-based)
+//   - t = 0.2 + t * 0.8 → Current
+//   - t = 0.4 + t * 0.6 → Aggressive
+//   - t = 0.5 + t * 0.5 → Even more aggressive
+//   - t = 1.0 → Full replacement (delete the line entirely)
+// 
+//   The second number must equal 1.0 - first number to keep max at 100%.
+// 
+//   So to make it more aggressive: increase the first number (0.2 → 0.3)
+//   To make it less aggressive: decrease the first number (0.2 → 0.1)
+
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	// Sample neighbors using srcPos offsets
+	B := imageSrc0At(srcPos + vec2(0.0, -1.0))
+	D := imageSrc0At(srcPos + vec2(-1.0, 0.0))
+	E := imageSrc0At(srcPos)
+	F := imageSrc0At(srcPos + vec2(1.0, 0.0))
+	H := imageSrc0At(srcPos + vec2(0.0, 1.0))
+
+	// Sub-pixel position
+	fx := fract(srcPos.x)
+	fy := fract(srcPos.y)
+
+	// Color distances (squared RGB)
+	distDB := (D.r-B.r)*(D.r-B.r) + (D.g-B.g)*(D.g-B.g) + (D.b-B.b)*(D.b-B.b)
+	distDE := (D.r-E.r)*(D.r-E.r) + (D.g-E.g)*(D.g-E.g) + (D.b-E.b)*(D.b-E.b)
+	distBE := (B.r-E.r)*(B.r-E.r) + (B.g-E.g)*(B.g-E.g) + (B.b-E.b)*(B.b-E.b)
+	distBF := (B.r-F.r)*(B.r-F.r) + (B.g-F.g)*(B.g-F.g) + (B.b-F.b)*(B.b-F.b)
+	distFE := (F.r-E.r)*(F.r-E.r) + (F.g-E.g)*(F.g-E.g) + (F.b-E.b)*(F.b-E.b)
+	distDH := (D.r-H.r)*(D.r-H.r) + (D.g-H.g)*(D.g-H.g) + (D.b-H.b)*(D.b-H.b)
+	distHE := (H.r-E.r)*(H.r-E.r) + (H.g-E.g)*(H.g-E.g) + (H.b-E.b)*(H.b-E.b)
+	distHF := (H.r-F.r)*(H.r-F.r) + (H.g-F.g)*(H.g-F.g) + (H.b-F.b)*(H.b-F.b)
+
+	// Threshold
+	thresh := 0.05
+
+	result := E
+
+	// Top-left quadrant: blend toward D-B edge color
+	// Blend strength: max at (0,0), min at (0.5,0.5)
+	if fx < 0.5 && fy < 0.5 {
+		if distDB < thresh && distDE > thresh && distBE > thresh {
+			edgeColor := (D + B) * 0.5
+			t := (0.5 - fx) * 2.0 * (0.5 - fy) * 2.0  // 0-1 range
+			t = 0.2 + t * 0.8  // Range: 0.2 to 1.0
+			result = mix(E, edgeColor, t)
+		}
+	}
+
+	// Top-right quadrant: blend toward B-F edge color
+	// Blend strength: max at (1,0), min at (0.5,0.5)
+	if fx >= 0.5 && fy < 0.5 {
+		if distBF < thresh && distBE > thresh && distFE > thresh {
+			edgeColor := (B + F) * 0.5
+			t := (fx - 0.5) * 2.0 * (0.5 - fy) * 2.0
+			t = 0.2 + t * 0.8
+			result = mix(E, edgeColor, t)
+		}
+	}
+
+	// Bottom-left quadrant: blend toward D-H edge color
+	// Blend strength: max at (0,1), min at (0.5,0.5)
+	if fx < 0.5 && fy >= 0.5 {
+		if distDH < thresh && distDE > thresh && distHE > thresh {
+			edgeColor := (D + H) * 0.5
+			t := (0.5 - fx) * 2.0 * (fy - 0.5) * 2.0
+			t = 0.2 + t * 0.8
+			result = mix(E, edgeColor, t)
+		}
+	}
+
+	// Bottom-right quadrant: blend toward H-F edge color
+	// Blend strength: max at (1,1), min at (0.5,0.5)
+	if fx >= 0.5 && fy >= 0.5 {
+		if distHF < thresh && distHE > thresh && distFE > thresh {
+			edgeColor := (H + F) * 0.5
+			t := (fx - 0.5) * 2.0 * (fy - 0.5) * 2.0
+			t = 0.2 + t * 0.8
+			result = mix(E, edgeColor, t)
+		}
+	}
+
+	return result
+}

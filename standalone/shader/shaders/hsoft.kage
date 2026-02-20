@@ -1,0 +1,21 @@
+//kage:unit pixels
+
+package main
+
+// Horizontal Softness shader
+// Simulates analog video bandwidth limiting (low-pass filtering)
+// A simple 3-tap Gaussian blur in the horizontal direction
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	// Gaussian weights for 3-tap horizontal blur
+	w0 := 0.25 // left
+	w1 := 0.50 // center
+	w2 := 0.25 // right
+
+	c0 := imageSrc0At(srcPos + vec2(-1, 0))
+	c1 := imageSrc0At(srcPos)
+	c2 := imageSrc0At(srcPos + vec2(1, 0))
+
+	result := c0*w0 + c1*w1 + c2*w2
+	return vec4(result.rgb, c1.a)
+}

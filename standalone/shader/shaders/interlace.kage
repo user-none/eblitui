@@ -1,0 +1,22 @@
+//kage:unit pixels
+
+package main
+
+// Interlace shader - simulates 480i interlaced display
+// Alternating scanline fields create the characteristic interlaced look
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	// Sample the source texture
+	clr := imageSrc0At(srcPos)
+
+	// Interlace intensity (how much to darken alternate lines)
+	intensity := 0.3
+
+	// Use destination position for consistent lines regardless of scaling
+	// Every other row gets darkened to simulate field alternation
+	if mod(dstPos.y, 2.0) < 1.0 {
+		clr.rgb *= (1.0 - intensity)
+	}
+
+	return clr
+}

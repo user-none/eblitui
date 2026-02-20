@@ -1,0 +1,75 @@
+//kage:unit pixels
+
+package main
+
+// LCD Grid shader
+// Simulates the visible pixel grid of LCD screens like Game Gear
+// Creates a subtle grid pattern with RGB subpixel simulation
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	// Sample the source texture
+	clr := imageSrc0At(srcPos)
+
+	// Grid cell size (in destination pixels)
+	cellSize := 3.0
+
+	// Position within the cell (0 to cellSize)
+	cellX := mod(dstPos.x, cellSize)
+	cellY := mod(dstPos.y, cellSize)
+
+	// Normalized position within cell (0 to 1)
+	normX := cellX / cellSize
+	normY := cellY / cellSize
+
+	// Create grid lines (darken edges of each cell)
+	gridWidth := 0.15 // Width of grid lines as fraction of cell
+
+	// Horizontal and vertical grid darkness
+	hGrid := 1.0
+	vGrid := 1.0
+
+	if normX < gridWidth || normX > (1.0-gridWidth) {
+		vGrid = 0.7
+	}
+	if normY < gridWidth || normY > (1.0-gridWidth) {
+		hGrid = 0.7
+	}
+
+	gridMask := min(hGrid, vGrid)
+
+	// RGB subpixel pattern (vertical stripes within each cell)
+	// Divide cell into 3 subpixels
+	subpixel := floor(normX * 3.0)
+
+	// Subtle subpixel coloring
+	subpixelIntensity := 0.15
+	rMask := 1.0
+	gMask := 1.0
+	bMask := 1.0
+
+	if subpixel == 0.0 {
+		// Red subpixel - boost red slightly, dim others
+		rMask = 1.0 + subpixelIntensity
+		gMask = 1.0 - subpixelIntensity*0.5
+		bMask = 1.0 - subpixelIntensity*0.5
+	} else if subpixel == 1.0 {
+		// Green subpixel
+		rMask = 1.0 - subpixelIntensity*0.5
+		gMask = 1.0 + subpixelIntensity
+		bMask = 1.0 - subpixelIntensity*0.5
+	} else {
+		// Blue subpixel
+		rMask = 1.0 - subpixelIntensity*0.5
+		gMask = 1.0 - subpixelIntensity*0.5
+		bMask = 1.0 + subpixelIntensity
+	}
+
+	// Apply grid and subpixel masks
+	result := vec3(
+		clr.r*rMask*gridMask,
+		clr.g*gMask*gridMask,
+		clr.b*bMask*gridMask,
+	)
+
+	return vec4(result, clr.a)
+}

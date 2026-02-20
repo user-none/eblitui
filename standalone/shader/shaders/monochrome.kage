@@ -1,0 +1,17 @@
+//kage:unit pixels
+
+package main
+
+// Monochrome shader - converts image to grayscale
+// Uses standard luminance weights (ITU-R BT.601)
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	// Sample the source texture
+	clr := imageSrc0At(srcPos)
+
+	// Convert to grayscale using luminance formula
+	// Y = 0.299*R + 0.587*G + 0.114*B
+	y := 0.299*clr.r + 0.587*clr.g + 0.114*clr.b
+
+	return vec4(y, y, y, clr.a)
+}

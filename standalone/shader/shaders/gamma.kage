@@ -1,0 +1,38 @@
+//kage:unit pixels
+
+package main
+
+// Gamma Correction shader
+// Simulates the non-linear response curve of CRT displays
+// CRTs naturally have a gamma of ~2.2-2.5, which affects color perception
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	// Sample the source texture
+	clr := imageSrc0At(srcPos)
+
+	// CRT gamma value
+	// Higher values = darker midtones, more contrast
+	// Typical CRT: 2.2-2.5
+	gamma := 2.2
+
+	// Games were often designed assuming CRT gamma
+	// This shader applies the gamma curve to simulate that look
+
+	// Apply gamma correction
+	// pow(color, gamma) darkens midtones while keeping blacks and whites
+	result := vec3(
+		pow(clr.r, gamma/2.2), // Normalize relative to standard 2.2
+		pow(clr.g, gamma/2.2),
+		pow(clr.b, gamma/2.2),
+	)
+
+	// Optional: Slightly boost contrast to compensate
+	// CRTs had naturally high contrast ratios
+	contrast := 1.1
+	result = (result-0.5)*contrast + 0.5
+
+	// Clamp to valid range
+	result = clamp(result, vec3(0.0), vec3(1.0))
+
+	return vec4(result, clr.a)
+}

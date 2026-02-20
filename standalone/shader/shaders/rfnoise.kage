@@ -1,0 +1,34 @@
+//kage:unit pixels
+
+package main
+
+// RF Noise shader - simulates fine grain from imperfect RF signal
+
+// Time uniform (frame counter from Go)
+var Time float
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	clr := imageSrc0At(srcPos)
+
+	// Per-pixel noise seed (changes every frame)
+	pixelSeed := dstPos.xy + vec2(Time*1.1, Time*1.7)
+	pixelNoise := fract(sin(dot(pixelSeed, vec2(12.9898, 78.233))) * 43758.5453)
+
+	// Per-scanline noise (horizontal bias/streaking)
+	scanlineSeed := dstPos.y*0.97 + Time*1.3
+	scanlineNoise := fract(sin(scanlineSeed*91.2937) * 43758.5453)
+
+	// Combine: mostly per-pixel, some scanline bias
+	combinedNoise := pixelNoise*0.75 + scanlineNoise*0.25
+
+	// Luma noise: ±5%
+	lumaNoise := (combinedNoise - 0.5) * 0.10
+
+	// Apply
+	result := clr.rgb + vec3(lumaNoise)
+
+	// Clamp
+	result = clamp(result, vec3(0.0), vec3(1.0))
+
+	return vec4(result, clr.a)
+}

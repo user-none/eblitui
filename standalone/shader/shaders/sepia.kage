@@ -1,0 +1,23 @@
+//kage:unit pixels
+
+package main
+
+// Sepia shader - applies warm brownish tint like old photographs
+// Uses standard sepia tone matrix transformation
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	// Sample the source texture
+	clr := imageSrc0At(srcPos)
+
+	// Apply sepia transformation matrix
+	r := clr.r*0.393 + clr.g*0.769 + clr.b*0.189
+	g := clr.r*0.349 + clr.g*0.686 + clr.b*0.168
+	b := clr.r*0.272 + clr.g*0.534 + clr.b*0.131
+
+	// Clamp to valid range (sepia can exceed 1.0)
+	r = min(r, 1.0)
+	g = min(g, 1.0)
+	b = min(b, 1.0)
+
+	return vec4(r, g, b, clr.a)
+}

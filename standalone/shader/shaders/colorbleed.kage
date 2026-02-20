@@ -1,0 +1,63 @@
+//kage:unit pixels
+
+package main
+
+// Color Bleed shader
+// Simulates horizontal color bleeding from composite video signals
+// Colors smear into neighboring pixels, especially at sharp transitions
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	origin, size := imageSrcRegionOnTexture()
+
+	// Sample current pixel
+	center := imageSrc0At(srcPos)
+
+	// Bleed amount in pixels
+	bleedDistance := 1.5
+
+	// Sample neighbors for horizontal bleed
+	// Composite video bleeds more to the right (signal delay)
+	left2Pos := clamp(srcPos+vec2(-bleedDistance*2.0, 0.0), origin, origin+size-1.0)
+	left1Pos := clamp(srcPos+vec2(-bleedDistance, 0.0), origin, origin+size-1.0)
+	right1Pos := clamp(srcPos+vec2(bleedDistance, 0.0), origin, origin+size-1.0)
+	right2Pos := clamp(srcPos+vec2(bleedDistance*2.0, 0.0), origin, origin+size-1.0)
+
+	left2 := imageSrc0At(left2Pos)
+	left1 := imageSrc0At(left1Pos)
+	right1 := imageSrc0At(right1Pos)
+	right2 := imageSrc0At(right2Pos)
+
+	// Chroma (color) bleeds more than luma (brightness)
+	// Convert to YIQ-like representation
+	// Y = luminance, I/Q = chrominance
+
+	// Luminance weights (approximate)
+	lumaWeight := vec3(0.299, 0.587, 0.114)
+
+	// Get luminance of center pixel (keep sharp)
+	centerLuma := dot(center.rgb, lumaWeight)
+
+	// Blend chroma from neighbors (asymmetric - more from left due to signal)
+	// Weights: left pixels contribute more (signal travels left to right)
+	chromaBlend := center.rgb*0.4 +
+		left1.rgb*0.25 +
+		left2.rgb*0.15 +
+		right1.rgb*0.15 +
+		right2.rgb*0.05
+
+	// Extract blended chroma
+	blendedLuma := dot(chromaBlend, lumaWeight)
+
+	// Reconstruct: sharp luma + blurred chroma
+	// This keeps edges sharp while colors bleed
+	chromaOnly := chromaBlend - vec3(blendedLuma)
+	result := vec3(centerLuma) + chromaOnly
+
+	// Bleed intensity
+	intensity := 0.6
+
+	// Mix between original and bled version
+	finalColor := mix(center.rgb, result, intensity)
+
+	return vec4(finalColor, center.a)
+}

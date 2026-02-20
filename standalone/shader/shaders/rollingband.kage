@@ -1,0 +1,53 @@
+//kage:unit pixels
+
+package main
+
+// Rolling Band shader - simulates scrolling dark band from bad reception
+// Very subtle effect: dark core with gentle falloff and faint bright edge
+
+// Time uniform (frame counter from Go)
+var Time float
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	// Sample the source texture
+	clr := imageSrc0At(srcPos)
+
+	// Get image dimensions for band positioning
+	_, size := imageSrcRegionOnTexture()
+	height := size.y
+
+	// Band parameters
+	bandRadius := 20.0 // Half-width of the effect
+
+	// Base linear motion: full scroll in ~2 seconds at 60fps
+	baseSpeed := height / 120.0
+	linearPos := Time * baseSpeed
+
+	// Low-frequency, low-amplitude drift
+	drift := sin(Time*0.011)*8.0 + sin(Time*0.019)*5.0 + sin(Time*0.031)*3.0
+
+	bandY := mod(linearPos+drift, height)
+
+	// Distance from current pixel to band center
+	distFromBand := abs(dstPos.y - bandY)
+
+	// Handle wrap-around
+	distFromBand = min(distFromBand, height-distFromBand)
+
+	// Normalized distance (0 at center, 1 at edge, >1 beyond)
+	t := distFromBand / bandRadius
+
+	// Dark core: strongest at center, gentle falloff
+	// Using squared falloff for smooth gradient
+	darkAmount := max(0.0, 1.0-t*t) * 0.05 // 0-5% darkening at center
+
+	// Subtle bright edge: thin ring at the transition
+	// Peaks around t=0.85, fades both inward and outward
+	brightAmount := smoothstep(0.5, 0.85, t) * (1.0 - smoothstep(0.85, 1.2, t)) * 0.02 // 0-2% brightening
+
+	// Combine: darken then add bright edge
+	modifier := 1.0 - darkAmount + brightAmount
+	result := clr.rgb * modifier
+
+	return vec4(result, clr.a)
+}

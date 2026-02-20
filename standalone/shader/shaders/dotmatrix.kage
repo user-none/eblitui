@@ -1,0 +1,53 @@
+//kage:unit pixels
+
+package main
+
+// Dot Matrix shader
+// Renders pixels as circular dots like CRT phosphor triads
+// Creates an authentic arcade/CRT monitor appearance
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	// Sample the source texture
+	clr := imageSrc0At(srcPos)
+
+	// Dot cell size in destination pixels
+	cellSize := 2.0
+
+	// Position within the cell (0 to cellSize)
+	cellX := mod(dstPos.x, cellSize)
+	cellY := mod(dstPos.y, cellSize)
+
+	// Center of cell
+	centerX := cellSize / 2.0
+	centerY := cellSize / 2.0
+
+	// Distance from center of cell
+	dx := cellX - centerX
+	dy := cellY - centerY
+	dist := sqrt(dx*dx + dy*dy)
+
+	// Dot radius (slightly smaller than half cell for gaps)
+	dotRadius := cellSize * 0.45
+
+	// Soft edge falloff
+	edgeSoftness := 0.3
+
+	// Calculate dot mask with soft edges
+	dotMask := 1.0 - smoothstep(dotRadius-edgeSoftness, dotRadius+edgeSoftness, dist)
+
+	// Minimum brightness in gaps (not completely black)
+	gapBrightness := 0.1
+
+	// Apply dot mask
+	mask := gapBrightness + dotMask*(1.0-gapBrightness)
+
+	result := clr.rgb * mask
+
+	return vec4(result, clr.a)
+}
+
+// smoothstep provides smooth interpolation
+func smoothstep(edge0, edge1, x float) float {
+	t := clamp((x-edge0)/(edge1-edge0), 0.0, 1.0)
+	return t * t * (3.0 - 2.0*t)
+}

@@ -1,0 +1,58 @@
+//kage:unit pixels
+
+package main
+
+// NTSC Rainbow shader
+// Simulates rainbow artifacts from high-frequency patterns on composite video
+// Dithering and checkerboard patterns create false color interference
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	origin, size := imageSrcRegionOnTexture()
+
+	// Sample current pixel and neighbors to detect high-frequency patterns
+	center := imageSrc0At(srcPos)
+
+	leftPos := clamp(srcPos+vec2(-1, 0), origin, origin+size-1.0)
+	rightPos := clamp(srcPos+vec2(1, 0), origin, origin+size-1.0)
+	upPos := clamp(srcPos+vec2(0, -1), origin, origin+size-1.0)
+	downPos := clamp(srcPos+vec2(0, 1), origin, origin+size-1.0)
+
+	left := imageSrc0At(leftPos)
+	right := imageSrc0At(rightPos)
+	up := imageSrc0At(upPos)
+	down := imageSrc0At(downPos)
+
+	// Calculate luminance
+	lumaWeight := vec3(0.299, 0.587, 0.114)
+	centerLuma := dot(center.rgb, lumaWeight)
+	leftLuma := dot(left.rgb, lumaWeight)
+	rightLuma := dot(right.rgb, lumaWeight)
+	upLuma := dot(up.rgb, lumaWeight)
+	downLuma := dot(down.rgb, lumaWeight)
+
+	// Detect checkerboard/dithering pattern
+	// High frequency = center differs from all neighbors in similar way
+	horizPattern := (centerLuma - leftLuma) * (centerLuma - rightLuma)
+	vertPattern := (centerLuma - upLuma) * (centerLuma - downLuma)
+
+	// Positive value means center is local min or max (checkerboard)
+	patternStrength := max(0.0, horizPattern) + max(0.0, vertPattern)
+	patternStrength = min(patternStrength * 4.0, 1.0)
+
+	// NTSC color carrier phase based on position
+	// Creates the characteristic rainbow banding
+	phase := (dstPos.x + dstPos.y*0.5) * 0.8
+
+	// Generate rainbow colors from phase
+	rainbowR := 0.5 + 0.5*sin(phase)
+	rainbowG := 0.5 + 0.5*sin(phase + 2.094) // +120 degrees
+	rainbowB := 0.5 + 0.5*sin(phase + 4.189) // +240 degrees
+
+	rainbow := vec3(rainbowR, rainbowG, rainbowB)
+
+	// Blend rainbow into areas with high-frequency patterns
+	intensity := 0.35
+	result := mix(center.rgb, rainbow * centerLuma * 2.0, patternStrength * intensity)
+
+	return vec4(clamp(result, vec3(0.0), vec3(1.0)), center.a)
+}

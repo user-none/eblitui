@@ -1,0 +1,64 @@
+//kage:unit pixels
+
+package main
+
+// Halation shader - simulates light bleeding behind CRT glass
+// Creates a large-radius diffuse glow around bright areas
+// Similar to bloom but with larger radius and lower threshold
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	origin, size := imageSrcRegionOnTexture()
+
+	// Original pixel
+	original := imageSrc0At(srcPos)
+
+	// Halation radius in pixels (larger than bloom for diffuse glow)
+	radius := 4.0
+
+	// Gaussian weights for 9x9 kernel (sigma ~2.0 for wider spread)
+	weights := [9]float{0.028, 0.067, 0.124, 0.179, 0.204, 0.179, 0.124, 0.067, 0.028}
+
+	// Accumulate blurred glow
+	glow := vec3(0.0)
+	totalWeight := 0.0
+
+	for y := 0; y < 9; y++ {
+		for x := 0; x < 9; x++ {
+			offset := vec2(
+				(float(x)-4.0)*radius/2.0,
+				(float(y)-4.0)*radius/2.0,
+			)
+			samplePos := srcPos + offset
+
+			// Clamp to source region
+			samplePos = clamp(samplePos, origin, origin+size-1.0)
+
+			sampled := imageSrc0At(samplePos)
+
+			// Weight by gaussian and pixel brightness
+			w := weights[x] * weights[y]
+			brightness := max(sampled.r, max(sampled.g, sampled.b))
+
+			// Lower threshold than bloom (0.3 vs 0.5) for more glow
+			halationAmount := max(0.0, brightness-0.3) * 1.43
+
+			glow += sampled.rgb * w * halationAmount
+			totalWeight += w * halationAmount
+		}
+	}
+
+	// Normalize glow
+	if totalWeight > 0.0 {
+		glow /= totalWeight
+	}
+
+	// Blend glow with original
+	// Halation intensity (slightly lower than bloom for subtlety)
+	intensity := 0.25
+	result := original.rgb + glow*intensity
+
+	// Soft clamp to avoid harsh clipping
+	result = result / (1.0 + result*0.1)
+
+	return vec4(result, original.a)
+}

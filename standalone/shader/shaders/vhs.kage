@@ -1,0 +1,66 @@
+//kage:unit pixels
+
+package main
+
+// VHS/Vertical Sync Tear shader
+// Simulates a failing vertical sync: a single horizontal seam where
+// the image above and below don't line up horizontally.
+// This is an intermittent event, not a constant effect.
+
+// Time uniform (frame counter from Go)
+var Time float
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	origin, size := imageSrcRegionOnTexture()
+	height := size.y
+
+	// Determine if tear is currently visible (intermittent effect)
+	// Combine slow waves - tear only appears when combined value is high
+	v1 := sin(Time * 0.007)
+	v2 := sin(Time * 0.013)
+	v3 := sin(Time * 0.023)
+	visibilityFactor := (v1 + v2*0.7 + v3*0.5) / 2.2
+
+	// Tear only visible ~25% of the time
+	if visibilityFactor < 0.5 {
+		return imageSrc0At(srcPos)
+	}
+
+	// Tear position - slow drift (full screen every 5-8 seconds at 60fps)
+	baseSpeed := height / 360.0 // ~6 seconds for full drift
+	basePos := Time * baseSpeed
+
+	// Low-frequency drift for stalls and slight jumps
+	drift := sin(Time*0.009)*12.0 + sin(Time*0.017)*8.0 + sin(Time*0.029)*4.0
+
+	tearY := mod(basePos+drift, height)
+
+	// Distance below the tear (negative if above)
+	distBelowTear := dstPos.y - tearY
+
+	// Handle wrap-around: if tear is near bottom, top of screen is "below" it
+	if tearY > height*0.8 && dstPos.y < height*0.2 {
+		distBelowTear = dstPos.y + (height - tearY)
+	}
+
+	// If above tear (or tear wrapped), no offset
+	if distBelowTear < 0.0 {
+		return imageSrc0At(srcPos)
+	}
+
+	// Blend zone: 3 pixels for soft transition
+	blendFactor := smoothstep(0.0, 3.0, distBelowTear)
+
+	// Offset amount: 1-4 pixels, varies slowly over time
+	// Different phase from visibility so offset varies when tear appears
+	offsetBase := 2.0 + sin(Time*0.011)*1.5 // 0.5 to 3.5 pixels
+
+	// Apply horizontal offset
+	offset := offsetBase * blendFactor
+	samplePos := srcPos + vec2(offset, 0.0)
+
+	// Clamp to valid region
+	samplePos = clamp(samplePos, origin, origin+size-1.0)
+
+	return imageSrc0At(samplePos)
+}
