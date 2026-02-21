@@ -677,9 +677,22 @@ func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, c
 		),
 	)
 
+	// Game title (truncated based on card pixel width)
+	displayName, _ := style.TruncateToWidth(game.DisplayName, *style.FontFace(), float64(cardWidth-4))
+	titleLabel := widget.NewText(
+		widget.TextOpts.Text(displayName, style.FontFace(), style.Text),
+		widget.TextOpts.Position(widget.TextPositionCenter, widget.TextPositionStart),
+		widget.TextOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.RowLayoutData{
+				Stretch: true,
+			}),
+		),
+	)
+
 	// Artwork button (clickable)
 	gameCRC := game.CRC32 // Capture for closure
-	artButton := widget.NewButton(
+	var artButton *widget.Button
+	artButton = widget.NewButton(
 		widget.ButtonOpts.Image(&widget.ButtonImage{
 			Idle:    image.NewNineSliceColor(style.Surface),
 			Hover:   image.NewNineSliceColor(style.PrimaryHover),
@@ -687,6 +700,14 @@ func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, c
 		}),
 		widget.ButtonOpts.WidgetOpts(
 			widget.WidgetOpts.MinSize(cardWidth, artHeight),
+			widget.WidgetOpts.CursorEnterHandler(func(args *widget.WidgetCursorEnterEventArgs) {
+				titleLabel.SetColor(style.Accent)
+			}),
+			widget.WidgetOpts.CursorExitHandler(func(args *widget.WidgetCursorExitEventArgs) {
+				if !artButton.IsFocused() {
+					titleLabel.SetColor(style.Text)
+				}
+			}),
 		),
 		widget.ButtonOpts.Graphic(&widget.GraphicImage{Idle: artwork}),
 		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
@@ -700,22 +721,21 @@ func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, c
 		}),
 	)
 
+	// Update title color on keyboard/gamepad focus changes
+	artButton.GetWidget().FocusEvent.AddHandler(func(args interface{}) {
+		if a, ok := args.(*widget.WidgetFocusEventArgs); ok {
+			if a.Focused {
+				titleLabel.SetColor(style.Accent)
+			} else {
+				titleLabel.SetColor(style.Text)
+			}
+		}
+	})
+
 	// Store button reference for focus restoration
 	s.RegisterFocusButton("game-"+gameCRC, artButton)
 
 	cardContent.AddChild(artButton)
-
-	// Game title (truncated based on card pixel width)
-	displayName, _ := style.TruncateToWidth(game.DisplayName, *style.FontFace(), float64(cardWidth-4))
-	titleLabel := widget.NewText(
-		widget.TextOpts.Text(displayName, style.FontFace(), style.Text),
-		widget.TextOpts.Position(widget.TextPositionCenter, widget.TextPositionStart),
-		widget.TextOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{
-				Stretch: true,
-			}),
-		),
-	)
 	cardContent.AddChild(titleLabel)
 
 	// Wrapper with AnchorLayout to center the card content in the grid cell
