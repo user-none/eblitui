@@ -26,6 +26,16 @@ const (
 	CoreOptionRange
 )
 
+// CoreOptionCategory identifies the settings section for a core option.
+type CoreOptionCategory int
+
+const (
+	CoreOptionCategoryAudio CoreOptionCategory = iota
+	CoreOptionCategoryVideo
+	CoreOptionCategoryInput
+	CoreOptionCategoryCore
+)
+
 // CoreOption describes a configurable core setting.
 type CoreOption struct {
 	Key         string
@@ -33,12 +43,12 @@ type CoreOption struct {
 	Description string
 	Type        CoreOptionType
 	Default     string
-	Values      []string // Options for Select type
-	Min         int      // Minimum for Range type
-	Max         int      // Maximum for Range type
-	Step        int      // Step size for Range type
-	Category    string   // Settings section ("Video", "Input", "Audio")
-	PerGame     bool     // Whether this can be overridden per game
+	Values      []string           // Options for Select type
+	Min         int                // Minimum for Range type
+	Max         int                // Maximum for Range type
+	Step        int                // Step size for Range type
+	Category    CoreOptionCategory // Settings section routing
+	PerGame     bool               // Whether this can be overridden per game
 }
 
 // SystemInfo describes an emulator system for UI configuration.

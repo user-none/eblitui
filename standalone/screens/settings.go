@@ -347,7 +347,7 @@ func (s *SettingsScreen) setupNavigation() {
 		firstZone := "input-bindings"
 		// Use core options zone as first target if it has entries
 		for _, opt := range s.input.SystemInfo().CoreOptions {
-			if opt.Category == "Input" {
+			if opt.Category == emucore.CoreOptionCategoryInput {
 				firstZone = "input-core-opts"
 				break
 			}

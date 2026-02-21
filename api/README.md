@@ -145,7 +145,7 @@ Describes a configurable core setting for use in settings menus.
 | `Min` | `int` | Minimum (Range type only) |
 | `Max` | `int` | Maximum (Range type only) |
 | `Step` | `int` | Step size (Range type only) |
-| `Category` | `string` | Settings section (e.g. "Video", "Input", "Audio") |
+| `Category` | `CoreOptionCategory` | Settings section: `CoreOptionCategoryAudio`, `CoreOptionCategoryVideo`, `CoreOptionCategoryInput`, `CoreOptionCategoryCore` |
 | `PerGame` | `bool` | Whether the option can be overridden per game |
 
 ### SystemInfo

@@ -238,7 +238,7 @@ func (s *InputSection) Build(focus types.FocusManager) *widget.Container {
 	// Core options section (options with Category == "Input")
 	hasInputOptions := false
 	for _, opt := range s.systemInfo.CoreOptions {
-		if opt.Category == "Input" {
+		if opt.Category == emucore.CoreOptionCategoryInput {
 			hasInputOptions = true
 			section.AddChild(s.buildCoreOptionRow(focus, opt))
 		}
@@ -297,7 +297,7 @@ func (s *InputSection) setupNavigation(focus types.FocusManager) {
 	// Core options zone
 	coreOptKeys := make([]string, 0)
 	for _, opt := range s.systemInfo.CoreOptions {
-		if opt.Category == "Input" {
+		if opt.Category == emucore.CoreOptionCategoryInput {
 			coreOptKeys = append(coreOptKeys, "input-opt-"+opt.Key)
 		}
 	}
