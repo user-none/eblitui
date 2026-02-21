@@ -805,7 +805,7 @@ func (s *LibraryScreen) loadGameArtworkPair(gameCRC string, maxWidth, maxHeight 
 	focusedImg := style.ScaleImage(img, maxWidth, maxHeight)
 	normalW := int(float64(maxWidth) * style.IconUnfocusedScale)
 	normalH := int(float64(maxHeight) * style.IconUnfocusedScale)
-	normalImg := style.ScaleImage(img, normalW, normalH)
+	normalImg := dimImage(style.ScaleImage(img, normalW, normalH))
 
 	s.artworkCache[gameCRC] = &iconArtwork{normal: normalImg, focused: focusedImg}
 	return normalImg, focusedImg
@@ -844,9 +844,20 @@ func (s *LibraryScreen) getPlaceholderImagePair(width, height int) (normal, focu
 	}
 
 	focusedImg := style.ScaleImage(img, width, height)
-	normalImg := style.ScaleImage(img, normalW, normalH)
+	normalImg := dimImage(style.ScaleImage(img, normalW, normalH))
 	s.artworkCache[placeholderKey] = &iconArtwork{normal: normalImg, focused: focusedImg}
 	return normalImg, focusedImg
+}
+
+// dimImage returns a new image with reduced brightness for unfocused cards.
+func dimImage(src *ebiten.Image) *ebiten.Image {
+	dim := float32(style.IconUnfocusedDim)
+	dst := ebiten.NewImage(src.Bounds().Dx(), src.Bounds().Dy())
+	opts := &ebiten.DrawImageOptions{}
+	opts.ColorScale.Scale(dim, dim, dim, 1.0)
+	dst.DrawImage(src, opts)
+	src.Deallocate()
+	return dst
 }
 
 // SaveScrollPosition saves the current scroll position before a rebuild
