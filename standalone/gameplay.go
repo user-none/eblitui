@@ -224,9 +224,15 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 	gm.currentGame = game
 	gm.saveStateManager.SetGame(gameCRC)
 
-	// Apply core options from config
-	for key, value := range gm.config.Input.CoreOptions {
-		emu.SetOption(key, value)
+	// Apply core options: use config value if set, otherwise declared default
+	for _, opt := range gm.systemInfo.CoreOptions {
+		if gm.config.Input.CoreOptions != nil {
+			if v, ok := gm.config.Input.CoreOptions[opt.Key]; ok {
+				emu.SetOption(opt.Key, v)
+				continue
+			}
+		}
+		emu.SetOption(opt.Key, opt.Default)
 	}
 
 	// Detect optional interfaces
