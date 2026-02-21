@@ -5,6 +5,7 @@ package screens
 import (
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
+	emucore "github.com/user-none/eblitui/api"
 	"github.com/user-none/eblitui/standalone/achievements"
 	"github.com/user-none/eblitui/standalone/screens/settings"
 	"github.com/user-none/eblitui/standalone/storage"
@@ -26,11 +27,13 @@ type SettingsScreen struct {
 	audio             *settings.AudioSection
 	rewind            *settings.RewindSection
 	retroAchievements *settings.RetroAchievementsSection
+	input             *settings.InputSection
 }
 
 // NewSettingsScreen creates a new settings screen.
 // serializeSize is the bytes per save state for rewind duration estimates.
-func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config *storage.Config, achievementMgr *achievements.Manager, serializeSize int) *SettingsScreen {
+// systemInfo provides button definitions and core options for the input section.
+func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config *storage.Config, achievementMgr *achievements.Manager, serializeSize int, systemInfo emucore.SystemInfo) *SettingsScreen {
 	s := &SettingsScreen{
 		callback:          callback,
 		selectedSection:   0,
@@ -40,6 +43,7 @@ func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config
 		audio:             settings.NewAudioSection(callback, config),
 		rewind:            settings.NewRewindSection(callback, config, serializeSize),
 		retroAchievements: settings.NewRetroAchievementsSection(callback, config, achievementMgr),
+		input:             settings.NewInputSection(callback, config, systemInfo),
 	}
 	s.InitBase()
 	return s
@@ -60,13 +64,14 @@ func (s *SettingsScreen) SetLibrary(library *storage.Library) {
 	s.library.SetLibrary(library)
 }
 
-// SetConfig updates the config reference in the appearance, video, and retroachievements sections
+// SetConfig updates the config reference in all config-dependent sections
 func (s *SettingsScreen) SetConfig(config *storage.Config) {
 	s.appearance.SetConfig(config)
 	s.video.SetConfig(config)
 	s.audio.SetConfig(config)
 	s.rewind.SetConfig(config)
 	s.retroAchievements.SetConfig(config)
+	s.input.SetConfig(config)
 }
 
 // SetAchievements updates the achievement manager reference
@@ -250,14 +255,25 @@ func (s *SettingsScreen) Build() *widget.Container {
 	s.RegisterFocusButton("section-achievements", raBtn)
 	sidebar.AddChild(raBtn)
 
-	// Future sections (disabled) - use containers instead of buttons so they're not focusable
-	sidebar.AddChild(style.DisabledSidebarItem("Input*"))
-
-	// Future note
-	futureNote := widget.NewText(
-		widget.TextOpts.Text("* Coming soon", style.FontFace(), style.TextSecondary),
+	// Input section button
+	inputBtn := widget.NewButton(
+		widget.ButtonOpts.Image(style.ActiveButtonImage(s.selectedSection == 6)),
+		widget.ButtonOpts.Text("Input", style.FontFace(), &widget.ButtonTextColor{
+			Idle:     style.Text,
+			Disabled: style.TextSecondary,
+		}),
+		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
+		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
+			s.selectedSection = 6
+			s.SetPendingFocus("section-input")
+			s.callback.RequestRebuild()
+		}),
+		widget.ButtonOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
+		),
 	)
-	sidebar.AddChild(futureNote)
+	s.RegisterFocusButton("section-input", inputBtn)
+	sidebar.AddChild(inputBtn)
 
 	mainContent.AddChild(sidebar)
 
@@ -284,6 +300,8 @@ func (s *SettingsScreen) Build() *widget.Container {
 		contentArea.AddChild(s.rewind.Build(s))
 	case 5:
 		contentArea.AddChild(s.retroAchievements.Build(s))
+	case 6:
+		contentArea.AddChild(s.input.Build(s))
 	}
 
 	mainContent.AddChild(contentArea)
@@ -298,7 +316,7 @@ func (s *SettingsScreen) Build() *widget.Container {
 // setupNavigation registers navigation zones for settings screen
 func (s *SettingsScreen) setupNavigation() {
 	// Sidebar zone (vertical)
-	sidebarKeys := []string{"section-library", "section-appearance", "section-video", "section-audio", "section-rewind", "section-achievements"}
+	sidebarKeys := []string{"section-library", "section-appearance", "section-video", "section-audio", "section-rewind", "section-achievements", "section-input"}
 	s.RegisterNavZone("sidebar", types.NavZoneVertical, sidebarKeys, 0)
 
 	// Set up transitions from sidebar to content
@@ -325,6 +343,19 @@ func (s *SettingsScreen) setupNavigation() {
 	case 5: // RetroAchievements
 		s.SetNavTransition("sidebar", types.DirRight, "ra-settings", types.NavIndexFirst)
 		s.SetNavTransition("ra-settings", types.DirLeft, "sidebar", types.NavIndexFirst)
+	case 6: // Input
+		firstZone := "input-bindings"
+		// Use core options zone as first target if it has entries
+		for _, opt := range s.input.SystemInfo().CoreOptions {
+			if opt.Category == "Input" {
+				firstZone = "input-core-opts"
+				break
+			}
+		}
+		s.SetNavTransition("sidebar", types.DirRight, firstZone, types.NavIndexFirst)
+		s.SetNavTransition("input-core-opts", types.DirLeft, "sidebar", types.NavIndexFirst)
+		s.SetNavTransition("input-bindings", types.DirLeft, "sidebar", types.NavIndexFirst)
+		s.SetNavTransition("input-reset", types.DirLeft, "sidebar", types.NavIndexFirst)
 	}
 }
 
@@ -341,8 +372,15 @@ func (s *SettingsScreen) EnsureFocusedVisible(focused widget.Focuser) {
 
 // Update handles per-frame updates for settings sections
 func (s *SettingsScreen) Update() {
-	// Only call section-specific updates for sections that need them
-	if s.selectedSection == 5 {
+	switch s.selectedSection {
+	case 5:
 		s.retroAchievements.Update()
+	case 6:
+		s.input.Update()
 	}
+}
+
+// IsInputCaptureActive returns true when the input section is waiting for a key/button press
+func (s *SettingsScreen) IsInputCaptureActive() bool {
+	return s.input != nil && s.input.IsCapturing()
 }

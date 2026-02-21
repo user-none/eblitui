@@ -120,7 +120,7 @@ func NewGameplayManager(
 	gm := &GameplayManager{
 		factory:            factory,
 		systemInfo:         systemInfo,
-		inputMapping:       BuildDefaultMapping(systemInfo.Buttons),
+		inputMapping:       BuildMappingFromConfig(systemInfo.Buttons, config.Input.P1Keyboard, config.Input.P1Controller),
 		autoSaveInterval:   style.AutoSaveInterval,
 		turboState:         &TurboState{multiplier: 1},
 		saveStateManager:   saveStateManager,
@@ -164,9 +164,14 @@ func (gm *GameplayManager) SetLibrary(library *storage.Library) {
 	gm.library = library
 }
 
-// SetConfig updates the config reference
+// SetConfig updates the config reference and rebuilds the input mapping
 func (gm *GameplayManager) SetConfig(config *storage.Config) {
 	gm.config = config
+	gm.inputMapping = BuildMappingFromConfig(
+		gm.systemInfo.Buttons,
+		config.Input.P1Keyboard,
+		config.Input.P1Controller,
+	)
 }
 
 // IsPlaying returns true if a game is currently being played
@@ -184,6 +189,13 @@ func (gm *GameplayManager) CurrentGameCRC() string {
 
 // Launch starts the emulator with the specified game
 func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
+	// Rebuild input mapping from current config (settings may have changed)
+	gm.inputMapping = BuildMappingFromConfig(
+		gm.systemInfo.Buttons,
+		gm.config.Input.P1Keyboard,
+		gm.config.Input.P1Controller,
+	)
+
 	game := gm.library.GetGame(gameCRC)
 	if game == nil {
 		gm.notification.ShowDefault("Game not found")
@@ -211,6 +223,11 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 	gm.emulator = emu
 	gm.currentGame = game
 	gm.saveStateManager.SetGame(gameCRC)
+
+	// Apply core options from config
+	for key, value := range gm.config.Input.CoreOptions {
+		emu.SetOption(key, value)
+	}
 
 	// Detect optional interfaces
 	gm.saveStater, _ = emu.(emucore.SaveStater)
@@ -678,12 +695,13 @@ func (gm *GameplayManager) pollInputToShared() {
 	}
 
 	// Player 1: keyboard + first gamepad
-	buttons := PollButtons(gm.inputMapping, gamepadID, hasGamepad)
+	disableAnalog := gm.config.Input.DisableAnalogStick
+	buttons := PollButtons(gm.inputMapping, gamepadID, hasGamepad, disableAnalog)
 	gm.sharedInput.Set(0, buttons)
 
 	// Player 2: second gamepad only
 	if len(gamepadIDs) > 1 {
-		p2buttons := PollGamepadButtons(gm.inputMapping, gamepadIDs[1])
+		p2buttons := PollGamepadButtons(gm.inputMapping, gamepadIDs[1], disableAnalog)
 		gm.sharedInput.Set(1, p2buttons)
 	}
 }

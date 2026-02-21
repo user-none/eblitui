@@ -400,7 +400,7 @@ func (a *App) toggleFullscreen() {
 func (a *App) initScreens() {
 	a.libraryScreen = screens.NewLibraryScreen(a, a.library, a.config)
 	a.detailScreen = screens.NewDetailScreen(a, a.library, a.config, a.achievementManager)
-	a.settingsScreen = screens.NewSettingsScreen(a, a.library, a.config, a.achievementManager, a.systemInfo.SerializeSize)
+	a.settingsScreen = screens.NewSettingsScreen(a, a.library, a.config, a.achievementManager, a.systemInfo.SerializeSize, a.systemInfo)
 	a.scanScreen = screens.NewScanProgressScreen(a)
 	a.errorScreen = screens.NewErrorScreen(a, a.errorFile, a.errorPath, a.handleDeleteAndContinue)
 }
@@ -456,6 +456,21 @@ func (a *App) Update() error {
 	if a.rebuildPending {
 		a.rebuildPending = false
 		a.rebuildCurrentScreen()
+
+		// Restore focus immediately after rebuild, before processUIInput
+		// runs. This ensures navigation sees the correct focused widget
+		// instead of falling back to ChangeFocus (which would pick the
+		// first focusable widget, typically the back button).
+		if a.ui != nil {
+			switch a.state {
+			case StateSettings:
+				a.restorePendingFocus(a.settingsScreen)
+			case StateLibrary:
+				a.restorePendingFocus(a.libraryScreen)
+			case StateDetail:
+				a.restorePendingFocus(a.detailScreen)
+			}
+		}
 	}
 
 	// Poll input manager for global keys (F12 screenshot, F11 fullscreen)
@@ -501,6 +516,16 @@ func (a *App) Update() error {
 		_ = nav
 		return nil
 	case StateSettings:
+		// Skip UI navigation during input capture mode
+		if a.settingsScreen.IsInputCaptureActive() {
+			a.settingsScreen.Update()
+			// Poll navigation to keep InputManager direction state synced.
+			// Without this, a d-pad press used for binding leaves im.direction
+			// stale, causing an immediate navigation on the rebuild frame.
+			a.inputManager.GetUINavigation()
+			a.ui.Update()
+			return nil
+		}
 		nav := a.processUIInput()
 		a.settingsScreen.Update() // Handle section-specific updates (e.g., clipboard shortcuts)
 		a.ui.Update()
@@ -594,11 +619,14 @@ func (a *App) Update() error {
 	return nil
 }
 
-// restorePendingFocus restores focus to a pending button if one exists
+// restorePendingFocus restores focus to a pending button if one exists.
+// Uses SetFocusedWidget so ebitenui's focusedWidget is updated immediately
+// rather than via a deferred event. This prevents processUIInput from seeing
+// nil focus and falling back to ChangeFocus (which would focus the wrong widget).
 func (a *App) restorePendingFocus(screen screens.FocusRestorer) {
 	btn := screen.GetPendingFocusButton()
 	if btn != nil {
-		btn.Focus(true)
+		a.ui.SetFocusedWidget(btn)
 		screen.ClearPendingFocus()
 	}
 }

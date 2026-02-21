@@ -560,6 +560,217 @@ func TestCorrectConfig(t *testing.T) {
 	})
 }
 
+func TestValidateInputConfig(t *testing.T) {
+	validKey := func(name string) bool {
+		return name == "J" || name == "K" || name == "W" || name == "ArrowUp"
+	}
+	validPad := func(name string) bool {
+		return name == "A" || name == "B" || name == "DpadUp"
+	}
+
+	t.Run("empty config has no errors", func(t *testing.T) {
+		config := DefaultConfig()
+		errs := ValidateInputConfig(config, validKey, validPad)
+		if len(errs) != 0 {
+			t.Errorf("expected no errors, got: %v", errs)
+		}
+	})
+
+	t.Run("valid overrides have no errors", func(t *testing.T) {
+		config := DefaultConfig()
+		config.Input.P1Keyboard = map[string]string{"Up": "ArrowUp", "A": "J"}
+		config.Input.P1Controller = map[string]string{"A": "DpadUp"}
+		errs := ValidateInputConfig(config, validKey, validPad)
+		if len(errs) != 0 {
+			t.Errorf("expected no errors, got: %v", errs)
+		}
+	})
+
+	t.Run("invalid key name detected", func(t *testing.T) {
+		config := DefaultConfig()
+		config.Input.P1Keyboard = map[string]string{"A": "BadKey"}
+		errs := ValidateInputConfig(config, validKey, validPad)
+		if len(errs) != 1 {
+			t.Errorf("expected 1 error, got %d: %v", len(errs), errs)
+		}
+	})
+
+	t.Run("invalid pad name detected", func(t *testing.T) {
+		config := DefaultConfig()
+		config.Input.P1Controller = map[string]string{"A": "BadPad"}
+		errs := ValidateInputConfig(config, validKey, validPad)
+		if len(errs) != 1 {
+			t.Errorf("expected 1 error, got %d: %v", len(errs), errs)
+		}
+	})
+}
+
+func TestCorrectInputConfig(t *testing.T) {
+	validKey := func(name string) bool {
+		return name == "J" || name == "K"
+	}
+	validPad := func(name string) bool {
+		return name == "A" || name == "B"
+	}
+
+	t.Run("removes invalid entries", func(t *testing.T) {
+		config := DefaultConfig()
+		config.Input.P1Keyboard = map[string]string{"A": "J", "B": "BadKey"}
+		config.Input.P1Controller = map[string]string{"A": "A", "B": "BadPad"}
+
+		CorrectInputConfig(config, validKey, validPad)
+
+		if len(config.Input.P1Keyboard) != 1 {
+			t.Errorf("expected 1 keyboard entry, got %d", len(config.Input.P1Keyboard))
+		}
+		if config.Input.P1Keyboard["A"] != "J" {
+			t.Error("valid keyboard entry should be preserved")
+		}
+		if len(config.Input.P1Controller) != 1 {
+			t.Errorf("expected 1 controller entry, got %d", len(config.Input.P1Controller))
+		}
+		if config.Input.P1Controller["A"] != "A" {
+			t.Error("valid controller entry should be preserved")
+		}
+	})
+
+	t.Run("nil maps are safe", func(t *testing.T) {
+		config := DefaultConfig()
+		CorrectInputConfig(config, validKey, validPad) // Should not panic
+	})
+}
+
+func TestInputConfigSerialization(t *testing.T) {
+	t.Run("empty maps omitted from JSON", func(t *testing.T) {
+		config := DefaultConfig()
+		data, err := json.Marshal(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := string(data)
+		// p1Keyboard should not appear since it's nil (omitempty)
+		if contains(s, "p1Keyboard") {
+			t.Error("empty p1Keyboard should be omitted from JSON")
+		}
+	})
+
+	t.Run("non-empty maps included in JSON", func(t *testing.T) {
+		config := DefaultConfig()
+		config.Input.P1Keyboard = map[string]string{"Up": "ArrowUp"}
+		data, err := json.Marshal(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := string(data)
+		if !contains(s, "p1Keyboard") {
+			t.Error("non-empty p1Keyboard should be in JSON")
+		}
+		if !contains(s, "ArrowUp") {
+			t.Error("ArrowUp value should be in JSON")
+		}
+	})
+
+	t.Run("roundtrip preserves overrides", func(t *testing.T) {
+		config := DefaultConfig()
+		config.Input.P1Keyboard = map[string]string{"Up": "ArrowUp", "A": "Z"}
+		config.Input.P1Controller = map[string]string{"A": "Y"}
+		config.Input.CoreOptions = map[string]string{"sixbutton": "true"}
+
+		data, err := json.Marshal(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var restored Config
+		if err := json.Unmarshal(data, &restored); err != nil {
+			t.Fatal(err)
+		}
+
+		if restored.Input.P1Keyboard["Up"] != "ArrowUp" {
+			t.Error("P1Keyboard Up override not preserved")
+		}
+		if restored.Input.P1Keyboard["A"] != "Z" {
+			t.Error("P1Keyboard A override not preserved")
+		}
+		if restored.Input.P1Controller["A"] != "Y" {
+			t.Error("P1Controller A override not preserved")
+		}
+		if restored.Input.CoreOptions["sixbutton"] != "true" {
+			t.Error("CoreOptions not preserved")
+		}
+	})
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstring(s, substr))
+}
+
+func containsSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+func TestDisableAnalogStickSerialization(t *testing.T) {
+	t.Run("omitted when false", func(t *testing.T) {
+		config := DefaultConfig()
+		data, err := json.Marshal(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := string(data)
+		if contains(s, "disableAnalogStick") {
+			t.Error("disableAnalogStick should be omitted when false")
+		}
+	})
+
+	t.Run("included when true", func(t *testing.T) {
+		config := DefaultConfig()
+		config.Input.DisableAnalogStick = true
+		data, err := json.Marshal(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := string(data)
+		if !contains(s, "disableAnalogStick") {
+			t.Error("disableAnalogStick should be in JSON when true")
+		}
+	})
+
+	t.Run("roundtrip preserves true", func(t *testing.T) {
+		config := DefaultConfig()
+		config.Input.DisableAnalogStick = true
+
+		data, err := json.Marshal(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var restored Config
+		if err := json.Unmarshal(data, &restored); err != nil {
+			t.Fatal(err)
+		}
+
+		if !restored.Input.DisableAnalogStick {
+			t.Error("DisableAnalogStick should be true after roundtrip")
+		}
+	})
+
+	t.Run("absent defaults to false", func(t *testing.T) {
+		jsonBytes := []byte(`{"input": {}}`)
+		var config Config
+		if err := json.Unmarshal(jsonBytes, &config); err != nil {
+			t.Fatal(err)
+		}
+		if config.Input.DisableAnalogStick {
+			t.Error("DisableAnalogStick should default to false when absent")
+		}
+	})
+}
+
 func TestPresentButZeroVsMissing(t *testing.T) {
 	// fontSize: 0 is present but invalid — should NOT get defaulted by ApplyMissingDefaults
 	// absent fontSize should get defaulted

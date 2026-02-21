@@ -11,7 +11,17 @@ type Config struct {
 	Library           LibraryView             `json:"library"`
 	Shaders           ShaderConfig            `json:"shaders"`
 	Rewind            RewindConfig            `json:"rewind"`
+	Input             InputConfig             `json:"input"`
 	RetroAchievements RetroAchievementsConfig `json:"retroAchievements"`
+}
+
+// InputConfig contains input binding overrides for P1 keyboard and controller.
+// Empty/nil maps mean "use adaptor defaults." Only user overrides are stored.
+type InputConfig struct {
+	P1Keyboard         map[string]string `json:"p1Keyboard,omitempty"`         // button name -> key name override
+	P1Controller       map[string]string `json:"p1Controller,omitempty"`       // button name -> pad button name override
+	CoreOptions        map[string]string `json:"coreOptions,omitempty"`        // core option key -> value
+	DisableAnalogStick bool              `json:"disableAnalogStick,omitempty"` // disable analog stick mirroring d-pad
 }
 
 // RetroAchievementsConfig contains RetroAchievements integration settings
@@ -161,6 +171,7 @@ func DefaultConfig() *Config {
 			BufferSizeMB: 40,
 			FrameStep:    1,
 		},
+		Input: InputConfig{},
 		RetroAchievements: RetroAchievementsConfig{
 			Enabled:          false,
 			EncoreMode:       false,

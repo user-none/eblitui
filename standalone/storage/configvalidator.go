@@ -195,6 +195,39 @@ func ValidateConfig(config *Config, validThemes []string) []string {
 	return errors
 }
 
+// ValidateInputConfig checks input config overrides using the provided
+// validators. Returns error descriptions for invalid entries.
+// isValidKey checks if a key name is valid, isValidPad checks if a pad name is valid.
+func ValidateInputConfig(config *Config, isValidKey, isValidPad func(string) bool) []string {
+	var errors []string
+	for btn, keyName := range config.Input.P1Keyboard {
+		if !isValidKey(keyName) {
+			errors = append(errors, fmt.Sprintf("input.p1Keyboard[%q]: invalid key %q", btn, keyName))
+		}
+	}
+	for btn, padName := range config.Input.P1Controller {
+		if !isValidPad(padName) {
+			errors = append(errors, fmt.Sprintf("input.p1Controller[%q]: invalid pad %q", btn, padName))
+		}
+	}
+	return errors
+}
+
+// CorrectInputConfig removes invalid entries from input override maps.
+// isValidKey checks if a key name is valid, isValidPad checks if a pad name is valid.
+func CorrectInputConfig(config *Config, isValidKey, isValidPad func(string) bool) {
+	for btn, keyName := range config.Input.P1Keyboard {
+		if !isValidKey(keyName) {
+			delete(config.Input.P1Keyboard, btn)
+		}
+	}
+	for btn, padName := range config.Input.P1Controller {
+		if !isValidPad(padName) {
+			delete(config.Input.P1Controller, btn)
+		}
+	}
+}
+
 // CorrectConfig resets any invalid fields to their defaults from DefaultConfig().
 // Valid fields are preserved. validThemes should be the list of known theme names.
 func CorrectConfig(config *Config, validThemes []string) *Config {
