@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/user-none/eblitui/rdb"
 	"github.com/user-none/eblitui/standalone/storage"
@@ -188,8 +189,8 @@ func (m *MetadataManager) DownloadArtwork(gameCRC string, gameName string) {
 		return
 	}
 
-	// URL-encode the game name (spaces as %20)
-	encodedName := url.PathEscape(gameName)
+	// Replace & with _ and URL-encode the game name
+	encodedName := url.PathEscape(strings.ReplaceAll(gameName, "&", "_"))
 
 	// Try each artwork type in fallback order
 	for _, artType := range artworkTypes {
