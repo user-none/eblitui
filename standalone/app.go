@@ -773,7 +773,7 @@ func (a *App) Draw(screen *ebiten.Image) {
 		}
 
 		// Apply shader chain to final screen (preprocess effects are skipped internally)
-		a.shaderManager.ApplyShaders(screen, processed, shaderIDs)
+		a.shaderManager.ApplyShaders(screen, processed, shaderIDs, a.systemInfo.MaxScreenHeight)
 	}
 
 	// Take screenshot if pending (after everything is drawn)

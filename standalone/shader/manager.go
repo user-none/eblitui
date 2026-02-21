@@ -357,10 +357,12 @@ func (m *Manager) ApplyPreprocessEffects(src *ebiten.Image, shaderIDs []string, 
 
 // ApplyShaders draws src to dst with the specified shader chain applied.
 // If shaderIDs is empty, src is drawn directly to dst.
+// sourceHeight is the native vertical resolution of the emulated system
+// (used by scanline shader to align with original pixel rows).
 // Note: Preprocessing effects (xBR, ghosting) should be applied via
 // ApplyPreprocessEffects before calling this function.
 // Returns true if shaders were applied, false if direct draw was used.
-func (m *Manager) ApplyShaders(dst, src *ebiten.Image, shaderIDs []string) bool {
+func (m *Manager) ApplyShaders(dst, src *ebiten.Image, shaderIDs []string, sourceHeight int) bool {
 	if src == nil {
 		return false
 	}
@@ -382,9 +384,10 @@ func (m *Manager) ApplyShaders(dst, src *ebiten.Image, shaderIDs []string) bool 
 
 	srcW, srcH := src.Bounds().Dx(), src.Bounds().Dy()
 
-	// Uniforms for animated shaders
+	// Uniforms for shaders
 	uniforms := map[string]interface{}{
-		"Time": float32(m.frame),
+		"Time":         float32(m.frame),
+		"SourceHeight": float32(sourceHeight),
 	}
 
 	// Single shader case - draw directly to destination

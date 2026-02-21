@@ -3,19 +3,34 @@
 package main
 
 // Interlace shader - simulates 480i interlaced display
-// Alternating scanline fields create the characteristic interlaced look
+// Alternates which field is darkened each frame
+
+// SourceHeight is the native vertical resolution of the emulated system
+var SourceHeight float
+
+// Time is the frame counter used to alternate fields
+var Time float
 
 func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
-	// Sample the source texture
 	clr := imageSrc0At(srcPos)
 
-	// Interlace intensity (how much to darken alternate lines)
-	intensity := 0.3
+	// 360 total scanlines, same structure as scanlines shader
+	totalLines := 360.0
+	_, size := imageSrcRegionOnTexture()
+	lineHeight := floor(size.y / totalLines)
+	if lineHeight < 1.0 {
+		lineHeight = 1.0
+	}
 
-	// Use destination position for consistent lines regardless of scaling
-	// Every other row gets darkened to simulate field alternation
-	if mod(dstPos.y, 2.0) < 1.0 {
-		clr.rgb *= (1.0 - intensity)
+	// Which scanline this pixel belongs to
+	scanline := floor(dstPos.y / lineHeight)
+
+	// Alternate which field is darkened each frame
+	field := mod(floor(Time), 2.0)
+
+	// Even frames darken even lines, odd frames darken odd lines
+	if mod(scanline + field, 2.0) < 1.0 {
+		clr.rgb *= 0.75
 	}
 
 	return clr
