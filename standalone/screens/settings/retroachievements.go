@@ -319,7 +319,7 @@ func (r *RetroAchievementsSection) setupNavigation(focus types.FocusManager) {
 	keys = append(keys, "ra-enable")
 
 	if r.config.RetroAchievements.Enabled {
-		keys = append(keys, "ra-sound", "ra-screenshot", "ra-suppress", "ra-encore")
+		keys = append(keys, "ra-notification", "ra-sound", "ra-screenshot", "ra-suppress", "ra-encore", "ra-spectator")
 	}
 
 	focus.RegisterNavZone("ra-settings", types.NavZoneVertical, keys, 0)
