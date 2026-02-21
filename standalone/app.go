@@ -13,8 +13,8 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	emucore "github.com/user-none/eblitui/api"
-	"github.com/user-none/eblitui/standalone/achievements"
 	"github.com/user-none/eblitui/rdb"
+	"github.com/user-none/eblitui/standalone/achievements"
 	"github.com/user-none/eblitui/standalone/screens"
 	"github.com/user-none/eblitui/standalone/shader"
 	"github.com/user-none/eblitui/standalone/storage"
@@ -757,8 +757,7 @@ func (a *App) Draw(screen *ebiten.Image) {
 
 		// Apply preprocessing effects (xBR, ghosting)
 		// xBR scales native -> screen size; ghosting operates at screen size
-		// Returns processed image (screen-sized) and remaining shader IDs
-		processed, remainingShaders := a.shaderManager.ApplyPreprocessEffects(
+		processed := a.shaderManager.ApplyPreprocessEffects(
 			preprocessInput, shaderIDs, sw, sh)
 
 		// For StatePlaying: draw pause menu and achievement overlay after effects (so shaders apply to them)
@@ -773,8 +772,8 @@ func (a *App) Draw(screen *ebiten.Image) {
 			a.searchOverlay.Draw(processed)
 		}
 
-		// Apply shader chain to final screen
-		a.shaderManager.ApplyShaders(screen, processed, remainingShaders)
+		// Apply shader chain to final screen (preprocess effects are skipped internally)
+		a.shaderManager.ApplyShaders(screen, processed, shaderIDs)
 	}
 
 	// Take screenshot if pending (after everything is drawn)

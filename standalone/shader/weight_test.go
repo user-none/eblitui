@@ -88,6 +88,59 @@ func TestShaderSortingAlphabeticalTiebreaker(t *testing.T) {
 	}
 }
 
+func TestIsPreprocess(t *testing.T) {
+	tests := []struct {
+		id       string
+		expected bool
+	}{
+		{"xbr", true},
+		{"ghosting", true},
+		{"crt", false},
+		{"scanlines", false},
+		{"bloom", false},
+		{"unknown", false},
+	}
+
+	for _, tc := range tests {
+		got := IsPreprocess(tc.id)
+		if got != tc.expected {
+			t.Errorf("IsPreprocess(%q) = %v, want %v", tc.id, got, tc.expected)
+		}
+	}
+}
+
+func TestGetShaderContext(t *testing.T) {
+	tests := []struct {
+		id       string
+		expected EffectContext
+	}{
+		{"xbr", ContextGame},
+		{"ghosting", ContextGame},
+		{"crt", ContextAll},
+		{"scanlines", ContextAll},
+		{"bloom", ContextAll},
+		{"unknown", 0},
+	}
+
+	for _, tc := range tests {
+		got := GetShaderContext(tc.id)
+		if got != tc.expected {
+			t.Errorf("GetShaderContext(%q) = %d, want %d", tc.id, got, tc.expected)
+		}
+	}
+}
+
+func TestAvailableShadersFields(t *testing.T) {
+	for _, s := range AvailableShaders {
+		if s.Context == 0 {
+			t.Errorf("AvailableShaders entry %q has zero Context", s.ID)
+		}
+		if s.Preprocess && s.Context != ContextGame {
+			t.Errorf("AvailableShaders entry %q is Preprocess but Context is %d, want ContextGame", s.ID, s.Context)
+		}
+	}
+}
+
 func TestShaderSortingMixedWeights(t *testing.T) {
 	// Test a more complex scenario with all shaders
 	input := []string{"crt", "scanlines", "gamma", "ntsc", "colorbleed", "bloom", "halation", "vhs"}

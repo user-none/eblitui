@@ -87,18 +87,6 @@ var shaderSources = map[string][]byte{
 	"rainbow":     rainbowShaderSrc,
 }
 
-// specialEffects lists effect IDs that appear in the shader menu
-// but are implemented directly in Go rather than as Kage shaders
-var specialEffects = map[string]bool{
-	"xbr":      true,
-	"ghosting": true,
-}
-
-// isSpecialEffect returns true if the ID is a special effect, not a compiled shader
-func isSpecialEffect(id string) bool {
-	return specialEffects[id]
-}
-
 // Manager handles shader compilation, caching, and application
 type Manager struct {
 	// Compiled shader cache
@@ -182,7 +170,7 @@ func (m *Manager) LoadShader(id string) error {
 // PreloadShaders loads all shaders in the given list
 func (m *Manager) PreloadShaders(ids []string) {
 	for _, id := range ids {
-		if isSpecialEffect(id) {
+		if IsPreprocess(id) {
 			continue
 		}
 		if err := m.LoadShader(id); err != nil {
@@ -245,10 +233,14 @@ func (m *Manager) shaderListMatches(shaderIDs []string) bool {
 	return true
 }
 
-// rebuildShaderCache loads, sorts, and filters shaders, caching the result
+// rebuildShaderCache loads, sorts, and filters shaders, caching the result.
+// Preprocessing effects are skipped since they are handled by ApplyPreprocessEffects.
 func (m *Manager) rebuildShaderCache(shaderIDs []string) {
-	// Load any missing shaders
+	// Load any missing non-preprocess shaders
 	for _, id := range shaderIDs {
+		if IsPreprocess(id) {
+			continue
+		}
 		if _, ok := m.shaders[id]; !ok {
 			if err := m.LoadShader(id); err != nil {
 				log.Printf("Warning: shader %s not available: %v", id, err)
@@ -256,23 +248,28 @@ func (m *Manager) rebuildShaderCache(shaderIDs []string) {
 		}
 	}
 
-	// Copy and sort shader IDs by weight (descending), then by ID (ascending)
+	// Cache the full input list for change detection
 	m.cachedShaderIDs = make([]string, len(shaderIDs))
 	copy(m.cachedShaderIDs, shaderIDs)
 
-	sortedIDs := make([]string, len(shaderIDs))
-	copy(sortedIDs, shaderIDs)
-	sort.Slice(sortedIDs, func(i, j int) bool {
-		wi, wj := GetShaderWeight(sortedIDs[i]), GetShaderWeight(sortedIDs[j])
+	// Filter out preprocessing effects, then sort by weight (descending), ID (ascending)
+	filtered := make([]string, 0, len(shaderIDs))
+	for _, id := range shaderIDs {
+		if !IsPreprocess(id) {
+			filtered = append(filtered, id)
+		}
+	}
+	sort.Slice(filtered, func(i, j int) bool {
+		wi, wj := GetShaderWeight(filtered[i]), GetShaderWeight(filtered[j])
 		if wi != wj {
 			return wi > wj
 		}
-		return sortedIDs[i] < sortedIDs[j]
+		return filtered[i] < filtered[j]
 	})
 
-	// Filter to only shaders that compiled successfully
-	m.cachedSortedShaders = make([]*ebiten.Shader, 0, len(sortedIDs))
-	for _, id := range sortedIDs {
+	// Keep only shaders that compiled successfully
+	m.cachedSortedShaders = make([]*ebiten.Shader, 0, len(filtered))
+	for _, id := range filtered {
 		if s, ok := m.shaders[id]; ok {
 			m.cachedSortedShaders = append(m.cachedSortedShaders, s)
 		}
@@ -324,24 +321,8 @@ func hasGhosting(shaderIDs []string) bool {
 	return false
 }
 
-// removeGhosting returns a new slice without "ghosting"
-func removeGhosting(shaderIDs []string) []string {
-	result := make([]string, 0, len(shaderIDs))
-	for _, id := range shaderIDs {
-		if id != "ghosting" {
-			result = append(result, id)
-		}
-	}
-	return result
-}
-
 // HasXBR returns true if "xbr" is in the shader list (exported for app.go)
 func HasXBR(shaderIDs []string) bool {
-	return hasXBR(shaderIDs)
-}
-
-// hasXBR returns true if "xbr" is in the shader list
-func hasXBR(shaderIDs []string) bool {
 	for _, id := range shaderIDs {
 		if id == "xbr" {
 			return true
@@ -350,46 +331,28 @@ func hasXBR(shaderIDs []string) bool {
 	return false
 }
 
-// removeXBR returns a new slice without "xbr"
-func removeXBR(shaderIDs []string) []string {
-	result := make([]string, 0, len(shaderIDs))
-	for _, id := range shaderIDs {
-		if id != "xbr" {
-			result = append(result, id)
-		}
-	}
-	return result
-}
-
 // ApplyPreprocessEffects applies xBR and ghosting effects (not Kage shaders).
 // If xBR is in shaderIDs, src should be native resolution and will be scaled to screen size.
 // Otherwise, src should already be screen resolution.
-// Returns the processed image (screen-sized) and remaining shader IDs.
-func (m *Manager) ApplyPreprocessEffects(src *ebiten.Image, shaderIDs []string, screenW, screenH int) (*ebiten.Image, []string) {
+// Returns the processed image (screen-sized).
+func (m *Manager) ApplyPreprocessEffects(src *ebiten.Image, shaderIDs []string, screenW, screenH int) *ebiten.Image {
 	if src == nil {
-		// Nothing to process, filter out special effects and return
-		filtered := shaderIDs
-		filtered = removeXBR(filtered)
-		filtered = removeGhosting(filtered)
-		return nil, filtered
+		return nil
 	}
 
 	effectiveInput := src
-	remainingShaders := shaderIDs
 
 	// Handle xBR first (scales native -> screen size with smoothing)
-	if hasXBR(shaderIDs) {
+	if HasXBR(shaderIDs) {
 		effectiveInput = m.xbrScaler.Apply(src, screenW, screenH)
-		remainingShaders = removeXBR(remainingShaders)
 	}
 
 	// Handle ghosting second (operates at screen size)
-	if hasGhosting(remainingShaders) {
+	if hasGhosting(shaderIDs) {
 		effectiveInput = m.applyGhosting(effectiveInput)
-		remainingShaders = removeGhosting(remainingShaders)
 	}
 
-	return effectiveInput, remainingShaders
+	return effectiveInput
 }
 
 // ApplyShaders draws src to dst with the specified shader chain applied.

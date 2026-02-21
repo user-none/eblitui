@@ -58,13 +58,28 @@ func (v *VideoSection) Build(focus types.FocusManager) *widget.Container {
 
 // setupNavigation registers navigation zones for the video section
 func (v *VideoSection) setupNavigation(focus types.FocusManager) {
-	// Shader grid zone (2 columns: UI, Game)
-	shaderKeys := make([]string, 0, len(shader.AvailableShaders)*2)
+	// Preprocessing effects: game-only, 1-column grid
+	preprocessKeys := make([]string, 0)
 	for _, info := range shader.AvailableShaders {
-		shaderKeys = append(shaderKeys, "shader-ui-"+info.ID)
-		shaderKeys = append(shaderKeys, "shader-game-"+info.ID)
+		if info.Preprocess {
+			preprocessKeys = append(preprocessKeys, "shader-game-"+info.ID)
+		}
 	}
-	focus.RegisterNavZone("video-shaders", types.NavZoneGrid, shaderKeys, 2)
+	if len(preprocessKeys) > 0 {
+		focus.RegisterNavZone("video-preprocess", types.NavZoneGrid, preprocessKeys, 1)
+	}
+
+	// Regular shaders: UI+Game, 2-column grid
+	shaderKeys := make([]string, 0)
+	for _, info := range shader.AvailableShaders {
+		if !info.Preprocess {
+			shaderKeys = append(shaderKeys, "shader-ui-"+info.ID)
+			shaderKeys = append(shaderKeys, "shader-game-"+info.ID)
+		}
+	}
+	if len(shaderKeys) > 0 {
+		focus.RegisterNavZone("video-shaders", types.NavZoneGrid, shaderKeys, 2)
+	}
 }
 
 // buildShadersList creates the scrollable shaders list
@@ -129,7 +144,6 @@ func (v *VideoSection) maxShaderLabelWidth() float64 {
 
 // buildShaderRow creates a row for a single shader with UI and Game toggle buttons
 func (v *VideoSection) buildShaderRow(info shader.ShaderInfo, focus types.FocusManager) *widget.Container {
-	uiEnabled := v.isShaderEnabledForUI(info.ID)
 	gameEnabled := v.isShaderEnabledForGame(info.ID)
 
 	// Truncate text to prevent pushing buttons off-screen at large font sizes
@@ -170,25 +184,39 @@ func (v *VideoSection) buildShaderRow(info shader.ShaderInfo, focus types.FocusM
 
 	row.AddChild(infoContainer)
 
-	// UI toggle button
-	uiBtn := widget.NewButton(
-		widget.ButtonOpts.Image(style.ActiveButtonImage(uiEnabled)),
-		widget.ButtonOpts.Text("UI", style.FontFace(), style.ButtonTextColor()),
-		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
-		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
+	// UI toggle button (hidden for game-only preprocessing effects)
+	supportsUI := info.Context&shader.ContextUI != 0
+	if supportsUI {
+		uiEnabled := v.isShaderEnabledForUI(info.ID)
+		uiBtn := widget.NewButton(
+			widget.ButtonOpts.Image(style.ActiveButtonImage(uiEnabled)),
+			widget.ButtonOpts.Text("UI", style.FontFace(), style.ButtonTextColor()),
+			widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
+			widget.ButtonOpts.WidgetOpts(
+				widget.WidgetOpts.LayoutData(widget.GridLayoutData{
+					VerticalPosition: widget.GridLayoutPositionCenter,
+				}),
+			),
+			widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
+				v.toggleShaderUI(info.ID)
+				storage.SaveConfig(v.config)
+				focus.SetPendingFocus("shader-ui-" + info.ID)
+				v.callback.RequestRebuild()
 			}),
-		),
-		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			v.toggleShaderUI(info.ID)
-			storage.SaveConfig(v.config)
-			focus.SetPendingFocus("shader-ui-" + info.ID)
-			v.callback.RequestRebuild()
-		}),
-	)
-	focus.RegisterFocusButton("shader-ui-"+info.ID, uiBtn)
-	row.AddChild(uiBtn)
+		)
+		focus.RegisterFocusButton("shader-ui-"+info.ID, uiBtn)
+		row.AddChild(uiBtn)
+	} else {
+		// Empty placeholder to maintain 3-column grid layout
+		placeholder := widget.NewContainer(
+			widget.ContainerOpts.WidgetOpts(
+				widget.WidgetOpts.LayoutData(widget.GridLayoutData{
+					VerticalPosition: widget.GridLayoutPositionCenter,
+				}),
+			),
+		)
+		row.AddChild(placeholder)
+	}
 
 	// Game toggle button
 	gameBtn := widget.NewButton(
