@@ -4,6 +4,7 @@ package settings
 
 import (
 	"github.com/ebitenui/ebitenui/widget"
+	emucore "github.com/user-none/eblitui/api"
 	"github.com/user-none/eblitui/standalone/shader"
 	"github.com/user-none/eblitui/standalone/storage"
 	"github.com/user-none/eblitui/standalone/style"
@@ -12,16 +13,23 @@ import (
 
 // VideoSection manages video settings including shaders
 type VideoSection struct {
-	callback types.ScreenCallback
-	config   *storage.Config
+	callback   types.ScreenCallback
+	config     *storage.Config
+	systemInfo emucore.SystemInfo
 }
 
 // NewVideoSection creates a new video section
-func NewVideoSection(callback types.ScreenCallback, config *storage.Config) *VideoSection {
+func NewVideoSection(callback types.ScreenCallback, config *storage.Config, systemInfo emucore.SystemInfo) *VideoSection {
 	return &VideoSection{
-		callback: callback,
-		config:   config,
+		callback:   callback,
+		config:     config,
+		systemInfo: systemInfo,
 	}
+}
+
+// SystemInfo returns the system info for navigation setup
+func (v *VideoSection) SystemInfo() emucore.SystemInfo {
+	return v.systemInfo
 }
 
 // SetConfig updates the config reference
@@ -31,33 +39,35 @@ func (v *VideoSection) SetConfig(config *storage.Config) {
 
 // Build creates the video section UI
 func (v *VideoSection) Build(focus types.FocusManager) *widget.Container {
-	// Use GridLayout so content can stretch
-	section := widget.NewContainer(
+	outer := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewGridLayout(
 			widget.GridLayoutOpts.Columns(1),
-			// Row stretch: shaderLabel=no, shaderList=YES
-			widget.GridLayoutOpts.Stretch([]bool{true}, []bool{false, true}),
-			widget.GridLayoutOpts.Spacing(0, style.DefaultSpacing),
+			widget.GridLayoutOpts.Stretch([]bool{true}, []bool{true}),
 		)),
 	)
 
-	// Shaders label
-	shadersLabel := widget.NewText(
-		widget.TextOpts.Text("Shader Effects", style.FontFace(), style.Accent),
-	)
-	section.AddChild(shadersLabel)
-
-	// Shaders list in scrollable container
-	section.AddChild(v.buildShadersList(focus))
+	// Shaders list in scrollable container (includes core options and header)
+	outer.AddChild(v.buildShadersList(focus))
 
 	// Set up navigation zones
 	v.setupNavigation(focus)
 
-	return section
+	return outer
 }
 
 // setupNavigation registers navigation zones for the video section
 func (v *VideoSection) setupNavigation(focus types.FocusManager) {
+	// Core options zone
+	coreOptKeys := make([]string, 0)
+	for _, opt := range v.systemInfo.CoreOptions {
+		if opt.Category == emucore.CoreOptionCategoryVideo {
+			coreOptKeys = append(coreOptKeys, "video-opt-"+opt.Key)
+		}
+	}
+	if len(coreOptKeys) > 0 {
+		focus.RegisterNavZone("video-core-opts", types.NavZoneVertical, coreOptKeys, 0)
+	}
+
 	// Preprocessing effects: game-only, 1-column grid
 	preprocessKeys := make([]string, 0)
 	for _, info := range shader.AvailableShaders {
@@ -80,9 +90,23 @@ func (v *VideoSection) setupNavigation(focus types.FocusManager) {
 	if len(shaderKeys) > 0 {
 		focus.RegisterNavZone("video-shaders", types.NavZoneGrid, shaderKeys, 2)
 	}
+
+	// Transitions from core options to first shader zone
+	if len(coreOptKeys) > 0 {
+		firstShaderZone := "video-shaders"
+		if len(preprocessKeys) > 0 {
+			firstShaderZone = "video-preprocess"
+		}
+		focus.SetNavTransition("video-core-opts", types.DirDown, firstShaderZone, types.NavIndexFirst)
+		if len(preprocessKeys) > 0 {
+			focus.SetNavTransition("video-preprocess", types.DirUp, "video-core-opts", types.NavIndexFirst)
+		} else if len(shaderKeys) > 0 {
+			focus.SetNavTransition("video-shaders", types.DirUp, "video-core-opts", types.NavIndexFirst)
+		}
+	}
 }
 
-// buildShadersList creates the scrollable shaders list
+// buildShadersList creates the scrollable shaders list with core options and header
 func (v *VideoSection) buildShadersList(focus types.FocusManager) widget.PreferredSizeLocateableWidget {
 	listContent := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
@@ -90,6 +114,27 @@ func (v *VideoSection) buildShadersList(focus types.FocusManager) widget.Preferr
 			widget.RowLayoutOpts.Spacing(style.SmallSpacing),
 		)),
 	)
+
+	// Core options filtered by video category
+	hasVideoOptions := false
+	for _, opt := range v.systemInfo.CoreOptions {
+		if opt.Category == emucore.CoreOptionCategoryVideo {
+			hasVideoOptions = true
+			listContent.AddChild(buildCoreOptionRow(focus, v.callback, v.config, opt, "video"))
+		}
+	}
+
+	if hasVideoOptions {
+		listContent.AddChild(widget.NewText(
+			widget.TextOpts.Text("", style.FontFace(), style.TextSecondary),
+		))
+	}
+
+	// Shaders header
+	shadersLabel := widget.NewText(
+		widget.TextOpts.Text("Shader Effects", style.FontFace(), style.Accent),
+	)
+	listContent.AddChild(shadersLabel)
 
 	for _, shaderInfo := range shader.AvailableShaders {
 		listContent.AddChild(v.buildShaderRow(shaderInfo, focus))

@@ -39,8 +39,8 @@ func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config
 		selectedSection:   0,
 		library:           settings.NewLibrarySection(callback, library),
 		appearance:        settings.NewAppearanceSection(callback, config),
-		video:             settings.NewVideoSection(callback, config),
-		audio:             settings.NewAudioSection(callback, config),
+		video:             settings.NewVideoSection(callback, config, systemInfo),
+		audio:             settings.NewAudioSection(callback, config, systemInfo),
 		rewind:            settings.NewRewindSection(callback, config, serializeSize),
 		retroAchievements: settings.NewRetroAchievementsSection(callback, config, achievementMgr),
 		input:             settings.NewInputSection(callback, config, systemInfo),
@@ -330,10 +330,27 @@ func (s *SettingsScreen) setupNavigation() {
 		s.SetNavTransition("sidebar", types.DirRight, "theme-list", types.NavIndexFirst)
 		s.SetNavTransition("theme-list", types.DirLeft, "sidebar", types.NavIndexFirst)
 	case 2: // Video
-		s.SetNavTransition("sidebar", types.DirRight, "video-shaders", types.NavIndexFirst)
+		firstVideoZone := "video-shaders"
+		for _, opt := range s.video.SystemInfo().CoreOptions {
+			if opt.Category == emucore.CoreOptionCategoryVideo {
+				firstVideoZone = "video-core-opts"
+				break
+			}
+		}
+		s.SetNavTransition("sidebar", types.DirRight, firstVideoZone, types.NavIndexFirst)
+		s.SetNavTransition("video-core-opts", types.DirLeft, "sidebar", types.NavIndexFirst)
+		s.SetNavTransition("video-preprocess", types.DirLeft, "sidebar", types.NavIndexFirst)
 		s.SetNavTransition("video-shaders", types.DirLeft, "sidebar", types.NavIndexFirst)
 	case 3: // Audio
-		s.SetNavTransition("sidebar", types.DirRight, "audio-mute", types.NavIndexFirst)
+		firstAudioZone := "audio-mute"
+		for _, opt := range s.audio.SystemInfo().CoreOptions {
+			if opt.Category == emucore.CoreOptionCategoryAudio {
+				firstAudioZone = "audio-core-opts"
+				break
+			}
+		}
+		s.SetNavTransition("sidebar", types.DirRight, firstAudioZone, types.NavIndexFirst)
+		s.SetNavTransition("audio-core-opts", types.DirLeft, "sidebar", types.NavIndexFirst)
 		s.SetNavTransition("audio-mute", types.DirLeft, "sidebar", types.NavIndexFirst)
 		s.SetNavTransition("audio-volume", types.DirLeft, "sidebar", types.NavIndexFirst)
 		s.SetNavTransition("audio-ff-mute", types.DirLeft, "sidebar", types.NavIndexFirst)

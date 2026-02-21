@@ -8,6 +8,7 @@ import (
 
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
+	emucore "github.com/user-none/eblitui/api"
 	"github.com/user-none/eblitui/standalone/storage"
 	"github.com/user-none/eblitui/standalone/style"
 	"github.com/user-none/eblitui/standalone/types"
@@ -21,19 +22,26 @@ const (
 
 // AudioSection manages audio settings
 type AudioSection struct {
-	callback types.ScreenCallback
-	config   *storage.Config
+	callback   types.ScreenCallback
+	config     *storage.Config
+	systemInfo emucore.SystemInfo
 
 	// Live-updated text widget (avoid rebuild on +/- to preserve focus)
 	volumeValueText *widget.Text
 }
 
 // NewAudioSection creates a new audio section
-func NewAudioSection(callback types.ScreenCallback, config *storage.Config) *AudioSection {
+func NewAudioSection(callback types.ScreenCallback, config *storage.Config, systemInfo emucore.SystemInfo) *AudioSection {
 	return &AudioSection{
-		callback: callback,
-		config:   config,
+		callback:   callback,
+		config:     config,
+		systemInfo: systemInfo,
 	}
+}
+
+// SystemInfo returns the system info for navigation setup
+func (a *AudioSection) SystemInfo() emucore.SystemInfo {
+	return a.systemInfo
 }
 
 // SetConfig updates the config reference
@@ -43,12 +51,34 @@ func (a *AudioSection) SetConfig(config *storage.Config) {
 
 // Build creates the audio section UI
 func (a *AudioSection) Build(focus types.FocusManager) *widget.Container {
+	outer := widget.NewContainer(
+		widget.ContainerOpts.Layout(widget.NewGridLayout(
+			widget.GridLayoutOpts.Columns(1),
+			widget.GridLayoutOpts.Stretch([]bool{true}, []bool{true}),
+		)),
+	)
+
 	section := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
 			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
-			widget.RowLayoutOpts.Spacing(style.DefaultSpacing),
+			widget.RowLayoutOpts.Spacing(style.SmallSpacing),
 		)),
 	)
+
+	// Core options filtered by audio category
+	hasAudioOptions := false
+	for _, opt := range a.systemInfo.CoreOptions {
+		if opt.Category == emucore.CoreOptionCategoryAudio {
+			hasAudioOptions = true
+			section.AddChild(buildCoreOptionRow(focus, a.callback, a.config, opt, "audio"))
+		}
+	}
+
+	if hasAudioOptions {
+		section.AddChild(widget.NewText(
+			widget.TextOpts.Text("", style.FontFace(), style.TextSecondary),
+		))
+	}
 
 	// Mute Game Audio toggle
 	section.AddChild(a.buildMuteRow(focus))
@@ -61,15 +91,40 @@ func (a *AudioSection) Build(focus types.FocusManager) *widget.Container {
 
 	a.setupNavigation(focus)
 
-	return section
+	scrollContainer, vSlider, scrollWrapper := style.ScrollableContainer(style.ScrollableOpts{
+		Content:     section,
+		BgColor:     style.Background,
+		BorderColor: style.Border,
+		Spacing:     0,
+		Padding:     style.SmallSpacing,
+	})
+	focus.SetScrollWidgets(scrollContainer, vSlider)
+	focus.RestoreScrollPosition()
+	outer.AddChild(scrollWrapper)
+	return outer
 }
 
 // setupNavigation registers navigation zones for the audio section
 func (a *AudioSection) setupNavigation(focus types.FocusManager) {
+	// Core options zone
+	coreOptKeys := make([]string, 0)
+	for _, opt := range a.systemInfo.CoreOptions {
+		if opt.Category == emucore.CoreOptionCategoryAudio {
+			coreOptKeys = append(coreOptKeys, "audio-opt-"+opt.Key)
+		}
+	}
+	if len(coreOptKeys) > 0 {
+		focus.RegisterNavZone("audio-core-opts", types.NavZoneVertical, coreOptKeys, 0)
+	}
+
 	focus.RegisterNavZone("audio-mute", types.NavZoneHorizontal, []string{"audio-mute"}, 0)
 	focus.RegisterNavZone("audio-volume", types.NavZoneGrid, []string{"audio-vol-dec", "audio-vol-inc"}, 2)
 	focus.RegisterNavZone("audio-ff-mute", types.NavZoneHorizontal, []string{"audio-ff-mute"}, 0)
 
+	if len(coreOptKeys) > 0 {
+		focus.SetNavTransition("audio-core-opts", types.DirDown, "audio-mute", types.NavIndexFirst)
+		focus.SetNavTransition("audio-mute", types.DirUp, "audio-core-opts", types.NavIndexFirst)
+	}
 	focus.SetNavTransition("audio-mute", types.DirDown, "audio-volume", types.NavIndexFirst)
 	focus.SetNavTransition("audio-volume", types.DirUp, "audio-mute", types.NavIndexFirst)
 	focus.SetNavTransition("audio-volume", types.DirDown, "audio-ff-mute", types.NavIndexFirst)
