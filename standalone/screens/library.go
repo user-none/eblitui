@@ -18,6 +18,12 @@ import (
 	"github.com/user-none/eblitui/standalone/types"
 )
 
+// iconArtwork holds dual-size artwork for the icon view zoom effect.
+type iconArtwork struct {
+	normal  *ebiten.Image // Unfocused size (slightly smaller than 100%)
+	focused *ebiten.Image // Full size (100%)
+}
+
 // LibraryScreen displays the game library
 type LibraryScreen struct {
 	BaseScreen // Embedded for focus restoration
@@ -42,8 +48,8 @@ type LibraryScreen struct {
 	listScrollContainer *widget.ScrollContainer
 	listVSlider         *widget.Slider
 
-	// Artwork cache: key = "crc32", value = scaled ebiten.Image
-	artworkCache      map[string]*ebiten.Image
+	// Artwork cache: key = "crc32", value = dual-size artwork
+	artworkCache      map[string]*iconArtwork
 	cachedWindowWidth int // Track window width to detect resize
 
 	// Search filter
@@ -57,7 +63,7 @@ func NewLibraryScreen(callback ScreenCallback, library *storage.Library, config 
 		library:       library,
 		config:        config,
 		selectedIndex: 0,
-		artworkCache:  make(map[string]*ebiten.Image),
+		artworkCache:  make(map[string]*iconArtwork),
 	}
 	s.InitBase()
 	return s
@@ -76,12 +82,17 @@ func (s *LibraryScreen) SetConfig(config *storage.Config) {
 // ClearArtworkCache clears the cached artwork images.
 // Should be called after library scan or when library locations change.
 func (s *LibraryScreen) ClearArtworkCache() {
-	for _, img := range s.artworkCache {
-		if img != nil {
-			img.Deallocate()
+	for _, art := range s.artworkCache {
+		if art != nil {
+			if art.normal != nil {
+				art.normal.Deallocate()
+			}
+			if art.focused != nil {
+				art.focused.Deallocate()
+			}
 		}
 	}
-	s.artworkCache = make(map[string]*ebiten.Image)
+	s.artworkCache = make(map[string]*iconArtwork)
 	s.cachedWindowWidth = 0
 }
 
@@ -660,8 +671,8 @@ func (s *LibraryScreen) buildIconView(container *widget.Container) int {
 
 // buildGameCardSized creates a game card with specific dimensions
 func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, cardHeight, artHeight int) *widget.Container {
-	// Load artwork scaled to fit
-	artwork := s.loadGameArtworkSized(game.CRC32, cardWidth, artHeight)
+	// Load dual-size artwork for zoom effect
+	normalArt, focusedArt := s.loadGameArtworkPair(game.CRC32, cardWidth, artHeight)
 
 	// Inner card content
 	cardContent := widget.NewContainer(
@@ -689,7 +700,12 @@ func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, c
 		),
 	)
 
-	// Artwork button (clickable)
+	// Artwork graphic (renders on top of button, swapped for zoom effect)
+	artGraphic := widget.NewGraphic(
+		widget.GraphicOpts.Image(normalArt),
+	)
+
+	// Artwork button (handles bg colors, click, focus - no graphic image)
 	gameCRC := game.CRC32 // Capture for closure
 	var artButton *widget.Button
 	artButton = widget.NewButton(
@@ -702,14 +718,15 @@ func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, c
 			widget.WidgetOpts.MinSize(cardWidth, artHeight),
 			widget.WidgetOpts.CursorEnterHandler(func(args *widget.WidgetCursorEnterEventArgs) {
 				titleLabel.SetColor(style.Accent)
+				artGraphic.Image = focusedArt
 			}),
 			widget.WidgetOpts.CursorExitHandler(func(args *widget.WidgetCursorExitEventArgs) {
 				if !artButton.IsFocused() {
 					titleLabel.SetColor(style.Text)
+					artGraphic.Image = normalArt
 				}
 			}),
 		),
-		widget.ButtonOpts.Graphic(&widget.GraphicImage{Idle: artwork}),
 		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
 			// Save scroll position and selected game before navigating
 			s.iconSelectedCRC = gameCRC
@@ -721,13 +738,15 @@ func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, c
 		}),
 	)
 
-	// Update title color on keyboard/gamepad focus changes
+	// Update title color and artwork on keyboard/gamepad focus changes
 	artButton.GetWidget().FocusEvent.AddHandler(func(args interface{}) {
 		if a, ok := args.(*widget.WidgetFocusEventArgs); ok {
 			if a.Focused {
 				titleLabel.SetColor(style.Accent)
+				artGraphic.Image = focusedArt
 			} else {
 				titleLabel.SetColor(style.Text)
+				artGraphic.Image = normalArt
 			}
 		}
 	})
@@ -735,7 +754,20 @@ func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, c
 	// Store button reference for focus restoration
 	s.RegisterFocusButton("game-"+gameCRC, artButton)
 
-	cardContent.AddChild(artButton)
+	// Stack: button at bottom (background), graphic on top (artwork)
+	artStack := widget.NewContainer(
+		widget.ContainerOpts.Layout(widget.NewStackedLayout()),
+		widget.ContainerOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.RowLayoutData{
+				Stretch: true,
+			}),
+			widget.WidgetOpts.MinSize(cardWidth, artHeight),
+		),
+	)
+	artStack.AddChild(artButton)
+	artStack.AddChild(artGraphic)
+
+	cardContent.AddChild(artStack)
 	cardContent.AddChild(titleLabel)
 
 	// Wrapper with AnchorLayout to center the card content in the grid cell
@@ -747,61 +779,74 @@ func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, c
 	return card
 }
 
-// loadGameArtworkSized loads artwork scaled to specific dimensions
-func (s *LibraryScreen) loadGameArtworkSized(gameCRC string, maxWidth, maxHeight int) *ebiten.Image {
+// loadGameArtworkPair loads artwork at two sizes for the icon view zoom effect.
+// Returns (normal, focused) where normal is ~91% and focused is 100%.
+func (s *LibraryScreen) loadGameArtworkPair(gameCRC string, maxWidth, maxHeight int) (normal, focused *ebiten.Image) {
 	// Check cache first
 	if cached, ok := s.artworkCache[gameCRC]; ok {
-		return cached
+		return cached.normal, cached.focused
 	}
 
 	artPath, err := storage.GetGameArtworkPath(gameCRC)
 	if err != nil {
-		return s.getPlaceholderImageSized(maxWidth, maxHeight)
+		return s.getPlaceholderImagePair(maxWidth, maxHeight)
 	}
 
 	data, err := os.ReadFile(artPath)
 	if err != nil {
-		return s.getPlaceholderImageSized(maxWidth, maxHeight)
+		return s.getPlaceholderImagePair(maxWidth, maxHeight)
 	}
 
 	img, _, err := goimage.Decode(bytes.NewReader(data))
 	if err != nil {
-		return s.getPlaceholderImageSized(maxWidth, maxHeight)
+		return s.getPlaceholderImagePair(maxWidth, maxHeight)
 	}
 
-	scaled := style.ScaleImage(img, maxWidth, maxHeight)
-	s.artworkCache[gameCRC] = scaled
-	return scaled
+	focusedImg := style.ScaleImage(img, maxWidth, maxHeight)
+	normalW := int(float64(maxWidth) * style.IconUnfocusedScale)
+	normalH := int(float64(maxHeight) * style.IconUnfocusedScale)
+	normalImg := style.ScaleImage(img, normalW, normalH)
+
+	s.artworkCache[gameCRC] = &iconArtwork{normal: normalImg, focused: focusedImg}
+	return normalImg, focusedImg
 }
 
-// getPlaceholderImageSized returns the placeholder image scaled to the specified size
-func (s *LibraryScreen) getPlaceholderImageSized(width, height int) *ebiten.Image {
+// getPlaceholderImagePair returns the placeholder image at two sizes for the zoom effect.
+func (s *LibraryScreen) getPlaceholderImagePair(width, height int) (normal, focused *ebiten.Image) {
 	const placeholderKey = "placeholder"
 	if cached, ok := s.artworkCache[placeholderKey]; ok {
-		return cached
+		return cached.normal, cached.focused
 	}
+
+	normalW := int(float64(width) * style.IconUnfocusedScale)
+	normalH := int(float64(height) * style.IconUnfocusedScale)
 
 	data := s.callback.GetPlaceholderImageData()
 	if data == nil {
 		// Fallback to solid color if no placeholder data
-		img := ebiten.NewImage(width, height)
-		img.Fill(style.Surface)
-		s.artworkCache[placeholderKey] = img
-		return img
+		focusedImg := ebiten.NewImage(width, height)
+		focusedImg.Fill(style.Surface)
+		normalImg := ebiten.NewImage(normalW, normalH)
+		normalImg.Fill(style.Surface)
+		s.artworkCache[placeholderKey] = &iconArtwork{normal: normalImg, focused: focusedImg}
+		return normalImg, focusedImg
 	}
 
 	img, _, err := goimage.Decode(bytes.NewReader(data))
 	if err != nil {
 		// Fallback to solid color on decode error
-		fallback := ebiten.NewImage(width, height)
-		fallback.Fill(style.Surface)
-		s.artworkCache[placeholderKey] = fallback
-		return fallback
+		focusedImg := ebiten.NewImage(width, height)
+		focusedImg.Fill(style.Surface)
+		normalImg := ebiten.NewImage(normalW, normalH)
+		normalImg.Fill(style.Surface)
+		s.artworkCache[placeholderKey] = &iconArtwork{normal: normalImg, focused: focusedImg}
+		return normalImg, focusedImg
 	}
 
-	scaled := style.ScaleImage(img, width, height)
-	s.artworkCache[placeholderKey] = scaled
-	return scaled
+	focusedImg := style.ScaleImage(img, width, height)
+	normalImg := style.ScaleImage(img, normalW, normalH)
+	s.artworkCache[placeholderKey] = &iconArtwork{normal: normalImg, focused: focusedImg}
+	return normalImg, focusedImg
 }
 
 // SaveScrollPosition saves the current scroll position before a rebuild

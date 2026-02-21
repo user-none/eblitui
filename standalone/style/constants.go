@@ -17,6 +17,7 @@ const (
 	baseButtonPaddingMedium = 12
 	baseIconMinCardWidth    = 200
 	baseIconDefaultWinWidth = 800
+	baseIconUnfocusedScale  = 0.95
 	baseDetailArtSmall      = 150
 	baseDetailArtLarge      = 400
 	baseSidebarMinWidth     = 180
@@ -105,6 +106,7 @@ var (
 var (
 	IconMinCardWidth       = baseIconMinCardWidth
 	IconDefaultWindowWidth = baseIconDefaultWinWidth
+	IconUnfocusedScale     = baseIconUnfocusedScale
 )
 
 // Detail screen vars
