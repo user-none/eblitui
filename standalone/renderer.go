@@ -35,14 +35,15 @@ func (r *FramebufferRenderer) DrawFramebuffer(screen *ebiten.Image, pixels []byt
 		return
 	}
 
-	if r.offscreen == nil || r.offscreen.Bounds().Dy() != activeHeight {
-		r.offscreen = ebiten.NewImage(r.screenWidth, activeHeight)
+	pixelWidth := stride / 4
+	if r.offscreen == nil || r.offscreen.Bounds().Dx() != pixelWidth || r.offscreen.Bounds().Dy() != activeHeight {
+		r.offscreen = ebiten.NewImage(pixelWidth, activeHeight)
 	}
 
 	r.offscreen.WritePixels(pixels[:requiredLen])
 
 	screenW, screenH := screen.Bounds().Dx(), screen.Bounds().Dy()
-	nativeW := float64(r.screenWidth)
+	nativeW := float64(pixelWidth)
 	nativeH := float64(activeHeight)
 
 	scaleX := float64(screenW) / nativeW
@@ -76,8 +77,9 @@ func (r *FramebufferRenderer) GetFramebufferImage(pixels []byte, stride, activeH
 		return nil
 	}
 
-	if r.offscreen == nil || r.offscreen.Bounds().Dy() != activeHeight {
-		r.offscreen = ebiten.NewImage(r.screenWidth, activeHeight)
+	pixelWidth := stride / 4
+	if r.offscreen == nil || r.offscreen.Bounds().Dx() != pixelWidth || r.offscreen.Bounds().Dy() != activeHeight {
+		r.offscreen = ebiten.NewImage(pixelWidth, activeHeight)
 	}
 
 	r.offscreen.WritePixels(pixels[:requiredLen])
