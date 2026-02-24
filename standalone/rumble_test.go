@@ -119,6 +119,88 @@ cheat2_rumble_secondary_duration = "150"
 	}
 }
 
+func TestParseRumbleFileBigEndian(t *testing.T) {
+	content := `cheats = "2"
+cheat0_big_endian = "true"
+cheat0_address = "100"
+cheat0_memory_search_size = "3"
+cheat0_rumble_type = "1"
+cheat0_rumble_primary_strength = "65535"
+cheat0_rumble_primary_duration = "200"
+cheat1_big_endian = "false"
+cheat1_address = "200"
+cheat1_memory_search_size = "3"
+cheat1_rumble_type = "1"
+cheat1_rumble_primary_strength = "65535"
+cheat1_rumble_primary_duration = "200"
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.cht")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := ParseRumbleFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if !entries[0].BigEndian {
+		t.Error("entry 0: expected BigEndian=true")
+	}
+	if entries[1].BigEndian {
+		t.Error("entry 1: expected BigEndian=false")
+	}
+}
+
+func TestRumbleEngineByteSwapPerEntry(t *testing.T) {
+	// Two entries: one big-endian CHT, one little-endian CHT.
+	// System is big-endian. The little-endian entry needs swap, the big-endian does not.
+	entries := []RumbleEntry{
+		{
+			Address:          100,
+			MemorySearchSize: 3,
+			RumbleType:       1,
+			BigEndian:        true, // matches system -> no swap
+			PrimaryStrength:  65535,
+			PrimaryDuration:  200,
+		},
+		{
+			Address:          200,
+			MemorySearchSize: 3,
+			RumbleType:       1,
+			BigEndian:        false, // differs from system -> swap
+			PrimaryStrength:  65535,
+			PrimaryDuration:  200,
+		},
+	}
+
+	engine := NewRumbleEngine(entries, true) // system is big-endian
+	mi := newMockMemoryInspector()
+
+	// For entry 0 (no swap): value at addr 100
+	mi.set8(100, 0x42)
+	// For entry 1 (swap): addr 200 XOR 1 = 201
+	mi.set8(201, 0x55)
+
+	// Run warmup
+	for i := 0; i < 30; i++ {
+		engine.Evaluate(mi)
+	}
+
+	// Change entry 0 value directly at addr 100 (no swap)
+	mi.set8(100, 0x43)
+	// Change entry 1 value at addr 201 (swapped from 200)
+	mi.set8(201, 0x56)
+
+	events := engine.Evaluate(mi)
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(events))
+	}
+}
+
 func TestParseRumbleFileMissingFields(t *testing.T) {
 	content := `cheats = "1"
 cheat0_address = "1000"
@@ -147,11 +229,14 @@ cheat0_rumble_primary_duration = "200"
 	if e.MemorySearchSize != 0 {
 		t.Errorf("search size: expected 0 (default), got %d", e.MemorySearchSize)
 	}
-	if e.RumblePort != 16 {
-		t.Errorf("port: expected 16 (default all), got %d", e.RumblePort)
+	if e.RumblePort != 1 {
+		t.Errorf("port: expected 1 (default), got %d", e.RumblePort)
 	}
 	if e.SecondaryStrength != 0 {
 		t.Errorf("secondary strength: expected 0 (default), got %d", e.SecondaryStrength)
+	}
+	if e.BigEndian {
+		t.Error("big endian: expected false (default)")
 	}
 }
 

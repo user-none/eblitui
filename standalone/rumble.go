@@ -29,6 +29,7 @@ type RumbleEntry struct {
 	RumbleType        int    // 0-10 (0 treated as 1/changes)
 	RumbleValue       uint32 // comparison value for types 5-10
 	RumblePort        int    // 0-15 specific, else all
+	BigEndian         bool   // CHT entry's big_endian field
 	PrimaryStrength   uint16 // 0-65535
 	PrimaryDuration   int    // milliseconds
 	SecondaryStrength uint16 // 0-65535
@@ -89,6 +90,9 @@ func ParseRumbleFile(path string) ([]RumbleEntry, error) {
 			RumblePort: 1, // default: controller 1
 		}
 
+		if v, ok := kv[prefix+"big_endian"]; ok {
+			entry.BigEndian = v == "true"
+		}
 		if v, ok := kv[prefix+"address"]; ok {
 			addr, err := strconv.ParseUint(v, 10, 32)
 			if err == nil {
@@ -152,18 +156,19 @@ func ParseRumbleFile(path string) ([]RumbleEntry, error) {
 
 // RumbleEngine evaluates rumble entries each frame and produces rumble events.
 type RumbleEngine struct {
-	entries      []RumbleEntry
-	prevValues   []uint32
-	initialized  int // warmup frame counter
-	primaryEnd   []time.Time
-	secondaryEnd []time.Time
-	byteSwap     bool // true when CHT addresses assume byte-swapped memory (big-endian systems)
+	entries        []RumbleEntry
+	prevValues     []uint32
+	initialized    int // warmup frame counter
+	primaryEnd     []time.Time
+	secondaryEnd   []time.Time
+	systemBigEndian bool // true when the core uses big-endian memory (e.g. 68K)
 }
 
 // NewRumbleEngine creates a new rumble engine from parsed entries.
-// byteSwap should be true for big-endian systems (e.g. Genesis/68K) where
-// CHT addresses assume a byte-swapped little-endian memory view.
-func NewRumbleEngine(entries []RumbleEntry, byteSwap bool) *RumbleEngine {
+// systemBigEndian should match SystemInfo.BigEndianMemory for the core.
+// Byte swapping is determined per-entry by comparing the CHT entry's
+// big_endian field against the system endianness.
+func NewRumbleEngine(entries []RumbleEntry, systemBigEndian bool) *RumbleEngine {
 	n := len(entries)
 	now := time.Now()
 	pEnd := make([]time.Time, n)
@@ -173,11 +178,11 @@ func NewRumbleEngine(entries []RumbleEntry, byteSwap bool) *RumbleEngine {
 		sEnd[i] = now
 	}
 	return &RumbleEngine{
-		entries:      entries,
-		prevValues:   make([]uint32, n),
-		primaryEnd:   pEnd,
-		secondaryEnd: sEnd,
-		byteSwap:     byteSwap,
+		entries:         entries,
+		prevValues:      make([]uint32, n),
+		primaryEnd:      pEnd,
+		secondaryEnd:    sEnd,
+		systemBigEndian: systemBigEndian,
 	}
 }
 
@@ -186,7 +191,8 @@ func (re *RumbleEngine) Evaluate(mi emucore.MemoryInspector) []RumbleEvent {
 	if re.initialized < 30 {
 		// Warmup: read values to populate prevValues without triggering
 		for i := range re.entries {
-			re.prevValues[i] = readMemoryValue(mi, re.entries[i].Address, re.entries[i].MemorySearchSize, re.byteSwap)
+			swap := re.entries[i].BigEndian != re.systemBigEndian
+			re.prevValues[i] = readMemoryValue(mi, re.entries[i].Address, re.entries[i].MemorySearchSize, swap)
 		}
 		re.initialized++
 		return nil
@@ -197,7 +203,8 @@ func (re *RumbleEngine) Evaluate(mi emucore.MemoryInspector) []RumbleEvent {
 
 	for i := range re.entries {
 		e := &re.entries[i]
-		current := readMemoryValue(mi, e.Address, e.MemorySearchSize, re.byteSwap)
+		swap := e.BigEndian != re.systemBigEndian
+		current := readMemoryValue(mi, e.Address, e.MemorySearchSize, swap)
 		prev := re.prevValues[i]
 		re.prevValues[i] = current
 
@@ -275,8 +282,8 @@ func evaluateCondition(rumbleType int, current, prev, rumbleValue uint32) bool {
 
 // readMemoryValue reads a value from memory at the given address with the
 // appropriate width based on MemorySearchSize.
-// When byteSwap is true, addresses and byte order are adjusted to translate
-// from the CHT's byte-swapped little-endian view to native big-endian memory.
+// byteSwap is true when the CHT entry's endianness differs from the system's,
+// requiring address and byte order adjustments.
 func readMemoryValue(mi emucore.MemoryInspector, addr uint32, searchSize int, byteSwap bool) uint32 {
 	var buf [4]byte
 
