@@ -254,6 +254,9 @@ func (s *InputSection) Build(focus types.FocusManager) *widget.Container {
 	// Analog stick toggle
 	section.AddChild(s.buildAnalogStickRow(focus))
 
+	// Rumble toggle
+	section.AddChild(s.buildRumbleRow(focus))
+
 	// Button bindings header
 	headerLabel := widget.NewText(
 		widget.TextOpts.Text("Button Bindings", style.FontFace(), style.Accent),
@@ -308,6 +311,9 @@ func (s *InputSection) setupNavigation(focus types.FocusManager) {
 	// Analog stick toggle zone
 	focus.RegisterNavZone("input-analog-stick", types.NavZoneVertical, []string{"input-analog-stick"}, 0)
 
+	// Rumble toggle zone
+	focus.RegisterNavZone("input-rumble", types.NavZoneVertical, []string{"input-rumble"}, 0)
+
 	// Binding buttons zone: 2-column grid (keyboard col, controller col)
 	bindingKeys := make([]string, 0)
 	for _, dp := range dpadEntries {
@@ -330,8 +336,10 @@ func (s *InputSection) setupNavigation(focus types.FocusManager) {
 		focus.SetNavTransition("input-core-opts", types.DirDown, "input-analog-stick", types.NavIndexFirst)
 		focus.SetNavTransition("input-analog-stick", types.DirUp, "input-core-opts", types.NavIndexFirst)
 	}
-	focus.SetNavTransition("input-analog-stick", types.DirDown, "input-bindings", types.NavIndexFirst)
-	focus.SetNavTransition("input-bindings", types.DirUp, "input-analog-stick", types.NavIndexFirst)
+	focus.SetNavTransition("input-analog-stick", types.DirDown, "input-rumble", types.NavIndexFirst)
+	focus.SetNavTransition("input-rumble", types.DirUp, "input-analog-stick", types.NavIndexFirst)
+	focus.SetNavTransition("input-rumble", types.DirDown, "input-bindings", types.NavIndexFirst)
+	focus.SetNavTransition("input-bindings", types.DirUp, "input-rumble", types.NavIndexFirst)
 	focus.SetNavTransition("input-bindings", types.DirDown, "input-reset", types.NavIndexFirst)
 	focus.SetNavTransition("input-reset", types.DirUp, "input-bindings", types.NavIndexLast)
 }
@@ -566,6 +574,73 @@ func (s *InputSection) buildAnalogStickRow(focus types.FocusManager) *widget.Con
 		}),
 	)
 	focus.RegisterFocusButton("input-analog-stick", toggleBtn)
+	row.AddChild(toggleBtn)
+
+	return row
+}
+
+// rumbleLevelLabel returns the display text for a rumble level.
+func rumbleLevelLabel(level int) string {
+	switch level {
+	case 1:
+		return "On (1x)"
+	case 2:
+		return "On (2x)"
+	case 3:
+		return "On (3x)"
+	case 4:
+		return "On (4x)"
+	case 5:
+		return "On (Max)"
+	default:
+		return "Off"
+	}
+}
+
+// buildRumbleRow creates the "Rumble" cycle row (Off / On / On 2x / On 3x)
+func (s *InputSection) buildRumbleRow(focus types.FocusManager) *widget.Container {
+	row := widget.NewContainer(
+		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
+		widget.ContainerOpts.Layout(widget.NewGridLayout(
+			widget.GridLayoutOpts.Columns(2),
+			widget.GridLayoutOpts.Stretch([]bool{true, false}, []bool{true}),
+			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
+			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
+		)),
+		widget.ContainerOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
+		),
+	)
+
+	label := widget.NewText(
+		widget.TextOpts.Text("Rumble", style.FontFace(), style.Text),
+		widget.TextOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
+				VerticalPosition: widget.GridLayoutPositionCenter,
+			}),
+		),
+	)
+	row.AddChild(label)
+
+	level := s.config.Input.RumbleLevel
+	toggleBtn := widget.NewButton(
+		widget.ButtonOpts.Image(style.ActiveButtonImage(level > 0)),
+		widget.ButtonOpts.Text(rumbleLevelLabel(level), style.FontFace(), style.ButtonTextColor()),
+		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
+		widget.ButtonOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
+				VerticalPosition: widget.GridLayoutPositionCenter,
+			}),
+			widget.WidgetOpts.MinSize(style.Px(70), 0),
+		),
+		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
+			s.config.Input.RumbleLevel = (s.config.Input.RumbleLevel + 1) % 6
+			storage.SaveConfig(s.config)
+			focus.SetPendingFocus("input-rumble")
+			s.callback.RequestRebuild()
+		}),
+	)
+	focus.RegisterFocusButton("input-rumble", toggleBtn)
 	row.AddChild(toggleBtn)
 
 	return row

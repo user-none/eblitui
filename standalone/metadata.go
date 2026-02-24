@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/user-none/eblitui/rdb"
 	"github.com/user-none/eblitui/standalone/storage"
@@ -22,6 +23,9 @@ const (
 
 	// Base URL for libretro-thumbnails repositories
 	thumbnailBaseURL = "https://github.com/libretro-thumbnails"
+
+	// Base URL for libretro-database CHT rumble files
+	chtBaseURL = "https://raw.githubusercontent.com/libretro/libretro-database/master/cht"
 
 	// RDB filename
 	rdbFilename = "game.rdb"
@@ -211,6 +215,67 @@ func (m *MetadataManager) DownloadArtwork(gameCRC string, gameName string) {
 	}
 
 	// All downloads failed - silently return
+}
+
+// DownloadRumble downloads the rumble CHT file for a game.
+// Returns silently on any error (same as artwork).
+func (m *MetadataManager) DownloadRumble(gameCRC, gameName string) {
+	if gameName == "" {
+		return
+	}
+
+	// Check if rumble file already exists
+	rumblePath, err := storage.GetGameRumblePath(gameCRC)
+	if err != nil {
+		return
+	}
+	if _, err := os.Stat(rumblePath); err == nil {
+		return
+	}
+
+	// Strip parenthetical metadata from game name
+	displayName := rdb.GetDisplayName(gameName)
+
+	// Replace & with _ and URL-encode (same as artwork)
+	encodedName := url.PathEscape(strings.ReplaceAll(displayName, "&", "_"))
+
+	// Build URL: cht/{rdbName}/{name} (Rumbles).cht
+	chtURL := fmt.Sprintf("%s/%s/%s (Rumbles).cht",
+		chtBaseURL, url.PathEscape(m.rdbName), encodedName)
+
+	data, err := downloadToMemory(chtURL)
+	if err != nil {
+		// Try title-cased variant for casing mismatches
+		tcName := titleCase(displayName)
+		if tcName != displayName {
+			tcEncoded := url.PathEscape(strings.ReplaceAll(tcName, "&", "_"))
+			tcURL := fmt.Sprintf("%s/%s/%s (Rumbles).cht",
+				chtBaseURL, url.PathEscape(m.rdbName), tcEncoded)
+			data, err = downloadToMemory(tcURL)
+			if err != nil {
+				return
+			}
+		} else {
+			return
+		}
+	}
+
+	if err := os.WriteFile(rumblePath, data, 0644); err != nil {
+		return
+	}
+}
+
+// titleCase capitalizes the first letter of each word in a string.
+func titleCase(s string) string {
+	prev := ' '
+	return strings.Map(func(r rune) rune {
+		if unicode.IsSpace(rune(prev)) || prev == '-' {
+			prev = r
+			return unicode.ToUpper(r)
+		}
+		prev = r
+		return r
+	}, s)
 }
 
 // downloadToMemory downloads a URL entirely into memory

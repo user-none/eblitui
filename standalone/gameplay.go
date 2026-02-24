@@ -78,6 +78,12 @@ type GameplayManager struct {
 	achievementScreenshotPending bool
 	achievementScreenshotMu      sync.Mutex
 
+	// Rumble
+	rumbleEngine    *RumbleEngine
+	memoryInspector emucore.MemoryInspector
+	pendingRumble   []RumbleEvent
+	pendingRumbleMu sync.Mutex
+
 	// Turbo (fast-forward)
 	turboState    *TurboState
 	turboAudioBuf []int16 // Pre-allocated buffer for collecting multi-frame audio
@@ -320,6 +326,20 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 		}
 	}
 
+	// Initialize rumble engine if enabled and emulator supports memory inspection
+	if gm.config.Input.RumbleLevel > 0 {
+		if mi, ok := gm.emulator.(emucore.MemoryInspector); ok {
+			rumblePath, err := storage.GetGameRumblePath(game.CRC32)
+			if err == nil {
+				entries, err := ParseRumbleFile(rumblePath)
+				if err == nil && len(entries) > 0 {
+					gm.rumbleEngine = NewRumbleEngine(entries, gm.systemInfo.BigEndianMemory)
+					gm.memoryInspector = mi
+				}
+			}
+		}
+	}
+
 	// Start the emulation goroutine
 	go gm.emulationLoop()
 
@@ -372,6 +392,16 @@ func (gm *GameplayManager) emulationLoop() {
 
 		// Run the primary frame
 		gm.runEmulatorFrame()
+
+		// Evaluate rumble conditions (fire on Ebiten thread via Update)
+		if gm.rumbleEngine != nil {
+			events := gm.rumbleEngine.Evaluate(gm.memoryInspector)
+			if len(events) > 0 {
+				gm.pendingRumbleMu.Lock()
+				gm.pendingRumble = append(gm.pendingRumble, events...)
+				gm.pendingRumbleMu.Unlock()
+			}
+		}
 
 		// Queue audio samples
 		if gm.audioPlayer != nil {
@@ -494,6 +524,13 @@ func (gm *GameplayManager) Update() (pauseMenuOpened bool, err error) {
 		}
 		return false, nil
 	}
+
+	// Fire pending rumble events (must be on Ebiten thread)
+	gm.pendingRumbleMu.Lock()
+	rumbleEvents := gm.pendingRumble
+	gm.pendingRumble = nil
+	gm.pendingRumbleMu.Unlock()
+	FireRumbleEvents(rumbleEvents, gm.config.Input.RumbleLevel)
 
 	// Poll input and write to shared state (emu goroutine reads it)
 	gm.pollInputToShared()
@@ -684,6 +721,9 @@ func (gm *GameplayManager) Exit(saveResume bool) {
 	gm.batterySaver = nil
 	gm.renderer = nil
 	gm.currentGame = nil
+	gm.rumbleEngine = nil
+	gm.memoryInspector = nil
+	gm.pendingRumble = nil
 
 	// Reset TPS to 60 for UI
 	ebiten.SetTPS(60)
@@ -760,6 +800,9 @@ func (gm *GameplayManager) handleSaveStateKeys() {
 		} else {
 			if gm.rewindBuffer != nil {
 				gm.rewindBuffer.Reset()
+			}
+			if gm.rumbleEngine != nil {
+				gm.rumbleEngine.Reset()
 			}
 			// Update shared framebuffer after load
 			gm.sharedFramebuffer.Update(

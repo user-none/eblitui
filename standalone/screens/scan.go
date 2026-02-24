@@ -123,16 +123,16 @@ func (s *ScanProgressScreen) Build() *widget.Container {
 	centerContent.AddChild(percentLabel)
 
 	// Found count
-	foundText := fmt.Sprintf("Found: %d new games", s.gamesFound)
+	foundText := fmt.Sprintf("Found: %d games", s.gamesFound)
 	foundLabel := widget.NewText(
 		widget.TextOpts.Text(foundText, style.FontFace(), style.Text),
 		widget.TextOpts.Position(widget.TextPositionCenter, widget.TextPositionCenter),
 	)
 	centerContent.AddChild(foundLabel)
 
-	// Artwork status (only during artwork phase - phase 2)
+	// Download status (during download phase - phase 2)
 	if s.phase == 2 && s.artworkTotal > 0 {
-		artworkText := fmt.Sprintf("Downloading artwork: %d/%d", s.artworkComplete, s.artworkTotal)
+		artworkText := fmt.Sprintf("Checking: %d/%d", s.artworkComplete, s.artworkTotal)
 		artworkLabel := widget.NewText(
 			widget.TextOpts.Text(artworkText, style.FontFace(), style.Text),
 			widget.TextOpts.Position(widget.TextPositionCenter, widget.TextPositionCenter),

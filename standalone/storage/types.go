@@ -22,6 +22,7 @@ type InputConfig struct {
 	P1Controller       map[string]string `json:"p1Controller,omitempty"`       // button name -> pad button name override
 	CoreOptions        map[string]string `json:"coreOptions,omitempty"`        // core option key -> value
 	DisableAnalogStick bool              `json:"disableAnalogStick,omitempty"` // disable analog stick mirroring d-pad
+	RumbleLevel        int               `json:"rumbleLevel,omitempty"`        // 0=off, 1=1x, 2=2x, 3=3x, 4=4x, 5=Max. Intensity/duration multiplier
 }
 
 // RetroAchievementsConfig contains RetroAchievements integration settings

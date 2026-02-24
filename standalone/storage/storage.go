@@ -21,6 +21,7 @@ const (
 	libraryFile   = "library.json"
 	metadataDir   = "metadata"
 	artworkDir    = "artwork"
+	rumbleDir     = "rumble"
 	savesDir      = "saves"
 	screenshotDir = "screenshots"
 )
@@ -74,6 +75,7 @@ func EnsureDirectories() error {
 		baseDir,
 		filepath.Join(baseDir, metadataDir),
 		filepath.Join(baseDir, artworkDir),
+		filepath.Join(baseDir, rumbleDir),
 		filepath.Join(baseDir, savesDir),
 		filepath.Join(baseDir, screenshotDir),
 	}
@@ -121,6 +123,24 @@ func GetArtworkDir() (string, error) {
 		return "", err
 	}
 	return filepath.Join(baseDir, artworkDir), nil
+}
+
+// GetRumbleDir returns the full path to the rumble directory
+func GetRumbleDir() (string, error) {
+	baseDir, err := GetBaseDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(baseDir, rumbleDir), nil
+}
+
+// GetGameRumblePath returns the path to a game's rumble CHT file
+func GetGameRumblePath(gameCRC string) (string, error) {
+	rumbleDir, err := GetRumbleDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(rumbleDir, gameCRC+".cht"), nil
 }
 
 // GetSavesDir returns the full path to the saves directory

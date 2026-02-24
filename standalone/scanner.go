@@ -61,13 +61,13 @@ type Scanner struct {
 	done     chan ScanResult
 
 	// Internal state
-	mu              sync.Mutex
-	games           map[string]*storage.GameEntry
-	artworkQueue    []artworkJob // Games that need artwork download
-	errors          []error
-	cancelled       bool
-	artworkSem      chan struct{} // Semaphore for concurrent downloads (size 2)
-	artworkComplete int
+	mu           sync.Mutex
+	games        map[string]*storage.GameEntry
+	artworkQueue []artworkJob // Games that need artwork download
+	rumbleQueue  []artworkJob // Games that need rumble file download
+	errors       []error
+	cancelled    bool
+	downloadSem  chan struct{} // Semaphore for concurrent downloads (size 2)
 }
 
 // artworkJob represents a pending artwork download
@@ -95,7 +95,8 @@ func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[st
 		done:          make(chan ScanResult, 1),
 		games:         make(map[string]*storage.GameEntry),
 		artworkQueue:  make([]artworkJob, 0),
-		artworkSem:    make(chan struct{}, 2), // Limit to 2 concurrent downloads
+		rumbleQueue:   make([]artworkJob, 0),
+		downloadSem:   make(chan struct{}, 2), // Limit to 2 concurrent downloads
 	}
 }
 
@@ -193,8 +194,9 @@ func (s *Scanner) Run() {
 		return
 	}
 
-	// Phase 3: Download artwork
-	s.downloadArtwork()
+	// Phase 3: Download artwork and rumble files
+	s.downloadAssets(s.artworkQueue, "Downloading artwork...", s.metadata.DownloadArtwork)
+	s.downloadAssets(s.rumbleQueue, "Downloading rumble data...", s.metadata.DownloadRumble)
 
 	// Send final result
 	s.done <- ScanResult{
@@ -358,6 +360,17 @@ func (s *Scanner) processROM(path string) {
 			})
 			s.mu.Unlock()
 		}
+
+		// Queue rumble file download only if rumble file doesn't exist
+		rumblePath, _ := storage.GetGameRumblePath(crcHex)
+		if _, err := os.Stat(rumblePath); os.IsNotExist(err) {
+			s.mu.Lock()
+			s.rumbleQueue = append(s.rumbleQueue, artworkJob{
+				gameCRC:  crcHex,
+				gameName: game.Name,
+			})
+			s.mu.Unlock()
+		}
 	}
 
 	// Fallback to filename when no RDB match provided Name/DisplayName
@@ -384,13 +397,9 @@ func (s *Scanner) cleanDisplayName(filename string) string {
 	return name
 }
 
-// downloadArtwork downloads artwork for all queued games
-func (s *Scanner) downloadArtwork() {
-	s.mu.Lock()
-	queue := s.artworkQueue
+// downloadAssets downloads queued assets using the provided download function.
+func (s *Scanner) downloadAssets(queue []artworkJob, statusText string, downloadFn func(gameCRC, gameName string)) {
 	total := len(queue)
-	s.mu.Unlock()
-
 	if total == 0 {
 		return
 	}
@@ -401,10 +410,11 @@ func (s *Scanner) downloadArtwork() {
 		GamesFound:      s.gamesCount(),
 		ArtworkTotal:    total,
 		ArtworkComplete: 0,
-		StatusText:      "Downloading artwork...",
+		StatusText:      statusText,
 	})
 
 	var wg sync.WaitGroup
+	var complete int
 
 	for _, job := range queue {
 		if s.isCancelled() {
@@ -415,30 +425,27 @@ func (s *Scanner) downloadArtwork() {
 		go func(j artworkJob) {
 			defer wg.Done()
 
-			// Acquire semaphore (limit concurrent downloads)
-			s.artworkSem <- struct{}{}
-			defer func() { <-s.artworkSem }()
+			s.downloadSem <- struct{}{}
+			defer func() { <-s.downloadSem }()
 
 			if s.isCancelled() {
 				return
 			}
 
-			// Download artwork (silent on failure)
-			s.metadata.DownloadArtwork(j.gameCRC, j.gameName)
+			downloadFn(j.gameCRC, j.gameName)
 
-			// Update progress
 			s.mu.Lock()
-			s.artworkComplete++
-			complete := s.artworkComplete
+			complete++
+			c := complete
 			s.mu.Unlock()
 
 			s.sendProgress(ScanProgress{
 				Phase:           ScanPhaseArtwork,
-				Progress:        float64(complete) / float64(total),
+				Progress:        float64(c) / float64(total),
 				GamesFound:      s.gamesCount(),
 				ArtworkTotal:    total,
-				ArtworkComplete: complete,
-				StatusText:      "Downloading artwork...",
+				ArtworkComplete: c,
+				StatusText:      statusText,
 			})
 		}(job)
 	}
