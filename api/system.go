@@ -70,6 +70,7 @@ type SystemInfo struct {
 	CoreName        string
 	CoreVersion     string
 	SerializeSize   int
+	BigEndianMemory bool // true for big-endian CPUs (e.g. 68K)
 }
 
 // CoreFactory creates emulator instances and provides system metadata.
