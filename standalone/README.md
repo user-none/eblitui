@@ -67,6 +67,7 @@ The app is a state machine that transitions between screens:
 - Aspect-ratio-correct scaling with optional display cropping
 - Keyboard input: WASD for D-pad, JKL/UIO for buttons
 - Gamepad input: standard layout with 2-player support
+- Gamepad rumble/haptic feedback via RetroArch CHT rumble files
 - Pause menu with resume, return to library, and exit options
 - Play time tracking per game
 
@@ -88,6 +89,35 @@ The app is a state machine that transitions between screens:
 - 1x / 2x / 3x speed toggle
 - Audio averaging for downsampled playback
 - Optional mute during fast forward
+
+### Rumble
+
+Gamepad rumble support using RetroArch CHT rumble files. Per-game rumble
+definitions are downloaded automatically during library scans from the
+libretro-database repository.
+
+CHT files define memory addresses to monitor and conditions that trigger
+haptic feedback (value changes, increases, decreases, comparisons).
+The rumble engine evaluates these conditions each frame and fires
+vibration events via CoreHaptics on macOS.
+
+Rumble strength is configurable with multiple levels:
+
+| Level | Intensity | Duration |
+|---|---|---|
+| Off | - | - |
+| 1x | 1x (min 40%) | 1x (min 250ms) |
+| 2x | 2x | 2x (min 250ms) |
+| 3x | 3x | 3x (min 250ms) |
+| 4x | 4x | 2x (min 250ms) |
+| Max | 100% | 2x (min 250ms) |
+
+Requires the core to implement `MemoryInspector`.
+
+**Note**
+The number of games with rumble support is severely limited. Very few games
+have rumble files and the number of events that trigger a rumble is also
+sparse. The intensity and duration of rumble can be inconsistent between games.
 
 ### Shader Effects
 
@@ -147,6 +177,7 @@ Organized in tabbed sections:
 - **Appearance** - Theme, font size
 - **Video** - Shader effects for UI and gameplay
 - **Audio** - Volume, mute, fast-forward mute
+- **Input** - Button bindings, analog stick toggle, rumble level
 - **Rewind** - Enable/disable, buffer size, frame step
 - **RetroAchievements** - Login, notification preferences, modes
 
@@ -169,6 +200,7 @@ Directory structure:
     library.json     - Game library and scan state
     metadata/        - RDB databases and artwork index
     artwork/         - Game artwork images
+    rumble/          - CHT rumble definition files
     saves/           - SRAM and save state files
     screenshots/     - Screenshot captures
 ```
@@ -213,4 +245,5 @@ go test ./...
 
 Test coverage includes state management, audio buffering, save states,
 rewind, turbo, pause menu, achievement overlay, search, scanning,
-storage validation, shader ordering, themes, and RDB parsing.
+storage validation, shader ordering, themes, rumble engine, and RDB
+parsing.
