@@ -53,24 +53,30 @@ type CoreOption struct {
 
 // SystemInfo describes an emulator system for UI configuration.
 type SystemInfo struct {
-	Name            string
-	ConsoleName     string
-	Extensions      []string
-	ScreenWidth     int
-	MaxScreenHeight int
-	AspectRatio     float64
-	SampleRate      int
-	Buttons         []Button
-	Players         int
-	CoreOptions     []CoreOption
-	RDBName         string
-	ThumbnailRepo   string
-	DataDirName     string
-	ConsoleID       int
-	CoreName        string
-	CoreVersion     string
-	SerializeSize   int
-	BigEndianMemory bool // true for big-endian CPUs (e.g. 68K)
+	Name             string
+	ConsoleName      string
+	Extensions       []string
+	ScreenWidth      int
+	MaxScreenHeight  int
+	PixelAspectRatio float64
+	SampleRate       int
+	Buttons          []Button
+	Players          int
+	CoreOptions      []CoreOption
+	RDBName          string
+	ThumbnailRepo    string
+	DataDirName      string
+	ConsoleID        int
+	CoreName         string
+	CoreVersion      string
+	SerializeSize    int
+	BigEndianMemory  bool // true for big-endian CPUs (e.g. 68K)
+}
+
+// DisplayAspectRatio computes the PAR-corrected display aspect ratio
+// from frame dimensions and the system's pixel aspect ratio.
+func DisplayAspectRatio(width, height int, par float64) float64 {
+	return (float64(width) / float64(height)) * par
 }
 
 // CoreFactory creates emulator instances and provides system metadata.
