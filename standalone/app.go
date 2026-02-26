@@ -188,7 +188,7 @@ func newApp(factory emucore.CoreFactory, info emucore.SystemInfo) (*App, error) 
 	app.saveStateManager = NewSaveStateManager(app.notification)
 	app.screenshotManager = NewScreenshotManager(app.notification)
 	app.inputManager = NewInputManager()
-	app.shaderManager = shader.NewManager()
+	app.shaderManager = shader.NewManager(info.PixelAspectRatio)
 	app.searchOverlay = NewSearchOverlay(func(text string) {
 		if app.state == StateLibrary {
 			app.libraryScreen.SetSearchText(text)

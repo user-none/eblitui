@@ -246,7 +246,7 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 	gm.batterySaver, _ = emu.(emucore.BatterySaver)
 
 	// Create renderer and shared structures for ADT
-	gm.renderer = NewFramebufferRenderer(gm.systemInfo.ScreenWidth)
+	gm.renderer = NewFramebufferRenderer(gm.systemInfo.ScreenWidth, gm.systemInfo.PixelAspectRatio)
 	gm.sharedInput = &SharedInput{}
 	gm.sharedFramebuffer = NewSharedFramebuffer(gm.systemInfo.ScreenWidth, gm.systemInfo.MaxScreenHeight)
 	gm.emuControl = NewEmuControl()

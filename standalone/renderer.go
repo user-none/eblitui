@@ -4,6 +4,7 @@ package standalone
 
 import (
 	"github.com/hajimehoshi/ebiten/v2"
+	emucore "github.com/user-none/eblitui/api"
 )
 
 // FramebufferRenderer owns the ebiten offscreen buffer and handles
@@ -12,19 +13,22 @@ import (
 // previously on the bridge emulator.
 type FramebufferRenderer struct {
 	screenWidth int
+	par         float64
 	offscreen   *ebiten.Image
 	drawOpts    ebiten.DrawImageOptions
 }
 
-// NewFramebufferRenderer creates a renderer for the given native screen width.
-func NewFramebufferRenderer(screenWidth int) *FramebufferRenderer {
+// NewFramebufferRenderer creates a renderer for the given native screen width
+// and pixel aspect ratio.
+func NewFramebufferRenderer(screenWidth int, par float64) *FramebufferRenderer {
 	return &FramebufferRenderer{
 		screenWidth: screenWidth,
+		par:         par,
 	}
 }
 
-// DrawFramebuffer renders pixel data to the screen with aspect-ratio-preserving
-// scaling.
+// DrawFramebuffer renders pixel data to the screen with PAR-corrected
+// aspect ratio scaling.
 func (r *FramebufferRenderer) DrawFramebuffer(screen *ebiten.Image, pixels []byte, stride, activeHeight int) {
 	if activeHeight == 0 || stride == 0 {
 		return
@@ -46,20 +50,26 @@ func (r *FramebufferRenderer) DrawFramebuffer(screen *ebiten.Image, pixels []byt
 	nativeW := float64(pixelWidth)
 	nativeH := float64(activeHeight)
 
-	scaleX := float64(screenW) / nativeW
-	scaleY := float64(screenH) / nativeH
-	scale := scaleX
-	if scaleY < scaleX {
-		scale = scaleY
+	// Compute DAR dynamically from frame dimensions and PAR.
+	dar := emucore.DisplayAspectRatio(pixelWidth, activeHeight, r.par)
+
+	// Fit to screen while preserving the display aspect ratio.
+	displayW := float64(screenW)
+	displayH := displayW / dar
+	if displayH > float64(screenH) {
+		displayH = float64(screenH)
+		displayW = displayH * dar
 	}
 
-	scaledW := nativeW * scale
-	scaledH := nativeH * scale
+	scaleX := displayW / nativeW
+	scaleY := displayH / nativeH
+	scaledW := nativeW * scaleX
+	scaledH := nativeH * scaleY
 	offsetX := (float64(screenW) - scaledW) / 2
 	offsetY := (float64(screenH) - scaledH) / 2
 
 	r.drawOpts = ebiten.DrawImageOptions{}
-	r.drawOpts.GeoM.Scale(scale, scale)
+	r.drawOpts.GeoM.Scale(scaleX, scaleY)
 	r.drawOpts.GeoM.Translate(offsetX, offsetY)
 	r.drawOpts.Filter = ebiten.FilterNearest
 	screen.DrawImage(r.offscreen, &r.drawOpts)

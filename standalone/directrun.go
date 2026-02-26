@@ -58,10 +58,11 @@ func RunDirect(factory emucore.CoreFactory, romPath, regionStr string, options m
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	ebiten.SetTPS(60)
 
+	dar := emucore.DisplayAspectRatio(systemInfo.ScreenWidth, systemInfo.MaxScreenHeight, systemInfo.PixelAspectRatio)
 	windowW := systemInfo.ScreenWidth * 3
-	windowH := int(float64(windowW) / systemInfo.AspectRatio)
+	windowH := int(float64(windowW) / dar)
 	minW := systemInfo.ScreenWidth * 2
-	minH := int(float64(minW) / systemInfo.AspectRatio)
+	minH := int(float64(minW) / dar)
 	ebiten.SetWindowSize(windowW, windowH)
 	ebiten.SetWindowSizeLimits(minW, minH, -1, -1)
 
@@ -74,7 +75,7 @@ func RunDirect(factory emucore.CoreFactory, romPath, regionStr string, options m
 		emulator:     emulator,
 		systemInfo:   systemInfo,
 		inputMapping: BuildDefaultMapping(systemInfo.Buttons),
-		renderer:     NewFramebufferRenderer(systemInfo.ScreenWidth),
+		renderer:     NewFramebufferRenderer(systemInfo.ScreenWidth, systemInfo.PixelAspectRatio),
 		audioPlayer:  audioPlayer,
 		emuControl:   NewEmuControl(),
 		sharedInput:  &SharedInput{},

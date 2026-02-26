@@ -110,11 +110,12 @@ type Manager struct {
 	cachedSortedShaders []*ebiten.Shader
 }
 
-// NewManager creates a new shader manager
-func NewManager() *Manager {
+// NewManager creates a new shader manager with the given pixel aspect ratio
+// (used by xBR scaling to compute display aspect ratio per frame).
+func NewManager(par float64) *Manager {
 	return &Manager{
 		shaders:   make(map[string]*ebiten.Shader),
-		xbrScaler: NewXBRScaler(),
+		xbrScaler: NewXBRScaler(par),
 	}
 }
 

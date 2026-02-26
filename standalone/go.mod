@@ -7,7 +7,7 @@ require (
 	github.com/ebitenui/ebitenui v0.7.2
 	github.com/hajimehoshi/ebiten/v2 v2.9.8
 	github.com/sqweek/dialog v0.0.0-20240226140203-065105509627
-	github.com/user-none/eblitui/api v0.2.1
+	github.com/user-none/eblitui/api v0.3.0
 	github.com/user-none/eblitui/rdb v0.1.0
 	github.com/user-none/eblitui/romloader v0.1.0
 	github.com/user-none/go-rcheevos v0.0.0
