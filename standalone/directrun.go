@@ -58,11 +58,12 @@ func RunDirect(factory emucore.CoreFactory, romPath, regionStr string, options m
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	ebiten.SetTPS(60)
 
-	dar := emucore.DisplayAspectRatio(systemInfo.ScreenWidth, systemInfo.MaxScreenHeight, systemInfo.PixelAspectRatio)
+	// Use 4:3 (standard CRT) for initial window size; the renderer
+	// computes the correct DAR per-frame from actual dimensions.
 	windowW := systemInfo.ScreenWidth * 3
-	windowH := int(float64(windowW) / dar)
+	windowH := windowW * 3 / 4
 	minW := systemInfo.ScreenWidth * 2
-	minH := int(float64(minW) / dar)
+	minH := minW * 3 / 4
 	ebiten.SetWindowSize(windowW, windowH)
 	ebiten.SetWindowSizeLimits(minW, minH, -1, -1)
 

@@ -175,7 +175,10 @@ func retro_get_system_av_info(info *C.struct_retro_system_av_info) {
 	info.geometry.base_height = C.uint(sysInfo.MaxScreenHeight)
 	info.geometry.max_width = C.uint(sysInfo.ScreenWidth)
 	info.geometry.max_height = C.uint(sysInfo.MaxScreenHeight)
-	info.geometry.aspect_ratio = C.float(emucore.DisplayAspectRatio(baseWidth, int(sysInfo.MaxScreenHeight), sysInfo.PixelAspectRatio))
+	// Use 4:3 (standard CRT) as the initial aspect ratio.
+	// The first frame triggers updateGeometry with the correct DAR
+	// computed from actual frame dimensions and PAR.
+	info.geometry.aspect_ratio = C.float(4.0 / 3.0)
 }
 
 //export retro_set_controller_port_device
