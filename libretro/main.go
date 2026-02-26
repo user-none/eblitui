@@ -49,10 +49,11 @@ var (
 	saveStater   emucore.SaveStater
 	memoryMapper emucore.MemoryMapper
 
-	region       emucore.Region
-	romData      []byte
-	xrgbBuf      []byte
-	currentWidth int
+	region        emucore.Region
+	romData       []byte
+	xrgbBuf       []byte
+	currentWidth  int
+	currentHeight int
 
 	// C-allocated memory buffers keyed by region type
 	memBuffers map[int]*memoryBuffer
@@ -123,6 +124,7 @@ func retro_init() {
 	maxPixels := sysInfo.ScreenWidth * sysInfo.MaxScreenHeight
 	xrgbBuf = make([]byte, maxPixels*4)
 	currentWidth = sysInfo.ScreenWidth
+	currentHeight = sysInfo.MaxScreenHeight
 
 	ensureStrings()
 	ensureOptionStrings()
@@ -173,7 +175,7 @@ func retro_get_system_av_info(info *C.struct_retro_system_av_info) {
 	info.geometry.base_height = C.uint(sysInfo.MaxScreenHeight)
 	info.geometry.max_width = C.uint(sysInfo.ScreenWidth)
 	info.geometry.max_height = C.uint(sysInfo.MaxScreenHeight)
-	info.geometry.aspect_ratio = C.float(sysInfo.AspectRatio)
+	info.geometry.aspect_ratio = C.float(emucore.DisplayAspectRatio(baseWidth, int(sysInfo.MaxScreenHeight), sysInfo.PixelAspectRatio))
 }
 
 //export retro_set_controller_port_device
@@ -559,8 +561,9 @@ func outputVideo(fb []byte, activeHeight int) {
 	pixels := screenWidth * activeHeight
 	convertRGBAToXRGB8888(fb, xrgbBuf, pixels)
 	C.call_video_cb(unsafe.Pointer(&xrgbBuf[0]), C.uint(screenWidth), C.uint(activeHeight), C.size_t(screenWidth*4))
-	if currentWidth != screenWidth {
+	if currentWidth != screenWidth || currentHeight != activeHeight {
 		currentWidth = screenWidth
+		currentHeight = activeHeight
 		updateGeometry()
 	}
 }
@@ -569,10 +572,10 @@ func outputVideo(fb []byte, activeHeight int) {
 func updateGeometry() {
 	var geom C.struct_retro_game_geometry
 	geom.base_width = C.uint(currentWidth)
-	geom.base_height = C.uint(sysInfo.MaxScreenHeight)
+	geom.base_height = C.uint(currentHeight)
 	geom.max_width = C.uint(sysInfo.ScreenWidth)
 	geom.max_height = C.uint(sysInfo.MaxScreenHeight)
-	geom.aspect_ratio = C.float(sysInfo.AspectRatio)
+	geom.aspect_ratio = C.float(emucore.DisplayAspectRatio(currentWidth, currentHeight, sysInfo.PixelAspectRatio))
 	C.call_environ_cb(C.RETRO_ENVIRONMENT_SET_GEOMETRY, unsafe.Pointer(&geom))
 }
 
