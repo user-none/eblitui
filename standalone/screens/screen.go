@@ -1,5 +1,3 @@
-//go:build !libretro
-
 package screens
 
 import (

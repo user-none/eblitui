@@ -1,5 +1,3 @@
-//go:build !libretro && !ios
-
 package achievements
 
 // EmulatorInterface defines the interface for emulator memory access.

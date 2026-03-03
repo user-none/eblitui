@@ -1,5 +1,3 @@
-//go:build !libretro
-
 package style
 
 import "time"

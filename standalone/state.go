@@ -1,5 +1,3 @@
-//go:build !libretro
-
 package standalone
 
 // AppState represents the current state of the application

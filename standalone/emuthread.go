@@ -1,5 +1,3 @@
-//go:build !ios && !libretro
-
 package standalone
 
 import (

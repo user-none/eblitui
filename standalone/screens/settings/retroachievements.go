@@ -1,5 +1,3 @@
-//go:build !libretro && !ios
-
 package settings
 
 import (

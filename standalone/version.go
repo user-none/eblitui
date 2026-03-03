@@ -1,5 +1,3 @@
-//go:build !libretro
-
 package standalone
 
 // Standalone UI version

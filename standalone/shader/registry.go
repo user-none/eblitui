@@ -1,5 +1,3 @@
-//go:build !libretro
-
 package shader
 
 // EffectContext describes where an effect can be applied

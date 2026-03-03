@@ -1,5 +1,3 @@
-//go:build !libretro
-
 // Package types provides shared interfaces used across UI packages.
 // This package exists to avoid import cycles between screens and sub-packages.
 package types
