@@ -12,6 +12,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	emucore "github.com/user-none/eblitui/api"
 	"github.com/user-none/eblitui/romloader"
+	"github.com/user-none/eblitui/standalone/display"
 )
 
 // directRunner implements ebiten.Game for minimal direct ROM execution.
@@ -165,10 +166,7 @@ func (dr *directRunner) Draw(screen *ebiten.Image) {
 
 // Layout implements ebiten.Game.
 func (dr *directRunner) Layout(outsideWidth, outsideHeight int) (int, int) {
-	s := 1.0
-	if m := ebiten.Monitor(); m != nil {
-		s = m.DeviceScaleFactor()
-	}
+	s := display.DPIScale()
 	return int(float64(outsideWidth) * s), int(float64(outsideHeight) * s)
 }
 

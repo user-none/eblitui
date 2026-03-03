@@ -119,6 +119,11 @@ func NewManager(par float64) *Manager {
 	}
 }
 
+// SetAspectRatioMode passes the aspect ratio mode to the xBR scaler.
+func (m *Manager) SetAspectRatioMode(mode string) {
+	m.xbrScaler.SetAspectRatioMode(mode)
+}
+
 // ResetBuffers clears all effect buffers. Call when switching games.
 func (m *Manager) ResetBuffers() {
 	if m.ghostingBuffer != nil {

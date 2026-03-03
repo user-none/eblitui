@@ -64,6 +64,16 @@ func detectPresentKeys(jsonBytes []byte) map[string]bool {
 		}
 	}
 
+	// Nested: video
+	if videoRaw, ok := raw["video"]; ok {
+		var video map[string]json.RawMessage
+		if json.Unmarshal(videoRaw, &video) == nil {
+			if _, ok := video["aspectRatio"]; ok {
+				present["video.aspectRatio"] = true
+			}
+		}
+	}
+
 	// Nested: rewind
 	if rewindRaw, ok := raw["rewind"]; ok {
 		var rewind map[string]json.RawMessage
@@ -95,6 +105,9 @@ func ApplyMissingDefaults(config *Config, presentKeys map[string]bool) {
 	}
 	if !presentKeys["fontSize"] {
 		config.FontSize = defaults.FontSize
+	}
+	if !presentKeys["video.aspectRatio"] {
+		config.Video.AspectRatio = defaults.Video.AspectRatio
 	}
 	if !presentKeys["audio.volume"] {
 		config.Audio.Volume = defaults.Audio.Volume
@@ -155,6 +168,18 @@ func ValidateConfig(config *Config, validThemes []string) []string {
 	}
 	if !fontSizeValid {
 		errors = append(errors, fmt.Sprintf("fontSize: %d (valid: %v)", config.FontSize, FontSizePresets))
+	}
+
+	// video.aspectRatio
+	aspectRatioValid := false
+	for _, ar := range ValidAspectRatios {
+		if config.Video.AspectRatio == ar {
+			aspectRatioValid = true
+			break
+		}
+	}
+	if !aspectRatioValid {
+		errors = append(errors, fmt.Sprintf("video.aspectRatio: %q (valid: %v)", config.Video.AspectRatio, ValidAspectRatios))
 	}
 
 	// audio.volume
@@ -260,6 +285,18 @@ func CorrectConfig(config *Config, validThemes []string) *Config {
 	}
 	if !fontSizeValid {
 		config.FontSize = defaults.FontSize
+	}
+
+	// video.aspectRatio
+	aspectRatioValid := false
+	for _, ar := range ValidAspectRatios {
+		if config.Video.AspectRatio == ar {
+			aspectRatioValid = true
+			break
+		}
+	}
+	if !aspectRatioValid {
+		config.Video.AspectRatio = defaults.Video.AspectRatio
 	}
 
 	// audio.volume

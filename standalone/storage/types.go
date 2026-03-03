@@ -40,6 +40,24 @@ type RetroAchievementsConfig struct {
 
 // VideoConfig contains video-related settings
 type VideoConfig struct {
+	AspectRatio string `json:"aspectRatio"`
+}
+
+// ValidAspectRatios lists the allowed aspect ratio mode values
+var ValidAspectRatios = []string{"dar", "4:3", "stretch"}
+
+// AspectRatioDisplayName returns a user-facing label for the given mode.
+func AspectRatioDisplayName(mode string) string {
+	switch mode {
+	case "dar":
+		return "DAR"
+	case "4:3":
+		return "4:3"
+	case "stretch":
+		return "Stretch"
+	default:
+		return "DAR"
+	}
 }
 
 // ShaderConfig contains shader effect settings
@@ -146,7 +164,9 @@ func DefaultConfig() *Config {
 		Version:  1,
 		Theme:    "Default",
 		FontSize: 14,
-		Video:    VideoConfig{},
+		Video: VideoConfig{
+			AspectRatio: "dar",
+		},
 		Audio: AudioConfig{
 			Volume:          1.0,
 			Muted:           false,

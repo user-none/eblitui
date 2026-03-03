@@ -68,6 +68,9 @@ func (v *VideoSection) setupNavigation(focus types.FocusManager) {
 		focus.RegisterNavZone("video-core-opts", types.NavZoneVertical, coreOptKeys, 0)
 	}
 
+	// Aspect ratio zone (single button)
+	focus.RegisterNavZone("video-aspect", types.NavZoneVertical, []string{"video-aspect-ratio"}, 0)
+
 	// Preprocessing effects: game-only, 1-column grid
 	preprocessKeys := make([]string, 0)
 	for _, info := range shader.AvailableShaders {
@@ -91,17 +94,23 @@ func (v *VideoSection) setupNavigation(focus types.FocusManager) {
 		focus.RegisterNavZone("video-shaders", types.NavZoneGrid, shaderKeys, 2)
 	}
 
-	// Transitions from core options to first shader zone
+	// Navigation chain: core-opts <-> aspect <-> preprocess/shaders
+	firstShaderZone := "video-shaders"
+	if len(preprocessKeys) > 0 {
+		firstShaderZone = "video-preprocess"
+	}
+
 	if len(coreOptKeys) > 0 {
-		firstShaderZone := "video-shaders"
+		focus.SetNavTransition("video-core-opts", types.DirDown, "video-aspect", types.NavIndexFirst)
+		focus.SetNavTransition("video-aspect", types.DirUp, "video-core-opts", types.NavIndexFirst)
+	}
+
+	if len(shaderKeys) > 0 || len(preprocessKeys) > 0 {
+		focus.SetNavTransition("video-aspect", types.DirDown, firstShaderZone, types.NavIndexFirst)
 		if len(preprocessKeys) > 0 {
-			firstShaderZone = "video-preprocess"
-		}
-		focus.SetNavTransition("video-core-opts", types.DirDown, firstShaderZone, types.NavIndexFirst)
-		if len(preprocessKeys) > 0 {
-			focus.SetNavTransition("video-preprocess", types.DirUp, "video-core-opts", types.NavIndexFirst)
-		} else if len(shaderKeys) > 0 {
-			focus.SetNavTransition("video-shaders", types.DirUp, "video-core-opts", types.NavIndexFirst)
+			focus.SetNavTransition("video-preprocess", types.DirUp, "video-aspect", types.NavIndexFirst)
+		} else {
+			focus.SetNavTransition("video-shaders", types.DirUp, "video-aspect", types.NavIndexFirst)
 		}
 	}
 }
@@ -129,6 +138,14 @@ func (v *VideoSection) buildShadersList(focus types.FocusManager) widget.Preferr
 			widget.TextOpts.Text("", style.FontFace(), style.TextSecondary),
 		))
 	}
+
+	// Aspect ratio setting
+	listContent.AddChild(v.buildAspectRatioRow(focus))
+
+	// Spacer before shaders
+	listContent.AddChild(widget.NewText(
+		widget.TextOpts.Text("", style.FontFace(), style.TextSecondary),
+	))
 
 	// Shaders header
 	shadersLabel := widget.NewText(
@@ -185,6 +202,64 @@ func (v *VideoSection) maxShaderLabelWidth() float64 {
 		available = 150
 	}
 	return float64(available)
+}
+
+// buildAspectRatioRow creates a cycle button row for the aspect ratio setting
+func (v *VideoSection) buildAspectRatioRow(focus types.FocusManager) *widget.Container {
+	current := v.config.Video.AspectRatio
+	displayName := storage.AspectRatioDisplayName(current)
+
+	nextIdx := 0
+	for i, ar := range storage.ValidAspectRatios {
+		if ar == current {
+			nextIdx = (i + 1) % len(storage.ValidAspectRatios)
+			break
+		}
+	}
+
+	row := widget.NewContainer(
+		widget.ContainerOpts.Layout(widget.NewGridLayout(
+			widget.GridLayoutOpts.Columns(2),
+			widget.GridLayoutOpts.Stretch([]bool{true, false}, []bool{true}),
+			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
+			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
+		)),
+		widget.ContainerOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
+		),
+	)
+
+	label := widget.NewText(
+		widget.TextOpts.Text("Aspect Ratio", style.FontFace(), style.Text),
+		widget.TextOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
+				VerticalPosition: widget.GridLayoutPositionCenter,
+			}),
+		),
+	)
+	row.AddChild(label)
+
+	cycleBtn := widget.NewButton(
+		widget.ButtonOpts.Image(style.ButtonImage()),
+		widget.ButtonOpts.Text(displayName, style.FontFace(), style.ButtonTextColor()),
+		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
+		widget.ButtonOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
+				VerticalPosition: widget.GridLayoutPositionCenter,
+			}),
+			widget.WidgetOpts.MinSize(style.Px(60), 0),
+		),
+		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
+			v.config.Video.AspectRatio = storage.ValidAspectRatios[nextIdx]
+			storage.SaveConfig(v.config)
+			focus.SetPendingFocus("video-aspect-ratio")
+			v.callback.RequestRebuild()
+		}),
+	)
+	focus.RegisterFocusButton("video-aspect-ratio", cycleBtn)
+	row.AddChild(cycleBtn)
+
+	return row
 }
 
 // buildShaderRow creates a row for a single shader with UI and Game toggle buttons

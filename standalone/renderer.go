@@ -4,7 +4,7 @@ package standalone
 
 import (
 	"github.com/hajimehoshi/ebiten/v2"
-	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/standalone/display"
 )
 
 // FramebufferRenderer owns the ebiten offscreen buffer and handles
@@ -12,10 +12,16 @@ import (
 // DrawCachedFramebuffer/GetCachedFramebufferImage methods that were
 // previously on the bridge emulator.
 type FramebufferRenderer struct {
-	screenWidth int
-	par         float64
-	offscreen   *ebiten.Image
-	drawOpts    ebiten.DrawImageOptions
+	screenWidth     int
+	par             float64
+	aspectRatioMode string
+	offscreen       *ebiten.Image
+	drawOpts        ebiten.DrawImageOptions
+}
+
+// SetAspectRatioMode sets the aspect ratio scaling mode ("dar", "4:3", "stretch").
+func (r *FramebufferRenderer) SetAspectRatioMode(mode string) {
+	r.aspectRatioMode = mode
 }
 
 // NewFramebufferRenderer creates a renderer for the given native screen width
@@ -50,23 +56,8 @@ func (r *FramebufferRenderer) DrawFramebuffer(screen *ebiten.Image, pixels []byt
 	nativeW := float64(pixelWidth)
 	nativeH := float64(activeHeight)
 
-	// Compute DAR dynamically from frame dimensions and PAR.
-	dar := emucore.DisplayAspectRatio(pixelWidth, activeHeight, r.par)
-
-	// Fit to screen while preserving the display aspect ratio.
-	displayW := float64(screenW)
-	displayH := displayW / dar
-	if displayH > float64(screenH) {
-		displayH = float64(screenH)
-		displayW = displayH * dar
-	}
-
-	scaleX := displayW / nativeW
-	scaleY := displayH / nativeH
-	scaledW := nativeW * scaleX
-	scaledH := nativeH * scaleY
-	offsetX := (float64(screenW) - scaledW) / 2
-	offsetY := (float64(screenH) - scaledH) / 2
+	displayW, displayH := display.Size(r.aspectRatioMode, screenW, screenH, pixelWidth, activeHeight, r.par)
+	scaleX, scaleY, offsetX, offsetY := display.ScaleAndCenter(displayW, displayH, nativeW, nativeH, screenW, screenH)
 
 	r.drawOpts = ebiten.DrawImageOptions{}
 	r.drawOpts.GeoM.Scale(scaleX, scaleY)

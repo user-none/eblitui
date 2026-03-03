@@ -15,6 +15,7 @@ import (
 	emucore "github.com/user-none/eblitui/api"
 	"github.com/user-none/eblitui/rdb"
 	"github.com/user-none/eblitui/standalone/achievements"
+	"github.com/user-none/eblitui/standalone/display"
 	"github.com/user-none/eblitui/standalone/screens"
 	"github.com/user-none/eblitui/standalone/shader"
 	"github.com/user-none/eblitui/standalone/storage"
@@ -817,10 +818,7 @@ func (a *App) Draw(screen *ebiten.Image) {
 // Layout implements ebiten.Game
 func (a *App) Layout(outsideWidth, outsideHeight int) (int, int) {
 	// Query the device scale factor for HiDPI/Retina rendering
-	s := 1.0
-	if m := ebiten.Monitor(); m != nil {
-		s = m.DeviceScaleFactor()
-	}
+	s := display.DPIScale()
 	if s != a.currentDPIScale {
 		a.currentDPIScale = s
 		style.SetDPIScale(s)
@@ -895,6 +893,7 @@ func (a *App) SwitchToScanProgress(rescanAll bool) {
 func (a *App) LaunchGame(gameCRC string, resume bool) {
 	// Reset shader buffers to avoid stale data from previous game
 	a.shaderManager.ResetBuffers()
+	a.shaderManager.SetAspectRatioMode(a.config.Video.AspectRatio)
 
 	if a.gameplay.Launch(gameCRC, resume) {
 		a.previousState = a.state

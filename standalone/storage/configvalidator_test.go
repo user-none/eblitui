@@ -20,6 +20,7 @@ func TestDetectPresentKeys(t *testing.T) {
 				"version": 1,
 				"theme": "Default",
 				"fontSize": 14,
+				"video": {"aspectRatio": "dar"},
 				"audio": {"volume": 1.0, "fastForwardMute": true},
 				"window": {"width": 900, "height": 650},
 				"library": {"viewMode": "icon", "sortBy": "title"},
@@ -27,7 +28,8 @@ func TestDetectPresentKeys(t *testing.T) {
 			}`,
 			expected: map[string]bool{
 				"version": true, "theme": true, "fontSize": true,
-				"audio.volume": true, "audio.fastForwardMute": true,
+				"video.aspectRatio": true,
+				"audio.volume":      true, "audio.fastForwardMute": true,
 				"window.width": true, "window.height": true,
 				"library.viewMode": true, "library.sortBy": true,
 				"rewind.bufferSizeMB": true, "rewind.frameStep": true,
@@ -140,6 +142,9 @@ func TestApplyMissingDefaults(t *testing.T) {
 		if config.Audio.FastForwardMute != defaults.Audio.FastForwardMute {
 			t.Errorf("audio.fastForwardMute: got %v, want %v", config.Audio.FastForwardMute, defaults.Audio.FastForwardMute)
 		}
+		if config.Video.AspectRatio != defaults.Video.AspectRatio {
+			t.Errorf("video.aspectRatio: got %q, want %q", config.Video.AspectRatio, defaults.Video.AspectRatio)
+		}
 	})
 
 	t.Run("present keys preserved even when zero", func(t *testing.T) {
@@ -184,6 +189,7 @@ func TestApplyMissingDefaults(t *testing.T) {
 			Version:  1,
 			Theme:    "Dark",
 			FontSize: 20,
+			Video:    VideoConfig{AspectRatio: "4:3"},
 			Audio:    AudioConfig{Volume: 0.5, FastForwardMute: false},
 			Window:   WindowConfig{Width: 1024, Height: 768},
 			Library:  LibraryView{ViewMode: "list", SortBy: "lastPlayed"},
@@ -191,7 +197,8 @@ func TestApplyMissingDefaults(t *testing.T) {
 		}
 		presentKeys := map[string]bool{
 			"version": true, "theme": true, "fontSize": true,
-			"audio.volume": true, "audio.fastForwardMute": true,
+			"video.aspectRatio": true,
+			"audio.volume":      true, "audio.fastForwardMute": true,
 			"window.width": true, "window.height": true,
 			"library.viewMode": true, "library.sortBy": true,
 			"rewind.bufferSizeMB": true, "rewind.frameStep": true,
@@ -216,6 +223,35 @@ func TestApplyMissingDefaults(t *testing.T) {
 		}
 		if config.Audio.FastForwardMute != false {
 			t.Errorf("audio.fastForwardMute should remain false, got %v", config.Audio.FastForwardMute)
+		}
+		if config.Video.AspectRatio != "4:3" {
+			t.Errorf("video.aspectRatio should remain 4:3, got %q", config.Video.AspectRatio)
+		}
+	})
+
+	t.Run("absent aspect ratio defaults to dar", func(t *testing.T) {
+		config := &Config{}
+		presentKeys := map[string]bool{}
+
+		ApplyMissingDefaults(config, presentKeys)
+
+		if config.Video.AspectRatio != "dar" {
+			t.Errorf("video.aspectRatio should default to dar, got %q", config.Video.AspectRatio)
+		}
+	})
+
+	t.Run("present aspect ratio preserved", func(t *testing.T) {
+		config := &Config{
+			Video: VideoConfig{AspectRatio: "stretch"},
+		}
+		presentKeys := map[string]bool{
+			"video.aspectRatio": true,
+		}
+
+		ApplyMissingDefaults(config, presentKeys)
+
+		if config.Video.AspectRatio != "stretch" {
+			t.Errorf("video.aspectRatio should remain stretch, got %q", config.Video.AspectRatio)
 		}
 	})
 }
@@ -271,6 +307,26 @@ func TestValidateConfig(t *testing.T) {
 		errs := ValidateConfig(config, validTestThemes)
 		if len(errs) == 0 {
 			t.Error("expected error for fontSize=15 (not a preset)")
+		}
+	})
+
+	t.Run("valid aspect ratios", func(t *testing.T) {
+		for _, ar := range ValidAspectRatios {
+			config := DefaultConfig()
+			config.Video.AspectRatio = ar
+			errs := ValidateConfig(config, validTestThemes)
+			if len(errs) != 0 {
+				t.Errorf("aspect ratio %q should be valid, got errors: %v", ar, errs)
+			}
+		}
+	})
+
+	t.Run("invalid aspect ratio", func(t *testing.T) {
+		config := DefaultConfig()
+		config.Video.AspectRatio = "16:9"
+		errs := ValidateConfig(config, validTestThemes)
+		if len(errs) == 0 {
+			t.Error("expected error for invalid aspect ratio 16:9")
 		}
 	})
 
@@ -369,14 +425,15 @@ func TestValidateConfig(t *testing.T) {
 			Version:  99,
 			Theme:    "BadTheme",
 			FontSize: -1,
+			Video:    VideoConfig{AspectRatio: "16:9"},
 			Audio:    AudioConfig{Volume: 999},
 			Window:   WindowConfig{Width: 0, Height: 0},
 			Library:  LibraryView{ViewMode: "grid", SortBy: "date"},
 			Rewind:   RewindConfig{BufferSizeMB: 0, FrameStep: 0},
 		}
 		errs := ValidateConfig(config, validTestThemes)
-		if len(errs) != 10 {
-			t.Errorf("expected 10 errors, got %d: %v", len(errs), errs)
+		if len(errs) != 11 {
+			t.Errorf("expected 11 errors, got %d: %v", len(errs), errs)
 		}
 	})
 
@@ -513,11 +570,34 @@ func TestCorrectConfig(t *testing.T) {
 		}
 	})
 
+	t.Run("invalid aspect ratio corrected to dar", func(t *testing.T) {
+		config := DefaultConfig()
+		config.Video.AspectRatio = "16:9"
+
+		corrected := CorrectConfig(config, validTestThemes)
+
+		if corrected.Video.AspectRatio != "dar" {
+			t.Errorf("video.aspectRatio should be corrected to dar, got %q", corrected.Video.AspectRatio)
+		}
+	})
+
+	t.Run("valid aspect ratio preserved", func(t *testing.T) {
+		config := DefaultConfig()
+		config.Video.AspectRatio = "4:3"
+
+		corrected := CorrectConfig(config, validTestThemes)
+
+		if corrected.Video.AspectRatio != "4:3" {
+			t.Errorf("video.aspectRatio should remain 4:3, got %q", corrected.Video.AspectRatio)
+		}
+	})
+
 	t.Run("all invalid resets all to defaults", func(t *testing.T) {
 		config := &Config{
 			Version:  99,
 			Theme:    "BadTheme",
 			FontSize: -1,
+			Video:    VideoConfig{AspectRatio: "bad"},
 			Audio:    AudioConfig{Volume: 999},
 			Window:   WindowConfig{Width: 0, Height: 0},
 			Library:  LibraryView{ViewMode: "grid", SortBy: "date"},

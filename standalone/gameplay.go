@@ -247,6 +247,7 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 
 	// Create renderer and shared structures for ADT
 	gm.renderer = NewFramebufferRenderer(gm.systemInfo.ScreenWidth, gm.systemInfo.PixelAspectRatio)
+	gm.renderer.SetAspectRatioMode(gm.config.Video.AspectRatio)
 	gm.sharedInput = &SharedInput{}
 	gm.sharedFramebuffer = NewSharedFramebuffer(gm.systemInfo.ScreenWidth, gm.systemInfo.MaxScreenHeight)
 	gm.emuControl = NewEmuControl()

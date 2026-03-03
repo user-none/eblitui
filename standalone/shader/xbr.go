@@ -6,7 +6,7 @@ import (
 	_ "embed"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/standalone/display"
 )
 
 //go:embed shaders/xbr.kage
@@ -16,13 +16,19 @@ var xbrShaderSrc []byte
 // Supports 2x (1 pass), 4x (2 passes), and 8x (3 passes) scaling.
 // Buffers are pooled and reused to avoid per-frame GPU allocations.
 type XBRScaler struct {
-	shader *ebiten.Shader // Cached compiled shader
-	par    float64        // Pixel aspect ratio
+	shader          *ebiten.Shader // Cached compiled shader
+	par             float64        // Pixel aspect ratio
+	aspectRatioMode string         // "dar", "4:3", "stretch"
 
 	// Pooled buffers (reused when dimensions match)
 	normalizedSrc *ebiten.Image
 	passBuffers   [3]*ebiten.Image // Max 3 passes for 8x
 	screenBuffer  *ebiten.Image
+}
+
+// SetAspectRatioMode sets the aspect ratio scaling mode ("dar", "4:3", "stretch").
+func (x *XBRScaler) SetAspectRatioMode(mode string) {
+	x.aspectRatioMode = mode
 }
 
 // NewXBRScaler creates a new xBR scaler instance with the given
@@ -194,22 +200,8 @@ func (x *XBRScaler) scaleToScreen(src *ebiten.Image, screenW, screenH int) *ebit
 	srcW := float64(src.Bounds().Dx())
 	srcH := float64(src.Bounds().Dy())
 
-	// Compute DAR dynamically from source dimensions and PAR.
-	dar := emucore.DisplayAspectRatio(int(srcW), int(srcH), x.par)
-
-	displayW := float64(screenW)
-	displayH := displayW / dar
-	if displayH > float64(screenH) {
-		displayH = float64(screenH)
-		displayW = displayH * dar
-	}
-
-	scaleX := displayW / srcW
-	scaleY := displayH / srcH
-	scaledW := srcW * scaleX
-	scaledH := srcH * scaleY
-	offsetX := (float64(screenW) - scaledW) / 2
-	offsetY := (float64(screenH) - scaledH) / 2
+	displayW, displayH := display.Size(x.aspectRatioMode, screenW, screenH, int(srcW), int(srcH), x.par)
+	scaleX, scaleY, offsetX, offsetY := display.ScaleAndCenter(displayW, displayH, srcW, srcH, screenW, screenH)
 
 	screenBuffer := ebiten.NewImage(screenW, screenH)
 	drawOp := &ebiten.DrawImageOptions{}
@@ -227,22 +219,8 @@ func (x *XBRScaler) drawToScreenBuffer(src *ebiten.Image, screenW, screenH int) 
 	srcW := float64(src.Bounds().Dx())
 	srcH := float64(src.Bounds().Dy())
 
-	// Compute DAR dynamically from source dimensions and PAR.
-	dar := emucore.DisplayAspectRatio(int(srcW), int(srcH), x.par)
-
-	displayW := float64(screenW)
-	displayH := displayW / dar
-	if displayH > float64(screenH) {
-		displayH = float64(screenH)
-		displayW = displayH * dar
-	}
-
-	scaleX := displayW / srcW
-	scaleY := displayH / srcH
-	scaledW := srcW * scaleX
-	scaledH := srcH * scaleY
-	offsetX := (float64(screenW) - scaledW) / 2
-	offsetY := (float64(screenH) - scaledH) / 2
+	displayW, displayH := display.Size(x.aspectRatioMode, screenW, screenH, int(srcW), int(srcH), x.par)
+	scaleX, scaleY, offsetX, offsetY := display.ScaleAndCenter(displayW, displayH, srcW, srcH, screenW, screenH)
 
 	drawOp := &ebiten.DrawImageOptions{}
 	drawOp.GeoM.Scale(scaleX, scaleY)
