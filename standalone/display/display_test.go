@@ -68,6 +68,41 @@ func TestSizeDARWidthFit(t *testing.T) {
 	}
 }
 
+func TestSize11WidthFit(t *testing.T) {
+	// 640x800 screen, 256x224 source with PAR 1.1458
+	// 1:1 mode ignores PAR, uses PAR=1.0 -> DAR = 256/224 = 1.1428
+	// 640/1.1428 = 560.01 < 800 -> fits by width
+	w, h := Size("1:1", 640, 800, 256, 224, 1.1458)
+	dar := 256.0 / 224.0 // PAR forced to 1.0
+	expectedW := 640.0
+	expectedH := 640.0 / dar
+	if !almostEqual(w, expectedW, tolerance) || !almostEqual(h, expectedH, tolerance) {
+		t.Errorf("1:1 width fit: got (%v, %v), want (%v, %v)", w, h, expectedW, expectedH)
+	}
+}
+
+func TestSize11HeightConstrained(t *testing.T) {
+	// 1200x400 screen, 256x224 source with PAR 1.1458
+	// 1:1 mode ignores PAR -> DAR = 256/224 = 1.1428
+	// 1200/1.1428 = 1049.87 > 400 -> constrain by height
+	w, h := Size("1:1", 1200, 400, 256, 224, 1.1458)
+	dar := 256.0 / 224.0
+	expectedH := 400.0
+	expectedW := 400.0 * dar
+	if !almostEqual(w, expectedW, tolerance) || !almostEqual(h, expectedH, tolerance) {
+		t.Errorf("1:1 height constrained: got (%v, %v), want (%v, %v)", w, h, expectedW, expectedH)
+	}
+}
+
+func TestSize11MatchesDARWithPAR1(t *testing.T) {
+	// When PAR=1.0, 1:1 mode should produce identical results to DAR mode
+	w1, h1 := Size("1:1", 800, 600, 256, 224, 1.0)
+	w2, h2 := Size("dar", 800, 600, 256, 224, 1.0)
+	if !almostEqual(w1, w2, tolerance) || !almostEqual(h1, h2, tolerance) {
+		t.Errorf("1:1 vs dar with PAR=1.0: (%v,%v) != (%v,%v)", w1, h1, w2, h2)
+	}
+}
+
 func TestSizeDefaultMode(t *testing.T) {
 	// Empty string defaults to DAR
 	w1, h1 := Size("", 800, 600, 256, 224, 1.0)

@@ -17,7 +17,7 @@ type FramebufferRenderer struct {
 	drawOpts        ebiten.DrawImageOptions
 }
 
-// SetAspectRatioMode sets the aspect ratio scaling mode ("dar", "4:3", "stretch").
+// SetAspectRatioMode sets the aspect ratio scaling mode ("dar", "4:3", "1:1", "stretch").
 func (r *FramebufferRenderer) SetAspectRatioMode(mode string) {
 	r.aspectRatioMode = mode
 }

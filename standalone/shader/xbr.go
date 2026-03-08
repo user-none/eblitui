@@ -16,7 +16,7 @@ var xbrShaderSrc []byte
 type XBRScaler struct {
 	shader          *ebiten.Shader // Cached compiled shader
 	par             float64        // Pixel aspect ratio
-	aspectRatioMode string         // "dar", "4:3", "stretch"
+	aspectRatioMode string         // "dar", "4:3", "1:1", "stretch"
 
 	// Pooled buffers (reused when dimensions match)
 	normalizedSrc *ebiten.Image
@@ -24,7 +24,7 @@ type XBRScaler struct {
 	screenBuffer  *ebiten.Image
 }
 
-// SetAspectRatioMode sets the aspect ratio scaling mode ("dar", "4:3", "stretch").
+// SetAspectRatioMode sets the aspect ratio scaling mode ("dar", "4:3", "1:1", "stretch").
 func (x *XBRScaler) SetAspectRatioMode(mode string) {
 	x.aspectRatioMode = mode
 }

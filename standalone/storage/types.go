@@ -44,19 +44,21 @@ type VideoConfig struct {
 }
 
 // ValidAspectRatios lists the allowed aspect ratio mode values
-var ValidAspectRatios = []string{"dar", "4:3", "stretch"}
+var ValidAspectRatios = []string{"dar", "4:3", "1:1", "stretch"}
 
 // AspectRatioDisplayName returns a user-facing label for the given mode.
 func AspectRatioDisplayName(mode string) string {
 	switch mode {
 	case "dar":
-		return "DAR"
+		return "Standard (DAR)"
 	case "4:3":
 		return "4:3"
+	case "1:1":
+		return "1:1 (PAR)"
 	case "stretch":
 		return "Stretch"
 	default:
-		return "DAR"
+		return "Standard (DAR)"
 	}
 }
 

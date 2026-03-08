@@ -22,6 +22,15 @@ func Size(mode string, screenW, screenH, sourceW, sourceH int, par float64) (flo
 			displayW = displayH * ratio
 		}
 		return displayW, displayH
+	case "1:1":
+		dar := emucore.DisplayAspectRatio(sourceW, sourceH, 1.0)
+		displayW := float64(screenW)
+		displayH := displayW / dar
+		if displayH > float64(screenH) {
+			displayH = float64(screenH)
+			displayW = displayH * dar
+		}
+		return displayW, displayH
 	default: // "dar" or unset
 		dar := emucore.DisplayAspectRatio(sourceW, sourceH, par)
 		displayW := float64(screenW)
