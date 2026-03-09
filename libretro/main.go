@@ -198,6 +198,8 @@ func retro_reset() {
 		return
 	}
 	setEmulator(emu)
+	applyCoreOptions()
+	emulator.Start()
 }
 
 //export retro_run
@@ -209,7 +211,8 @@ func retro_run() {
 	// Check for option changes
 	var updated C.bool
 	if C.call_environ_cb(C.RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, unsafe.Pointer(&updated)) && updated {
-		updateCoreOptions()
+		updateRegionOption()
+		applyCoreOptions()
 	}
 
 	// Poll input
@@ -352,8 +355,8 @@ func retro_load_game(game *C.struct_retro_game_info) C.bool {
 	detectedRegion, _ = factory.DetectRegion(romData)
 	region = detectedRegion
 
-	// Read initial options
-	updateCoreOptions()
+	// Read region option before creating emulator
+	updateRegionOption()
 
 	// Create emulator
 	emu, err := factory.CreateEmulator(romData, region)
@@ -361,6 +364,8 @@ func retro_load_game(game *C.struct_retro_game_info) C.bool {
 		return C.bool(false)
 	}
 	setEmulator(emu)
+	applyCoreOptions()
+	emulator.Start()
 
 	// Allocate memory buffers
 	allocMemBuffers()
@@ -502,9 +507,8 @@ func setVariables() {
 	C.call_environ_cb(C.RETRO_ENVIRONMENT_SET_VARIABLES, unsafe.Pointer(&options[0]))
 }
 
-// updateCoreOptions reads core options from the frontend.
-func updateCoreOptions() {
-	// Region option
+// updateRegionOption reads the region option from the frontend and applies it.
+func updateRegionOption() {
 	var regionVar C.struct_retro_variable
 	regionVar.key = optKeyRegion
 	if C.call_environ_cb(C.RETRO_ENVIRONMENT_GET_VARIABLE, unsafe.Pointer(&regionVar)) && regionVar.value != nil {
@@ -514,13 +518,19 @@ func updateCoreOptions() {
 			applyRegionOption()
 		}
 	}
+}
 
-	// Core-specific options
+// applyCoreOptions reads core-specific options from the frontend and applies
+// them to the emulator via SetOption.
+func applyCoreOptions() {
+	if emulator == nil {
+		return
+	}
 	for i, cKey := range coreOptKeys {
 		var v C.struct_retro_variable
 		v.key = cKey
 		if C.call_environ_cb(C.RETRO_ENVIRONMENT_GET_VARIABLE, unsafe.Pointer(&v)) && v.value != nil {
-			if emulator != nil && i < len(sysInfo.CoreOptions) {
+			if i < len(sysInfo.CoreOptions) {
 				emulator.SetOption(sysInfo.CoreOptions[i].Key, C.GoString(v.value))
 			}
 		}
