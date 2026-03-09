@@ -943,6 +943,11 @@ func (a *App) GetExtensions() []string {
 	return a.systemInfo.Extensions
 }
 
+// ShowNotification shows a brief notification message
+func (a *App) ShowNotification(msg string) {
+	a.notification.ShowDefault(msg)
+}
+
 // handleDeleteAndContinue handles the delete and continue button
 func (a *App) handleDeleteAndContinue() {
 	var err error

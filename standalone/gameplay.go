@@ -1,7 +1,10 @@
 package standalone
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"log"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -230,13 +233,64 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 
 	// Apply core options: use config value if set, otherwise declared default
 	for _, opt := range gm.systemInfo.CoreOptions {
-		if gm.config.Input.CoreOptions != nil {
-			if v, ok := gm.config.Input.CoreOptions[opt.Key]; ok {
+		if gm.config.CoreOptions != nil {
+			if v, ok := gm.config.CoreOptions[opt.Key]; ok {
 				emu.SetOption(opt.Key, v)
 				continue
 			}
 		}
 		emu.SetOption(opt.Key, opt.Default)
+	}
+
+	// Load BIOS files
+	for _, opt := range gm.systemInfo.BIOSOptions {
+		bc, hasCfg := gm.config.BIOS[opt.Key]
+		if !hasCfg || bc.Active == "" {
+			if opt.Required {
+				gm.notification.ShowDefault("BIOS required: " + opt.Label)
+				return false
+			}
+			continue
+		}
+		filePath := ""
+		if bc.Files != nil {
+			filePath = bc.Files[bc.Active]
+		}
+		if filePath == "" {
+			if opt.Required {
+				gm.notification.ShowDefault("BIOS file not set: " + opt.Label)
+				return false
+			}
+			continue
+		}
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			if opt.Required {
+				gm.notification.ShowDefault("Failed to read BIOS: " + opt.Label)
+				return false
+			}
+			continue
+		}
+		// Validate hash against the active variant
+		hashValid := true
+		for _, v := range opt.Variants {
+			if v.Label == bc.Active && v.SHA256 != "" {
+				h := sha256.Sum256(data)
+				hash := hex.EncodeToString(h[:])
+				if hash != v.SHA256 {
+					hashValid = false
+				}
+				break
+			}
+		}
+		if !hashValid {
+			if opt.Required {
+				gm.notification.ShowDefault("BIOS hash mismatch: " + opt.Label)
+				return false
+			}
+			continue
+		}
+		emu.SetBIOS(opt.Key, data)
 	}
 
 	emu.Start()

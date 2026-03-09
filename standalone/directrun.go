@@ -31,7 +31,8 @@ type directRunner struct {
 // RunDirect loads a ROM and runs it directly without the full UI.
 // The regionStr parameter accepts "auto", "ntsc", or "pal".
 // The options map is applied to the emulator via SetOption.
-func RunDirect(factory emucore.CoreFactory, romPath, regionStr string, options map[string]string) error {
+// The bios map provides BIOS data keyed by BIOSOption.Key (may be nil).
+func RunDirect(factory emucore.CoreFactory, romPath, regionStr string, options map[string]string, bios map[string][]byte) error {
 	systemInfo := factory.SystemInfo()
 
 	romData, _, err := romloader.Load(romPath, systemInfo.Extensions)
@@ -51,6 +52,10 @@ func RunDirect(factory emucore.CoreFactory, romPath, regionStr string, options m
 
 	for key, value := range options {
 		emulator.SetOption(key, value)
+	}
+
+	for key, data := range bios {
+		emulator.SetBIOS(key, data)
 	}
 
 	emulator.Start()

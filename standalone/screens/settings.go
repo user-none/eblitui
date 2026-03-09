@@ -72,7 +72,7 @@ func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config
 			break
 		}
 	}
-	if hasCoreOpts {
+	if hasCoreOpts || len(systemInfo.BIOSOptions) > 0 {
 		s.coreOptions = settings.NewCoreSection(callback, config, systemInfo)
 		s.sections = append(s.sections, sectionDescriptor{
 			label:    "Core Options",
@@ -299,8 +299,13 @@ func (s *SettingsScreen) setupAchievementsNav() {
 }
 
 func (s *SettingsScreen) setupCoreNav() {
-	s.SetNavTransition("sidebar", types.DirRight, "core-core-opts", types.NavIndexFirst)
+	firstZone := "core-core-opts"
+	if s.coreOptions != nil && !s.coreOptions.HasCoreOpts() && s.coreOptions.HasBIOS() {
+		firstZone = "core-bios"
+	}
+	s.SetNavTransition("sidebar", types.DirRight, firstZone, types.NavIndexFirst)
 	s.SetNavTransition("core-core-opts", types.DirLeft, "sidebar", types.NavIndexFirst)
+	s.SetNavTransition("core-bios", types.DirLeft, "sidebar", types.NavIndexFirst)
 }
 
 // OnEnter is called when entering the settings screen

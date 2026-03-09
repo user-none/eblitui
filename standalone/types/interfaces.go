@@ -43,6 +43,7 @@ type ScreenCallback interface {
 	GetPlaceholderImageData() []byte // Get raw placeholder image data for missing artwork
 	GetRDB() *rdb.RDB                // Get RDB for metadata lookups
 	GetExtensions() []string         // Get supported ROM file extensions
+	ShowNotification(msg string)     // Show a brief notification message
 }
 
 // FocusRestorer is implemented by screens that support focus restoration after rebuilds

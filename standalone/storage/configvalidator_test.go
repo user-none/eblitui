@@ -754,7 +754,7 @@ func TestInputConfigSerialization(t *testing.T) {
 		config := DefaultConfig()
 		config.Input.P1Keyboard = map[string]string{"Up": "ArrowUp", "A": "Z"}
 		config.Input.P1Controller = map[string]string{"A": "Y"}
-		config.Input.CoreOptions = map[string]string{"sixbutton": "true"}
+		config.CoreOptions = map[string]string{"sixbutton": "true"}
 
 		data, err := json.Marshal(config)
 		if err != nil {
@@ -775,7 +775,7 @@ func TestInputConfigSerialization(t *testing.T) {
 		if restored.Input.P1Controller["A"] != "Y" {
 			t.Error("P1Controller A override not preserved")
 		}
-		if restored.Input.CoreOptions["sixbutton"] != "true" {
+		if restored.CoreOptions["sixbutton"] != "true" {
 			t.Error("CoreOptions not preserved")
 		}
 	})

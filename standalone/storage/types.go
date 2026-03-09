@@ -12,7 +12,15 @@ type Config struct {
 	Shaders           ShaderConfig            `json:"shaders"`
 	Rewind            RewindConfig            `json:"rewind"`
 	Input             InputConfig             `json:"input"`
+	CoreOptions       map[string]string       `json:"coreOptions,omitempty"`
+	BIOS              map[string]BIOSConfig   `json:"bios,omitempty"`
 	RetroAchievements RetroAchievementsConfig `json:"retroAchievements"`
+}
+
+// BIOSConfig stores the user's BIOS configuration for one BIOSOption.
+type BIOSConfig struct {
+	Active string            `json:"active,omitempty"` // Active variant label, empty = none
+	Files  map[string]string `json:"files,omitempty"`  // variant label -> file path
 }
 
 // InputConfig contains input binding overrides for P1 keyboard and controller.
@@ -20,7 +28,6 @@ type Config struct {
 type InputConfig struct {
 	P1Keyboard         map[string]string `json:"p1Keyboard,omitempty"`         // button name -> key name override
 	P1Controller       map[string]string `json:"p1Controller,omitempty"`       // button name -> pad button name override
-	CoreOptions        map[string]string `json:"coreOptions,omitempty"`        // core option key -> value
 	DisableAnalogStick bool              `json:"disableAnalogStick,omitempty"` // disable analog stick mirroring d-pad
 	RumbleLevel        int               `json:"rumbleLevel,omitempty"`        // 0=off, 1=1x, 2=2x, 3=3x, 4=4x, 5=Max. Intensity/duration multiplier
 }

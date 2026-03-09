@@ -117,8 +117,8 @@ func buildCoreOptionRow(focus types.FocusManager, callback types.ScreenCallback,
 // getCoreOptionValue returns the current value for a core option,
 // checking config overrides first, then falling back to the option's default.
 func getCoreOptionValue(config *storage.Config, opt emucore.CoreOption) string {
-	if config.Input.CoreOptions != nil {
-		if v, ok := config.Input.CoreOptions[opt.Key]; ok {
+	if config.CoreOptions != nil {
+		if v, ok := config.CoreOptions[opt.Key]; ok {
 			return v
 		}
 	}
@@ -127,9 +127,9 @@ func getCoreOptionValue(config *storage.Config, opt emucore.CoreOption) string {
 
 // setCoreOptionValue saves a core option value to config.
 func setCoreOptionValue(config *storage.Config, key, value string) {
-	if config.Input.CoreOptions == nil {
-		config.Input.CoreOptions = make(map[string]string)
+	if config.CoreOptions == nil {
+		config.CoreOptions = make(map[string]string)
 	}
-	config.Input.CoreOptions[key] = value
+	config.CoreOptions[key] = value
 	storage.SaveConfig(config)
 }
