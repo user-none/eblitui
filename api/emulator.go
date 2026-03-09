@@ -32,6 +32,10 @@ type Emulator interface {
 	// SetOption applies a core option change identified by key.
 	SetOption(key string, value string)
 
+	// SetBIOS provides BIOS data for the given key. Called after
+	// CreateEmulator and before Start(). Cores without BIOS ignore this.
+	SetBIOS(key string, data []byte)
+
 	// Start finalizes emulator state after all options are applied.
 	// Must be called after SetOption and before the first RunFrame.
 	Start()

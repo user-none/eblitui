@@ -51,6 +51,33 @@ type CoreOption struct {
 	PerGame     bool               // Whether this can be overridden per game
 }
 
+// BIOSVariant describes a known BIOS dump.
+type BIOSVariant struct {
+	Label    string // Display name, e.g. "US v1.0"
+	SHA256   string // Expected SHA256 hex
+	Filename string // Default filename for system directory lookup
+}
+
+// BIOSOption describes a BIOS slot that a core supports.
+type BIOSOption struct {
+	Key      string        // Unique key, e.g. "main_bios"
+	Label    string        // Display label, e.g. "System BIOS"
+	Required bool          // true = core cannot run without it
+	Variants []BIOSVariant // Known BIOS dumps
+}
+
+// HasKnownHashes returns true if any variant has a non-empty SHA256.
+// When true, files must match a known hash to be accepted.
+func (o BIOSOption) HasKnownHashes() bool {
+	for _, v := range o.Variants {
+		if v.SHA256 != "" {
+			return true
+		}
+	}
+	return false
+}
+
+
 // SystemInfo describes an emulator system for UI configuration.
 type SystemInfo struct {
 	Name             string
@@ -71,6 +98,7 @@ type SystemInfo struct {
 	CoreVersion      string
 	SerializeSize    int
 	BigEndianMemory  bool // true for big-endian CPUs (e.g. 68K)
+	BIOSOptions      []BIOSOption
 }
 
 // DisplayAspectRatio computes the PAR-corrected display aspect ratio
