@@ -11,12 +11,21 @@ import (
 	"github.com/user-none/eblitui/standalone/types"
 )
 
+// sectionDescriptor describes a settings sidebar section
+type sectionDescriptor struct {
+	label    string
+	focusKey string
+	build    func(types.FocusManager) *widget.Container
+	setupNav func()
+}
+
 // SettingsScreen displays application settings
 type SettingsScreen struct {
 	BaseScreen // Embedded for focus restoration
 
 	callback        ScreenCallback
 	selectedSection int
+	sections        []sectionDescriptor
 
 	// Encapsulated sections
 	library           *settings.LibrarySection
@@ -26,6 +35,7 @@ type SettingsScreen struct {
 	rewind            *settings.RewindSection
 	retroAchievements *settings.RetroAchievementsSection
 	input             *settings.InputSection
+	coreOptions       *settings.CoreSection
 }
 
 // NewSettingsScreen creates a new settings screen.
@@ -44,6 +54,34 @@ func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config
 		input:             settings.NewInputSection(callback, config, systemInfo),
 	}
 	s.InitBase()
+
+	s.sections = []sectionDescriptor{
+		{label: "Video", focusKey: "section-video", build: s.video.Build, setupNav: s.setupVideoNav},
+		{label: "Audio", focusKey: "section-audio", build: s.audio.Build, setupNav: s.setupAudioNav},
+		{label: "Input", focusKey: "section-input", build: s.input.Build, setupNav: s.setupInputNav},
+		{label: "Library", focusKey: "section-library", build: s.library.Build, setupNav: s.setupLibraryNav},
+		{label: "Appearance", focusKey: "section-appearance", build: s.appearance.Build, setupNav: s.setupAppearanceNav},
+		{label: "Rewind", focusKey: "section-rewind", build: s.rewind.Build, setupNav: s.setupRewindNav},
+		{label: "Achievements", focusKey: "section-achievements", build: s.retroAchievements.Build, setupNav: s.setupAchievementsNav},
+	}
+
+	hasCoreOpts := false
+	for _, opt := range systemInfo.CoreOptions {
+		if opt.Category == emucore.CoreOptionCategoryCore {
+			hasCoreOpts = true
+			break
+		}
+	}
+	if hasCoreOpts {
+		s.coreOptions = settings.NewCoreSection(callback, config, systemInfo)
+		s.sections = append(s.sections, sectionDescriptor{
+			label:    "Core Options",
+			focusKey: "section-core",
+			build:    s.coreOptions.Build,
+			setupNav: s.setupCoreNav,
+		})
+	}
+
 	return s
 }
 
@@ -70,6 +108,9 @@ func (s *SettingsScreen) SetConfig(config *storage.Config) {
 	s.rewind.SetConfig(config)
 	s.retroAchievements.SetConfig(config)
 	s.input.SetConfig(config)
+	if s.coreOptions != nil {
+		s.coreOptions.SetConfig(config)
+	}
 }
 
 // SetAchievements updates the achievement manager reference
@@ -133,145 +174,28 @@ func (s *SettingsScreen) Build() *widget.Container {
 		),
 	)
 
-	// Video section button
-	videoBtn := widget.NewButton(
-		widget.ButtonOpts.Image(style.ActiveButtonImage(s.selectedSection == 0)),
-		widget.ButtonOpts.Text("Video", style.FontFace(), &widget.ButtonTextColor{
-			Idle:     style.Text,
-			Disabled: style.TextSecondary,
-		}),
-		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
-		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			s.selectedSection = 0
-			s.SetPendingFocus("section-video")
-			s.callback.RequestRebuild()
-		}),
-		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
-	s.RegisterFocusButton("section-video", videoBtn)
-	sidebar.AddChild(videoBtn)
-
-	// Audio section button
-	audioBtn := widget.NewButton(
-		widget.ButtonOpts.Image(style.ActiveButtonImage(s.selectedSection == 1)),
-		widget.ButtonOpts.Text("Audio", style.FontFace(), &widget.ButtonTextColor{
-			Idle:     style.Text,
-			Disabled: style.TextSecondary,
-		}),
-		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
-		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			s.selectedSection = 1
-			s.SetPendingFocus("section-audio")
-			s.callback.RequestRebuild()
-		}),
-		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
-	s.RegisterFocusButton("section-audio", audioBtn)
-	sidebar.AddChild(audioBtn)
-
-	// Input section button
-	inputBtn := widget.NewButton(
-		widget.ButtonOpts.Image(style.ActiveButtonImage(s.selectedSection == 2)),
-		widget.ButtonOpts.Text("Input", style.FontFace(), &widget.ButtonTextColor{
-			Idle:     style.Text,
-			Disabled: style.TextSecondary,
-		}),
-		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
-		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			s.selectedSection = 2
-			s.SetPendingFocus("section-input")
-			s.callback.RequestRebuild()
-		}),
-		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
-	s.RegisterFocusButton("section-input", inputBtn)
-	sidebar.AddChild(inputBtn)
-
-	// Library section button
-	libraryBtn := widget.NewButton(
-		widget.ButtonOpts.Image(style.ActiveButtonImage(s.selectedSection == 3)),
-		widget.ButtonOpts.Text("Library", style.FontFace(), &widget.ButtonTextColor{
-			Idle:     style.Text,
-			Disabled: style.TextSecondary,
-		}),
-		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
-		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			s.selectedSection = 3
-			s.SetPendingFocus("section-library")
-			s.callback.RequestRebuild()
-		}),
-		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
-	s.RegisterFocusButton("section-library", libraryBtn)
-	sidebar.AddChild(libraryBtn)
-
-	// Appearance section button
-	appearanceBtn := widget.NewButton(
-		widget.ButtonOpts.Image(style.ActiveButtonImage(s.selectedSection == 4)),
-		widget.ButtonOpts.Text("Appearance", style.FontFace(), &widget.ButtonTextColor{
-			Idle:     style.Text,
-			Disabled: style.TextSecondary,
-		}),
-		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
-		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			s.selectedSection = 4
-			s.SetPendingFocus("section-appearance")
-			s.callback.RequestRebuild()
-		}),
-		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
-	s.RegisterFocusButton("section-appearance", appearanceBtn)
-	sidebar.AddChild(appearanceBtn)
-
-	// Rewind section button
-	rewindBtn := widget.NewButton(
-		widget.ButtonOpts.Image(style.ActiveButtonImage(s.selectedSection == 5)),
-		widget.ButtonOpts.Text("Rewind", style.FontFace(), &widget.ButtonTextColor{
-			Idle:     style.Text,
-			Disabled: style.TextSecondary,
-		}),
-		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
-		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			s.selectedSection = 5
-			s.SetPendingFocus("section-rewind")
-			s.callback.RequestRebuild()
-		}),
-		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
-	s.RegisterFocusButton("section-rewind", rewindBtn)
-	sidebar.AddChild(rewindBtn)
-
-	// RetroAchievements section button
-	raBtn := widget.NewButton(
-		widget.ButtonOpts.Image(style.ActiveButtonImage(s.selectedSection == 6)),
-		widget.ButtonOpts.Text("Achievements", style.FontFace(), &widget.ButtonTextColor{
-			Idle:     style.Text,
-			Disabled: style.TextSecondary,
-		}),
-		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
-		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			s.selectedSection = 6
-			s.SetPendingFocus("section-achievements")
-			s.callback.RequestRebuild()
-		}),
-		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
-	s.RegisterFocusButton("section-achievements", raBtn)
-	sidebar.AddChild(raBtn)
+	for i, sec := range s.sections {
+		idx := i
+		key := sec.focusKey
+		btn := widget.NewButton(
+			widget.ButtonOpts.Image(style.ActiveButtonImage(s.selectedSection == idx)),
+			widget.ButtonOpts.Text(sec.label, style.FontFace(), &widget.ButtonTextColor{
+				Idle:     style.Text,
+				Disabled: style.TextSecondary,
+			}),
+			widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
+			widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
+				s.selectedSection = idx
+				s.SetPendingFocus(key)
+				s.callback.RequestRebuild()
+			}),
+			widget.ButtonOpts.WidgetOpts(
+				widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
+			),
+		)
+		s.RegisterFocusButton(key, btn)
+		sidebar.AddChild(btn)
+	}
 
 	mainContent.AddChild(sidebar)
 
@@ -284,22 +208,8 @@ func (s *SettingsScreen) Build() *widget.Container {
 		)),
 	)
 
-	// Section content - delegate to encapsulated sections
-	switch s.selectedSection {
-	case 0:
-		contentArea.AddChild(s.video.Build(s))
-	case 1:
-		contentArea.AddChild(s.audio.Build(s))
-	case 2:
-		contentArea.AddChild(s.input.Build(s))
-	case 3:
-		contentArea.AddChild(s.library.Build(s))
-	case 4:
-		contentArea.AddChild(s.appearance.Build(s))
-	case 5:
-		contentArea.AddChild(s.rewind.Build(s))
-	case 6:
-		contentArea.AddChild(s.retroAchievements.Build(s))
+	if s.selectedSection >= 0 && s.selectedSection < len(s.sections) {
+		contentArea.AddChild(s.sections[s.selectedSection].build(s))
 	}
 
 	mainContent.AddChild(contentArea)
@@ -313,69 +223,91 @@ func (s *SettingsScreen) Build() *widget.Container {
 
 // setupNavigation registers navigation zones for settings screen
 func (s *SettingsScreen) setupNavigation() {
-	// Sidebar zone (vertical)
-	sidebarKeys := []string{"section-video", "section-audio", "section-input", "section-library", "section-appearance", "section-rewind", "section-achievements"}
+	sidebarKeys := make([]string, len(s.sections))
+	for i, sec := range s.sections {
+		sidebarKeys[i] = sec.focusKey
+	}
 	s.RegisterNavZone("sidebar", types.NavZoneVertical, sidebarKeys, 0)
 
-	// Set up transitions from sidebar to content
-	// The content zone names are set by the sections
-	switch s.selectedSection {
-	case 0: // Video
-		firstVideoZone := "video-shaders"
-		for _, opt := range s.video.SystemInfo().CoreOptions {
-			if opt.Category == emucore.CoreOptionCategoryVideo {
-				firstVideoZone = "video-core-opts"
-				break
-			}
-		}
-		s.SetNavTransition("sidebar", types.DirRight, firstVideoZone, types.NavIndexFirst)
-		s.SetNavTransition("video-core-opts", types.DirLeft, "sidebar", types.NavIndexFirst)
-		s.SetNavTransition("video-preprocess", types.DirLeft, "sidebar", types.NavIndexFirst)
-		s.SetNavTransition("video-shaders", types.DirLeft, "sidebar", types.NavIndexFirst)
-	case 1: // Audio
-		firstAudioZone := "audio-mute"
-		for _, opt := range s.audio.SystemInfo().CoreOptions {
-			if opt.Category == emucore.CoreOptionCategoryAudio {
-				firstAudioZone = "audio-core-opts"
-				break
-			}
-		}
-		s.SetNavTransition("sidebar", types.DirRight, firstAudioZone, types.NavIndexFirst)
-		s.SetNavTransition("audio-core-opts", types.DirLeft, "sidebar", types.NavIndexFirst)
-		s.SetNavTransition("audio-mute", types.DirLeft, "sidebar", types.NavIndexFirst)
-		s.SetNavTransition("audio-volume", types.DirLeft, "sidebar", types.NavIndexFirst)
-		s.SetNavTransition("audio-ff-mute", types.DirLeft, "sidebar", types.NavIndexFirst)
-	case 2: // Input
-		firstZone := "input-bindings"
-		for _, opt := range s.input.SystemInfo().CoreOptions {
-			if opt.Category == emucore.CoreOptionCategoryInput {
-				firstZone = "input-core-opts"
-				break
-			}
-		}
-		s.SetNavTransition("sidebar", types.DirRight, firstZone, types.NavIndexFirst)
-		s.SetNavTransition("input-core-opts", types.DirLeft, "sidebar", types.NavIndexFirst)
-		s.SetNavTransition("input-bindings", types.DirLeft, "sidebar", types.NavIndexFirst)
-		s.SetNavTransition("input-reset", types.DirLeft, "sidebar", types.NavIndexFirst)
-	case 3: // Library
-		s.SetNavTransition("sidebar", types.DirRight, "lib-folders", types.NavIndexFirst)
-		s.SetNavTransition("lib-folders", types.DirLeft, "sidebar", types.NavIndexFirst)
-		s.SetNavTransition("lib-buttons", types.DirLeft, "sidebar", types.NavIndexFirst)
-	case 4: // Appearance
-		s.SetNavTransition("sidebar", types.DirRight, "theme-list", types.NavIndexFirst)
-		s.SetNavTransition("theme-list", types.DirLeft, "sidebar", types.NavIndexFirst)
-	case 5: // Rewind
-		s.SetNavTransition("sidebar", types.DirRight, "rewind-enable", types.NavIndexFirst)
-		s.SetNavTransition("rewind-enable", types.DirLeft, "sidebar", types.NavIndexFirst)
-	case 6: // Achievements
-		s.SetNavTransition("sidebar", types.DirRight, "ra-settings", types.NavIndexFirst)
-		s.SetNavTransition("ra-settings", types.DirLeft, "sidebar", types.NavIndexFirst)
+	if s.selectedSection >= 0 && s.selectedSection < len(s.sections) {
+		s.sections[s.selectedSection].setupNav()
 	}
+}
+
+func (s *SettingsScreen) setupVideoNav() {
+	firstVideoZone := "video-shaders"
+	for _, opt := range s.video.SystemInfo().CoreOptions {
+		if opt.Category == emucore.CoreOptionCategoryVideo {
+			firstVideoZone = "video-core-opts"
+			break
+		}
+	}
+	s.SetNavTransition("sidebar", types.DirRight, firstVideoZone, types.NavIndexFirst)
+	s.SetNavTransition("video-core-opts", types.DirLeft, "sidebar", types.NavIndexFirst)
+	s.SetNavTransition("video-preprocess", types.DirLeft, "sidebar", types.NavIndexFirst)
+	s.SetNavTransition("video-shaders", types.DirLeft, "sidebar", types.NavIndexFirst)
+}
+
+func (s *SettingsScreen) setupAudioNav() {
+	firstAudioZone := "audio-mute"
+	for _, opt := range s.audio.SystemInfo().CoreOptions {
+		if opt.Category == emucore.CoreOptionCategoryAudio {
+			firstAudioZone = "audio-core-opts"
+			break
+		}
+	}
+	s.SetNavTransition("sidebar", types.DirRight, firstAudioZone, types.NavIndexFirst)
+	s.SetNavTransition("audio-core-opts", types.DirLeft, "sidebar", types.NavIndexFirst)
+	s.SetNavTransition("audio-mute", types.DirLeft, "sidebar", types.NavIndexFirst)
+	s.SetNavTransition("audio-volume", types.DirLeft, "sidebar", types.NavIndexFirst)
+	s.SetNavTransition("audio-ff-mute", types.DirLeft, "sidebar", types.NavIndexFirst)
+}
+
+func (s *SettingsScreen) setupInputNav() {
+	firstZone := "input-bindings"
+	for _, opt := range s.input.SystemInfo().CoreOptions {
+		if opt.Category == emucore.CoreOptionCategoryInput {
+			firstZone = "input-core-opts"
+			break
+		}
+	}
+	s.SetNavTransition("sidebar", types.DirRight, firstZone, types.NavIndexFirst)
+	s.SetNavTransition("input-core-opts", types.DirLeft, "sidebar", types.NavIndexFirst)
+	s.SetNavTransition("input-bindings", types.DirLeft, "sidebar", types.NavIndexFirst)
+	s.SetNavTransition("input-reset", types.DirLeft, "sidebar", types.NavIndexFirst)
+}
+
+func (s *SettingsScreen) setupLibraryNav() {
+	s.SetNavTransition("sidebar", types.DirRight, "lib-folders", types.NavIndexFirst)
+	s.SetNavTransition("lib-folders", types.DirLeft, "sidebar", types.NavIndexFirst)
+	s.SetNavTransition("lib-buttons", types.DirLeft, "sidebar", types.NavIndexFirst)
+}
+
+func (s *SettingsScreen) setupAppearanceNav() {
+	s.SetNavTransition("sidebar", types.DirRight, "theme-list", types.NavIndexFirst)
+	s.SetNavTransition("theme-list", types.DirLeft, "sidebar", types.NavIndexFirst)
+}
+
+func (s *SettingsScreen) setupRewindNav() {
+	s.SetNavTransition("sidebar", types.DirRight, "rewind-enable", types.NavIndexFirst)
+	s.SetNavTransition("rewind-enable", types.DirLeft, "sidebar", types.NavIndexFirst)
+}
+
+func (s *SettingsScreen) setupAchievementsNav() {
+	s.SetNavTransition("sidebar", types.DirRight, "ra-settings", types.NavIndexFirst)
+	s.SetNavTransition("ra-settings", types.DirLeft, "sidebar", types.NavIndexFirst)
+}
+
+func (s *SettingsScreen) setupCoreNav() {
+	s.SetNavTransition("sidebar", types.DirRight, "core-core-opts", types.NavIndexFirst)
+	s.SetNavTransition("core-core-opts", types.DirLeft, "sidebar", types.NavIndexFirst)
 }
 
 // OnEnter is called when entering the settings screen
 func (s *SettingsScreen) OnEnter() {
-	s.SetPendingFocus("section-video") // Always defaults to Video section when entering
+	if len(s.sections) > 0 {
+		s.SetPendingFocus(s.sections[0].focusKey)
+	}
 }
 
 // EnsureFocusedVisible scrolls the theme list to keep the focused widget visible
@@ -386,11 +318,13 @@ func (s *SettingsScreen) EnsureFocusedVisible(focused widget.Focuser) {
 
 // Update handles per-frame updates for settings sections
 func (s *SettingsScreen) Update() {
-	switch s.selectedSection {
-	case 2:
-		s.input.Update()
-	case 6:
-		s.retroAchievements.Update()
+	if s.selectedSection >= 0 && s.selectedSection < len(s.sections) {
+		switch s.sections[s.selectedSection].focusKey {
+		case "section-input":
+			s.input.Update()
+		case "section-achievements":
+			s.retroAchievements.Update()
+		}
 	}
 }
 
