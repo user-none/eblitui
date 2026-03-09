@@ -239,6 +239,8 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 		emu.SetOption(opt.Key, opt.Default)
 	}
 
+	emu.Start()
+
 	// Detect optional interfaces
 	gm.saveStater, _ = emu.(emucore.SaveStater)
 	gm.batterySaver, _ = emu.(emucore.BatterySaver)

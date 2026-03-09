@@ -53,6 +53,8 @@ func RunDirect(factory emucore.CoreFactory, romPath, regionStr string, options m
 		emulator.SetOption(key, value)
 	}
 
+	emulator.Start()
+
 	ebiten.SetWindowTitle(systemInfo.CoreName)
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	ebiten.SetTPS(60)
