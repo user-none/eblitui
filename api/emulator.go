@@ -32,6 +32,10 @@ type Emulator interface {
 	// SetOption applies a core option change identified by key.
 	SetOption(key string, value string)
 
+	// Start finalizes emulator state after all options are applied.
+	// Must be called after SetOption and before the first RunFrame.
+	Start()
+
 	// Close releases any resources held by the emulator.
 	Close()
 }
