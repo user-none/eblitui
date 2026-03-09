@@ -6,6 +6,8 @@ package libretro
 */
 import "C"
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"unsafe"
 
@@ -76,6 +78,9 @@ var (
 	// Core-specific option keys and C strings
 	coreOptKeys []*C.char
 	coreOptVals []*C.char
+
+	// BIOS data loaded from system directory (keyed by BIOSOption.Key)
+	biosData map[string][]byte
 )
 
 // RegisterFactory sets the CoreFactory and input mapping used by the libretro core.
@@ -199,6 +204,7 @@ func retro_reset() {
 	}
 	setEmulator(emu)
 	applyCoreOptions()
+	applyBIOS()
 	emulator.Start()
 }
 
@@ -365,6 +371,8 @@ func retro_load_game(game *C.struct_retro_game_info) C.bool {
 	}
 	setEmulator(emu)
 	applyCoreOptions()
+	loadBIOSFromSystemDir()
+	applyBIOS()
 	emulator.Start()
 
 	// Allocate memory buffers
@@ -615,6 +623,42 @@ func freeMemBuffers() {
 		}
 	}
 	memBuffers = nil
+}
+
+// loadBIOSFromSystemDir queries the frontend for the system directory and
+// attempts to load BIOS files for each BIOSOption variant.
+func loadBIOSFromSystemDir() {
+	if len(sysInfo.BIOSOptions) == 0 {
+		return
+	}
+
+	var sysDir *C.char
+	if !C.call_environ_cb(C.RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, unsafe.Pointer(&sysDir)) || sysDir == nil {
+		return
+	}
+	dir := C.GoString(sysDir)
+
+	biosData = make(map[string][]byte)
+	for _, opt := range sysInfo.BIOSOptions {
+		for _, v := range opt.Variants {
+			path := filepath.Join(dir, v.Filename)
+			data, err := os.ReadFile(path)
+			if err == nil {
+				biosData[opt.Key] = data
+				break
+			}
+		}
+	}
+}
+
+// applyBIOS passes loaded BIOS data to the emulator.
+func applyBIOS() {
+	if emulator == nil || len(biosData) == 0 {
+		return
+	}
+	for key, data := range biosData {
+		emulator.SetBIOS(key, data)
+	}
 }
 
 // reorderDefault moves the default value to the front of a values slice.
