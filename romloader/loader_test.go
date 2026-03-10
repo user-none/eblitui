@@ -236,8 +236,8 @@ func TestLoad_NoROMInArchive(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error when no ROM file in archive")
 	}
-	if err != ErrNoROMFile {
-		t.Errorf("Expected ErrNoROMFile, got %v", err)
+	if err != ErrNoFile {
+		t.Errorf("Expected ErrNoFile, got %v", err)
 	}
 }
 
@@ -409,5 +409,110 @@ func TestLoad_UnsupportedExtension(t *testing.T) {
 	_, _, err := Load(path, testExtensions)
 	if err == nil {
 		t.Error("Expected error for unsupported extension")
+	}
+}
+
+// TestLoadBIOS_RawFile tests that LoadBIOS loads a raw file regardless of extension
+func TestLoadBIOS_RawFile(t *testing.T) {
+	testData := []byte{0x01, 0x02, 0x03, 0x04, 0x05}
+	path := createTestROMFile(t, testData, ".bin")
+
+	data, err := LoadBIOS(path)
+	if err != nil {
+		t.Fatalf("LoadBIOS failed: %v", err)
+	}
+	if !bytes.Equal(data, testData) {
+		t.Errorf("Data mismatch: expected %v, got %v", testData, data)
+	}
+}
+
+// TestLoadBIOS_ZipArchive tests that LoadBIOS extracts the first file from a zip
+func TestLoadBIOS_ZipArchive(t *testing.T) {
+	testData := []byte{0xAA, 0xBB, 0xCC, 0xDD}
+	// Use a non-ROM extension inside the zip to prove extension matching is bypassed
+	path := createTestZipFile(t, testData, "bios.rom")
+
+	data, err := LoadBIOS(path)
+	if err != nil {
+		t.Fatalf("LoadBIOS failed: %v", err)
+	}
+	if !bytes.Equal(data, testData) {
+		t.Errorf("Data mismatch: expected %v, got %v", testData, data)
+	}
+}
+
+// TestLoadBIOS_GzipFile tests that LoadBIOS extracts from gzip
+func TestLoadBIOS_GzipFile(t *testing.T) {
+	testData := []byte{0x11, 0x22, 0x33, 0x44, 0x55}
+	path := createTestGzipFile(t, testData, ".bin")
+
+	data, err := LoadBIOS(path)
+	if err != nil {
+		t.Fatalf("LoadBIOS failed: %v", err)
+	}
+	if !bytes.Equal(data, testData) {
+		t.Errorf("Data mismatch: expected %v, got %v", testData, data)
+	}
+}
+
+// TestLoadBIOS_FileNotFound tests error case for missing files
+func TestLoadBIOS_FileNotFound(t *testing.T) {
+	_, err := LoadBIOS("/nonexistent/path/bios.bin")
+	if err == nil {
+		t.Error("Expected error for nonexistent file")
+	}
+}
+
+// TestLoadBIOS_UnsupportedFormat tests error for empty/unrecognized archive content
+func TestLoadBIOS_UnsupportedFormat(t *testing.T) {
+	// An empty file has no magic bytes and nil extensions means formatRaw,
+	// so it loads as empty data (not an error)
+	path := createTestROMFile(t, []byte{}, ".dat")
+	data, err := LoadBIOS(path)
+	if err != nil {
+		t.Fatalf("LoadBIOS failed for empty file: %v", err)
+	}
+	if len(data) != 0 {
+		t.Errorf("Expected empty data, got %d bytes", len(data))
+	}
+}
+
+// TestIsROMFile_NilExtensions tests that nil extensions matches any filename
+func TestIsROMFile_NilExtensions(t *testing.T) {
+	testCases := []string{
+		"bios.bin",
+		"firmware.rom",
+		"data.dat",
+		"noext",
+		".hidden",
+	}
+	for _, name := range testCases {
+		if !isROMFile(name, nil) {
+			t.Errorf("isROMFile(%q, nil) should return true", name)
+		}
+	}
+}
+
+// TestDetectFormat_NilExtensions tests that nil extensions returns formatRaw for non-archives
+func TestDetectFormat_NilExtensions(t *testing.T) {
+	testCases := []struct {
+		header   []byte
+		path     string
+		expected formatType
+	}{
+		{[]byte{0x00, 0x00}, "bios.bin", formatRaw},
+		{[]byte{0x00, 0x00}, "firmware.dat", formatRaw},
+		{[]byte{0x00, 0x00}, "noext", formatRaw},
+		// Archive magic bytes should still be detected
+		{[]byte{0x50, 0x4B, 0x03, 0x04}, "bios.bin", formatZIP},
+		{[]byte{0x1F, 0x8B}, "bios.bin", formatGzip},
+	}
+
+	for _, tc := range testCases {
+		result := detectFormat(tc.header, tc.path, nil)
+		if result != tc.expected {
+			t.Errorf("detectFormat(%v, %s, nil): expected %d, got %d",
+				tc.header, tc.path, tc.expected, result)
+		}
 	}
 }

@@ -3,13 +3,13 @@ package settings
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"os"
 	"path/filepath"
 
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/sqweek/dialog"
 	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/romloader"
 	"github.com/user-none/eblitui/standalone/storage"
 	"github.com/user-none/eblitui/standalone/style"
 	"github.com/user-none/eblitui/standalone/types"
@@ -289,7 +289,7 @@ func (c *CoreSection) onBrowseBIOS(opt emucore.BIOSOption, v emucore.BIOSVariant
 			return
 		}
 
-		data, err := os.ReadFile(path)
+		data, err := romloader.LoadBIOS(path)
 		if err != nil {
 			return
 		}

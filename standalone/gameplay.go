@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"log"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -262,7 +261,7 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 			}
 			continue
 		}
-		data, err := os.ReadFile(filePath)
+		data, err := romloader.LoadBIOS(filePath)
 		if err != nil {
 			if opt.Required {
 				gm.notification.ShowDefault("Failed to read BIOS: " + opt.Label)

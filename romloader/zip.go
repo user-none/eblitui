@@ -35,5 +35,5 @@ func extractFromZIP(path string, extensions []string) ([]byte, string, error) {
 		return data, filepath.Base(f.Name), nil
 	}
 
-	return nil, "", ErrNoROMFile
+	return nil, "", ErrNoFile
 }

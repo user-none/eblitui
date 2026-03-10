@@ -39,5 +39,5 @@ func extractFromRAR(path string, extensions []string) ([]byte, string, error) {
 		return data, filepath.Base(header.Name), nil
 	}
 
-	return nil, "", ErrNoROMFile
+	return nil, "", ErrNoFile
 }

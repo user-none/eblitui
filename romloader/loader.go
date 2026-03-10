@@ -24,8 +24,8 @@ var (
 // Maximum ROM size (8MB safety limit)
 const maxROMSize = 8 * 1024 * 1024
 
-// ErrNoROMFile is returned when no ROM file is found in an archive
-var ErrNoROMFile = errors.New("no ROM file found in archive")
+// ErrNoFile is returned when no matching file is found in an archive
+var ErrNoFile = errors.New("no matching file found in archive")
 
 // ErrUnsupportedFormat is returned for unrecognized file formats
 var ErrUnsupportedFormat = errors.New("unsupported file format")
@@ -138,6 +138,11 @@ func detectFormat(header []byte, path string, extensions []string) formatType {
 		return formatGzip
 	}
 
+	// When extensions is nil, treat any non-archive file as raw
+	if extensions == nil {
+		return formatRaw
+	}
+
 	// Check if the file extension matches a known ROM extension
 	for _, romExt := range extensions {
 		if ext == strings.ToLower(romExt) {
@@ -148,8 +153,12 @@ func detectFormat(header []byte, path string, extensions []string) formatType {
 	return formatUnknown
 }
 
-// isROMFile checks if a filename has one of the given ROM extensions (case-insensitive)
+// isROMFile checks if a filename has one of the given ROM extensions (case-insensitive).
+// When extensions is nil, any non-directory file matches.
 func isROMFile(name string, extensions []string) bool {
+	if extensions == nil {
+		return true
+	}
 	lower := strings.ToLower(name)
 	for _, ext := range extensions {
 		if strings.HasSuffix(lower, strings.ToLower(ext)) {
@@ -157,6 +166,15 @@ func isROMFile(name string, extensions []string) bool {
 		}
 	}
 	return false
+}
+
+// LoadBIOS reads a BIOS file from the given path, supporting the same archive
+// formats as Load (ZIP, 7z, gzip/tar, RAR). Unlike Load, it does not require
+// the contained file to have a specific extension - the first non-directory
+// file in an archive is returned.
+func LoadBIOS(path string) ([]byte, error) {
+	data, _, err := Load(path, nil)
+	return data, err
 }
 
 // limitedRead reads from r up to maxROMSize bytes, returning an error if exceeded
