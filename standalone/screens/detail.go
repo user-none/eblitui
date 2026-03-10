@@ -104,12 +104,8 @@ func (s *DetailScreen) loadAchievementProgress() {
 	}
 
 	// Get MD5 from RDB (fast path - no ROM loading needed)
-	var md5Hash string
-	rdb := s.callback.GetRDB()
-	if rdb != nil {
-		crc32, _ := strconv.ParseUint(s.game.CRC32, 16, 32)
-		md5Hash = rdb.GetMD5ByCRC32(uint32(crc32))
-	}
+	crc32, _ := strconv.ParseUint(s.game.CRC32, 16, 32)
+	md5Hash := s.callback.GetMD5ByCRC32(uint32(crc32))
 
 	// Fallback: compute hash from ROM if not in RDB
 	if md5Hash == "" {
@@ -367,6 +363,10 @@ func (s *DetailScreen) Build() *widget.Container {
 		region = "Unknown"
 	}
 	metadataContainer.AddChild(s.buildMetadataRow("Region", region, valueWidth))
+
+	if s.game.System != "" {
+		metadataContainer.AddChild(s.buildMetadataRow("System", s.game.System, valueWidth))
+	}
 
 	// Production section
 	hasProduction := s.game.Developer != "" || s.game.Publisher != "" ||

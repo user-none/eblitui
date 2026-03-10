@@ -13,7 +13,6 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	emucore "github.com/user-none/eblitui/api"
-	"github.com/user-none/eblitui/rdb"
 	"github.com/user-none/eblitui/romloader"
 	"github.com/user-none/eblitui/standalone/achievements"
 	"github.com/user-none/eblitui/standalone/storage"
@@ -96,7 +95,7 @@ type GameplayManager struct {
 	library            *storage.Library
 	config             *storage.Config
 	achievementManager *achievements.Manager
-	rdb                *rdb.RDB
+	metadata           *MetadataManager
 
 	// Callbacks to App
 	onExitToLibrary func()
@@ -120,7 +119,7 @@ func NewGameplayManager(
 	library *storage.Library,
 	config *storage.Config,
 	achievementManager *achievements.Manager,
-	gameRDB *rdb.RDB,
+	metadata *MetadataManager,
 	onExitToLibrary func(),
 	onExitApp func(),
 ) *GameplayManager {
@@ -136,7 +135,7 @@ func NewGameplayManager(
 		library:            library,
 		config:             config,
 		achievementManager: achievementManager,
-		rdb:                gameRDB,
+		metadata:           metadata,
 		onExitToLibrary:    onExitToLibrary,
 		onExitApp:          onExitApp,
 	}
@@ -368,11 +367,8 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 			gm.achievementManager.SetEmulator(mi)
 		}
 		// Look up MD5 from RDB for fast path (avoids re-hashing ROM)
-		var md5Hash string
-		if gm.rdb != nil {
-			crc32, _ := strconv.ParseUint(game.CRC32, 16, 32)
-			md5Hash = gm.rdb.GetMD5ByCRC32(uint32(crc32))
-		}
+		crc32, _ := strconv.ParseUint(game.CRC32, 16, 32)
+		md5Hash := gm.metadata.GetMD5ByCRC32(uint32(crc32))
 		if err := gm.achievementManager.LoadGame(romData, game.File, md5Hash); err != nil {
 			log.Printf("Failed to load achievements: %v", err)
 		} else {

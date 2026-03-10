@@ -77,6 +77,14 @@ func (o BIOSOption) HasKnownHashes() bool {
 	return false
 }
 
+// MetadataVariant pairs an RDB database with its thumbnail repository.
+// Systems that span multiple libretro databases (e.g. NGP + NGPC) have
+// multiple variants so metadata lookups can search all of them.
+type MetadataVariant struct {
+	Name          string // Display name, e.g. "Neo Geo Pocket"
+	RDBName       string // e.g. "SNK - Neo Geo Pocket"
+	ThumbnailRepo string // e.g. "SNK_-_Neo_Geo_Pocket"
+}
 
 // SystemInfo describes an emulator system for UI configuration.
 type SystemInfo struct {
@@ -90,8 +98,7 @@ type SystemInfo struct {
 	Buttons          []Button
 	Players          int
 	CoreOptions      []CoreOption
-	RDBName          string
-	ThumbnailRepo    string
+	MetadataVariants []MetadataVariant
 	DataDirName      string
 	ConsoleID        int
 	CoreName         string

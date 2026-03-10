@@ -132,6 +132,7 @@ type GameEntry struct {
 	Franchise       string       `json:"franchise,omitempty"`
 	ESRBRating      string       `json:"esrbRating,omitempty"`
 	ReleaseDate     string       `json:"releaseDate,omitempty"` // "Month / Year" format
+	System          string       `json:"system,omitempty"`      // Variant name (e.g. "Neo Geo Pocket") - set when >1 RDB variant
 	Favorite        bool         `json:"favorite"`              // User marked as favorite
 	Missing         bool         `json:"missing"`               // true if ROM file not found
 	PlayTimeSeconds int64        `json:"playTimeSeconds"`       // Total play time

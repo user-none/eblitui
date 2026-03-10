@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 
+	emucore "github.com/user-none/eblitui/api"
 	"github.com/user-none/eblitui/standalone/screens"
 	"github.com/user-none/eblitui/standalone/storage"
 )
@@ -16,11 +17,10 @@ type ScanManager struct {
 	scanner *Scanner
 
 	// External dependencies (not owned by ScanManager)
-	library       *storage.Library
-	scanScreen    *screens.ScanProgressScreen
-	extensions    []string // Supported ROM file extensions
-	rdbName       string   // RDB name for metadata downloads
-	thumbnailRepo string   // Thumbnail repository name for artwork
+	library    *storage.Library
+	scanScreen *screens.ScanProgressScreen
+	extensions []string                  // Supported ROM file extensions
+	variants   []emucore.MetadataVariant // Metadata variants for RDB/thumbnail lookups
 
 	// Callbacks to App
 	onProgress func() // Called when progress updates (triggers UI rebuild)
@@ -32,19 +32,17 @@ func NewScanManager(
 	library *storage.Library,
 	scanScreen *screens.ScanProgressScreen,
 	extensions []string,
-	rdbName string,
-	thumbnailRepo string,
+	variants []emucore.MetadataVariant,
 	onProgress func(),
 	onComplete func(msg string),
 ) *ScanManager {
 	return &ScanManager{
-		library:       library,
-		scanScreen:    scanScreen,
-		extensions:    extensions,
-		rdbName:       rdbName,
-		thumbnailRepo: thumbnailRepo,
-		onProgress:    onProgress,
-		onComplete:    onComplete,
+		library:    library,
+		scanScreen: scanScreen,
+		extensions: extensions,
+		variants:   variants,
+		onProgress: onProgress,
+		onComplete: onComplete,
 	}
 }
 
@@ -72,8 +70,7 @@ func (sm *ScanManager) Start(rescanAll bool) {
 		sm.library.Games,
 		rescanAll,
 		sm.extensions,
-		sm.rdbName,
-		sm.thumbnailRepo,
+		sm.variants,
 	)
 
 	// Configure scan screen

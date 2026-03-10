@@ -62,7 +62,7 @@ const (
 func LoadRDB(path string) (*RDB, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read RDB file: %w", err)
+		return nil, err
 	}
 	return Parse(data), nil
 }

@@ -11,7 +11,6 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	emucore "github.com/user-none/eblitui/api"
-	"github.com/user-none/eblitui/rdb"
 	"github.com/user-none/eblitui/standalone/achievements"
 	"github.com/user-none/eblitui/standalone/display"
 	"github.com/user-none/eblitui/standalone/screens"
@@ -173,10 +172,10 @@ func newApp(factory emucore.CoreFactory, info emucore.SystemInfo) (*App, error) 
 	}
 
 	// Start RDB download in background if missing (non-blocking)
-	if !RDBExists() {
+	app.metadata = NewMetadataManager(info.MetadataVariants)
+	if !app.metadata.RDBExists() {
 		go func() {
-			metadata := NewMetadataManager(info.RDBName, info.ThumbnailRepo)
-			if err := metadata.DownloadRDB(); err != nil {
+			if err := app.metadata.DownloadRDB(); err != nil {
 				log.Printf("Background RDB download failed: %v", err)
 			}
 		}()
@@ -195,8 +194,7 @@ func newApp(factory emucore.CoreFactory, info emucore.SystemInfo) (*App, error) 
 		}
 	})
 
-	// Initialize metadata manager and load RDB (for achievement MD5 lookups)
-	app.metadata = NewMetadataManager(info.RDBName, info.ThumbnailRepo)
+	// Load RDB (for achievement MD5 lookups)
 	if err := app.metadata.LoadRDB(); err != nil {
 		log.Printf("Failed to load RDB: %v", err)
 	}
@@ -289,7 +287,7 @@ func newApp(factory emucore.CoreFactory, info emucore.SystemInfo) (*App, error) 
 		app.library,
 		app.config,
 		app.achievementManager,
-		app.metadata.GetRDB(),
+		app.metadata,
 		func() { app.SwitchToLibrary() }, // onExitToLibrary
 		func() { app.Exit() },            // onExitApp
 	)
@@ -330,8 +328,7 @@ func newApp(factory emucore.CoreFactory, info emucore.SystemInfo) (*App, error) 
 		app.library,
 		app.scanScreen,
 		app.systemInfo.Extensions,
-		app.systemInfo.RDBName,
-		app.systemInfo.ThumbnailRepo,
+		app.systemInfo.MetadataVariants,
 		func() { app.rebuildCurrentScreen() }, // onProgress
 		func(msg string) { // onComplete
 			app.libraryScreen.ClearArtworkCache()
@@ -930,12 +927,9 @@ func (a *App) GetPlaceholderImageData() []byte {
 	return placeholderImageData
 }
 
-// GetRDB returns the RDB for metadata lookups
-func (a *App) GetRDB() *rdb.RDB {
-	if a.metadata == nil {
-		return nil
-	}
-	return a.metadata.GetRDB()
+// GetMD5ByCRC32 returns the MD5 hash for a game by CRC32 from loaded RDBs
+func (a *App) GetMD5ByCRC32(crc32 uint32) string {
+	return a.metadata.GetMD5ByCRC32(crc32)
 }
 
 // GetExtensions returns the supported ROM file extensions
@@ -1008,7 +1002,7 @@ func (a *App) handleDeleteAndContinue() {
 			a.library,
 			a.config,
 			a.achievementManager,
-			a.metadata.GetRDB(),
+			a.metadata,
 			func() { a.SwitchToLibrary() },
 			func() { a.Exit() },
 		)
@@ -1026,8 +1020,7 @@ func (a *App) handleDeleteAndContinue() {
 			a.library,
 			a.scanScreen,
 			a.systemInfo.Extensions,
-			a.systemInfo.RDBName,
-			a.systemInfo.ThumbnailRepo,
+			a.systemInfo.MetadataVariants,
 			func() { a.rebuildCurrentScreen() },
 			func(msg string) {
 				a.state = StateSettings
@@ -1103,7 +1096,7 @@ func (a *App) handleResetAndContinue() {
 			a.library,
 			a.config,
 			a.achievementManager,
-			a.metadata.GetRDB(),
+			a.metadata,
 			func() { a.SwitchToLibrary() },
 			func() { a.Exit() },
 		)
@@ -1121,8 +1114,7 @@ func (a *App) handleResetAndContinue() {
 			a.library,
 			a.scanScreen,
 			a.systemInfo.Extensions,
-			a.systemInfo.RDBName,
-			a.systemInfo.ThumbnailRepo,
+			a.systemInfo.MetadataVariants,
 			func() { a.rebuildCurrentScreen() },
 			func(msg string) {
 				a.state = StateSettings
@@ -1168,7 +1160,7 @@ func (a *App) handleLibraryResetAndContinue() {
 			a.library,
 			a.config,
 			a.achievementManager,
-			a.metadata.GetRDB(),
+			a.metadata,
 			func() { a.SwitchToLibrary() },
 			func() { a.Exit() },
 		)
@@ -1185,8 +1177,7 @@ func (a *App) handleLibraryResetAndContinue() {
 			a.library,
 			a.scanScreen,
 			a.systemInfo.Extensions,
-			a.systemInfo.RDBName,
-			a.systemInfo.ThumbnailRepo,
+			a.systemInfo.MetadataVariants,
 			func() { a.rebuildCurrentScreen() },
 			func(msg string) {
 				a.state = StateSettings

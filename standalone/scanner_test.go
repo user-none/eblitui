@@ -139,7 +139,7 @@ func TestNewScanner(t *testing.T) {
 		"aabbccdd": {CRC32: "aabbccdd", DisplayName: "Existing Game"},
 	}
 
-	s := NewScanner(dirs, excluded, existing, false, []string{".sms"}, "", "")
+	s := NewScanner(dirs, excluded, existing, false, []string{".sms"}, nil)
 
 	if len(s.directories) != 2 {
 		t.Errorf("expected 2 directories, got %d", len(s.directories))
@@ -256,7 +256,7 @@ func TestScanDirectoryWithExclusions(t *testing.T) {
 }
 
 func TestScannerCancellation(t *testing.T) {
-	s := NewScanner(nil, nil, nil, false, nil, "", "")
+	s := NewScanner(nil, nil, nil, false, nil, nil)
 
 	if s.isCancelled() {
 		t.Error("new scanner should not be cancelled")
@@ -272,7 +272,7 @@ func TestScannerCancellation(t *testing.T) {
 }
 
 func TestScannerGamesCount(t *testing.T) {
-	s := NewScanner(nil, nil, nil, false, nil, "", "")
+	s := NewScanner(nil, nil, nil, false, nil, nil)
 
 	if s.gamesCount() != 0 {
 		t.Errorf("expected 0 games, got %d", s.gamesCount())

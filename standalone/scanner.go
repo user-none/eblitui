@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	emucore "github.com/user-none/eblitui/api"
 	"github.com/user-none/eblitui/rdb"
 	"github.com/user-none/eblitui/romloader"
 	"github.com/user-none/eblitui/standalone/storage"
@@ -68,14 +69,15 @@ type Scanner struct {
 	downloadSem  chan struct{} // Semaphore for concurrent downloads (size 2)
 }
 
-// artworkJob represents a pending artwork download
+// artworkJob represents a pending artwork or rumble download
 type artworkJob struct {
-	gameCRC  string
-	gameName string // No-Intro name from RDB
+	gameCRC    string
+	gameName   string // No-Intro name from RDB
+	variantIdx int    // Index into MetadataVariants for correct repo
 }
 
 // NewScanner creates a new scanner instance
-func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[string]*storage.GameEntry, rescanAll bool, extensions []string, rdbName, thumbnailRepo string) *Scanner {
+func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[string]*storage.GameEntry, rescanAll bool, extensions []string, variants []emucore.MetadataVariant) *Scanner {
 	excludedMap := make(map[string]bool)
 	for _, p := range excluded {
 		excludedMap[p] = true
@@ -87,7 +89,7 @@ func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[st
 		existingGames: existing, // Keep full map to preserve user data
 		rescanAll:     rescanAll,
 		extensions:    extensions,
-		metadata:      NewMetadataManager(rdbName, thumbnailRepo),
+		metadata:      NewMetadataManager(variants),
 		cancel:        make(chan struct{}),
 		progress:      make(chan ScanProgress, 10),
 		done:          make(chan ScanResult, 1),
@@ -299,6 +301,7 @@ func (s *Scanner) processROM(path string) {
 			Franchise:   existingEntry.Franchise,
 			ESRBRating:  existingEntry.ESRBRating,
 			ReleaseDate: existingEntry.ReleaseDate,
+			System:      existingEntry.System,
 		}
 	} else {
 		// Create new entry - Name/DisplayName left empty so RDB lookup can fill them
@@ -311,7 +314,7 @@ func (s *Scanner) processROM(path string) {
 	}
 
 	// Look up in RDB for metadata - only fill in empty fields
-	if game := s.metadata.LookupByCRC32(crcValue); game != nil {
+	if game, variantIdx := s.metadata.LookupByCRC32(crcValue); game != nil {
 		if entry.Name == "" {
 			entry.Name = game.Name
 		}
@@ -348,13 +351,18 @@ func (s *Scanner) processROM(path string) {
 			}
 		}
 
+		if entry.System == "" && s.metadata.VariantCount() > 1 {
+			entry.System = s.metadata.VariantName(variantIdx)
+		}
+
 		// Queue artwork download only if artwork doesn't exist
 		artPath, _ := storage.GetGameArtworkPath(crcHex)
 		if _, err := os.Stat(artPath); os.IsNotExist(err) {
 			s.mu.Lock()
 			s.artworkQueue = append(s.artworkQueue, artworkJob{
-				gameCRC:  crcHex,
-				gameName: game.Name,
+				gameCRC:    crcHex,
+				gameName:   game.Name,
+				variantIdx: variantIdx,
 			})
 			s.mu.Unlock()
 		}
@@ -364,8 +372,9 @@ func (s *Scanner) processROM(path string) {
 		if _, err := os.Stat(rumblePath); os.IsNotExist(err) {
 			s.mu.Lock()
 			s.rumbleQueue = append(s.rumbleQueue, artworkJob{
-				gameCRC:  crcHex,
-				gameName: game.Name,
+				gameCRC:    crcHex,
+				gameName:   game.Name,
+				variantIdx: variantIdx,
 			})
 			s.mu.Unlock()
 		}
@@ -396,7 +405,7 @@ func (s *Scanner) cleanDisplayName(filename string) string {
 }
 
 // downloadAssets downloads queued assets using the provided download function.
-func (s *Scanner) downloadAssets(queue []artworkJob, statusText string, downloadFn func(gameCRC, gameName string)) {
+func (s *Scanner) downloadAssets(queue []artworkJob, statusText string, downloadFn func(gameCRC, gameName string, variantIdx int)) {
 	total := len(queue)
 	if total == 0 {
 		return
@@ -430,7 +439,7 @@ func (s *Scanner) downloadAssets(queue []artworkJob, statusText string, download
 				return
 			}
 
-			downloadFn(j.gameCRC, j.gameName)
+			downloadFn(j.gameCRC, j.gameName, j.variantIdx)
 
 			s.mu.Lock()
 			complete++

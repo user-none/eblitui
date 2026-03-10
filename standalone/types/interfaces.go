@@ -4,7 +4,6 @@ package types
 
 import (
 	"github.com/ebitenui/ebitenui/widget"
-	"github.com/user-none/eblitui/rdb"
 )
 
 // Direction constants for navigation
@@ -38,12 +37,12 @@ type ScreenCallback interface {
 	SwitchToScanProgress(rescanAll bool)
 	LaunchGame(gameCRC string, resume bool)
 	Exit()
-	GetWindowWidth() int             // For responsive layout calculations
-	RequestRebuild()                 // Request UI rebuild after state changes
-	GetPlaceholderImageData() []byte // Get raw placeholder image data for missing artwork
-	GetRDB() *rdb.RDB                // Get RDB for metadata lookups
-	GetExtensions() []string         // Get supported ROM file extensions
-	ShowNotification(msg string)     // Show a brief notification message
+	GetWindowWidth() int               // For responsive layout calculations
+	RequestRebuild()                   // Request UI rebuild after state changes
+	GetPlaceholderImageData() []byte   // Get raw placeholder image data for missing artwork
+	GetMD5ByCRC32(crc32 uint32) string // Get MD5 hash from RDB by CRC32
+	GetExtensions() []string           // Get supported ROM file extensions
+	ShowNotification(msg string)       // Show a brief notification message
 }
 
 // FocusRestorer is implemented by screens that support focus restoration after rebuilds
