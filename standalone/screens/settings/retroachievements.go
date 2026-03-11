@@ -254,11 +254,7 @@ func (r *RetroAchievementsSection) buildToggleRow(focus types.FocusManager, key,
 	)
 
 	// Info column (label + optional description)
-	row.AddChild(style.LabeledText(displayLabel, displayDesc,
-		widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-			VerticalPosition: widget.GridLayoutPositionCenter,
-		}),
-	))
+	row.AddChild(style.LabeledText(displayLabel, displayDesc))
 
 	// Toggle button (right-aligned via grid)
 	toggleBtn := widget.NewButton(
@@ -330,11 +326,7 @@ func (r *RetroAchievementsSection) buildLoggedInSection(focus types.FocusManager
 	displayStatus, _ := style.TruncateToWidth(statusStr, *style.FontFace(), r.maxLabelWidth())
 	statusText := widget.NewText(
 		widget.TextOpts.Text(displayStatus, style.FontFace(), style.Text),
-		widget.TextOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-		),
+		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
 	)
 	row.AddChild(statusText)
 
@@ -394,10 +386,8 @@ func (r *RetroAchievementsSection) buildLoginSection(focus types.FocusManager) *
 
 	usernameLabel := widget.NewText(
 		widget.TextOpts.Text("Username", style.FontFace(), style.Text),
+		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
 		widget.TextOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
 			widget.WidgetOpts.MinSize(style.Px(80), 0),
 		),
 	)
@@ -425,10 +415,8 @@ func (r *RetroAchievementsSection) buildLoginSection(focus types.FocusManager) *
 
 	passwordLabel := widget.NewText(
 		widget.TextOpts.Text("Password", style.FontFace(), style.Text),
+		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
 		widget.TextOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
 			widget.WidgetOpts.MinSize(style.Px(80), 0),
 		),
 	)

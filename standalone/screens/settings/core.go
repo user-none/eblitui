@@ -146,11 +146,7 @@ func (c *CoreSection) buildBIOSOption(section *widget.Container, focus types.Foc
 	)
 	activeRow.AddChild(widget.NewText(
 		widget.TextOpts.Text("Active", style.FontFace(), style.Text),
-		widget.TextOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-		),
+		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
 	))
 
 	activeBtn := widget.NewButton(

@@ -229,11 +229,7 @@ func (v *VideoSection) buildAspectRatioRow(focus types.FocusManager) *widget.Con
 
 	label := widget.NewText(
 		widget.TextOpts.Text("Aspect Ratio", style.FontFace(), style.Text),
-		widget.TextOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-		),
+		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
 	)
 	row.AddChild(label)
 

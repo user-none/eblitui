@@ -25,11 +25,7 @@ func buildCoreOptionRow(focus types.FocusManager, callback types.ScreenCallback,
 		),
 	)
 
-	row.AddChild(style.LabeledText(opt.Label, opt.Description,
-		widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-			VerticalPosition: widget.GridLayoutPositionCenter,
-		}),
-	))
+	row.AddChild(style.LabeledText(opt.Label, opt.Description))
 
 	focusKey := prefix + "-opt-" + opt.Key
 

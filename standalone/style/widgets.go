@@ -428,29 +428,34 @@ func (g *TextInputGroup) Update() {
 }
 
 // LabeledText creates a vertical container with a primary label and optional
-// secondary subtext. Accepts optional WidgetOpts for the container (e.g. LayoutData).
-func LabeledText(label, subtext string, opts ...widget.WidgetOpt) *widget.Container {
-	containerOpts := []widget.ContainerOpt{
+// secondary subtext. Text is vertically centered within the grid cell.
+func LabeledText(label, subtext string) *widget.Container {
+	if subtext == "" {
+		c := widget.NewContainer(
+			widget.ContainerOpts.Layout(widget.NewGridLayout(
+				widget.GridLayoutOpts.Columns(1),
+				widget.GridLayoutOpts.Stretch([]bool{true}, []bool{true}),
+			)),
+		)
+		c.AddChild(widget.NewText(
+			widget.TextOpts.Text(label, FontFace(), Text),
+			widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
+		))
+		return c
+	}
+
+	c := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
 			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
 			widget.RowLayoutOpts.Spacing(TinySpacing),
 		)),
-	}
-	if len(opts) > 0 {
-		containerOpts = append(containerOpts,
-			widget.ContainerOpts.WidgetOpts(opts...),
-		)
-	}
-
-	c := widget.NewContainer(containerOpts...)
+	)
 	c.AddChild(widget.NewText(
 		widget.TextOpts.Text(label, FontFace(), Text),
 	))
-	if subtext != "" {
-		c.AddChild(widget.NewText(
-			widget.TextOpts.Text(subtext, FontFace(), TextSecondary),
-		))
-	}
+	c.AddChild(widget.NewText(
+		widget.TextOpts.Text(subtext, FontFace(), TextSecondary),
+	))
 	return c
 }
 

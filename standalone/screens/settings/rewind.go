@@ -161,11 +161,7 @@ func (r *RewindSection) buildToggleRow(focus types.FocusManager, key, label stri
 
 	labelText := widget.NewText(
 		widget.TextOpts.Text(label, style.FontFace(), style.Text),
-		widget.TextOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-		),
+		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
 	)
 	row.AddChild(labelText)
 
@@ -211,11 +207,7 @@ func (r *RewindSection) buildValueRow(focus types.FocusManager, label, decKey, i
 
 	labelText := widget.NewText(
 		widget.TextOpts.Text(label, style.FontFace(), style.Text),
-		widget.TextOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-		),
+		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
 	)
 	row.AddChild(labelText)
 

@@ -146,11 +146,7 @@ func (a *AudioSection) buildVolumeRow(focus types.FocusManager) *widget.Containe
 
 	labelText := widget.NewText(
 		widget.TextOpts.Text("Volume", style.FontFace(), style.Text),
-		widget.TextOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-		),
+		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
 	)
 	row.AddChild(labelText)
 
@@ -258,11 +254,7 @@ func (a *AudioSection) buildMuteRow(focus types.FocusManager) *widget.Container 
 
 	label := widget.NewText(
 		widget.TextOpts.Text("Mute Game Audio", style.FontFace(), style.Text),
-		widget.TextOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-		),
+		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
 	)
 	row.AddChild(label)
 
@@ -306,11 +298,7 @@ func (a *AudioSection) buildFastForwardMuteRow(focus types.FocusManager) *widget
 
 	label := widget.NewText(
 		widget.TextOpts.Text("Mute Fast-Forward Audio", style.FontFace(), style.Text),
-		widget.TextOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-		),
+		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
 	)
 	row.AddChild(label)
 

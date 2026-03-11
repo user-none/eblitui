@@ -392,11 +392,7 @@ func (s *InputSection) buildBindingRow(focus types.FocusManager, buttonName, def
 	// Button name label
 	row.AddChild(widget.NewText(
 		widget.TextOpts.Text(buttonName, style.FontFace(), style.Text),
-		widget.TextOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-		),
+		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
 	))
 
 	// Keyboard binding button
@@ -545,11 +541,7 @@ func (s *InputSection) buildAnalogStickRow(focus types.FocusManager) *widget.Con
 
 	label := widget.NewText(
 		widget.TextOpts.Text("Disable Analog Stick", style.FontFace(), style.Text),
-		widget.TextOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-		),
+		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
 	)
 	row.AddChild(label)
 
@@ -612,11 +604,7 @@ func (s *InputSection) buildRumbleRow(focus types.FocusManager) *widget.Containe
 
 	label := widget.NewText(
 		widget.TextOpts.Text("Rumble", style.FontFace(), style.Text),
-		widget.TextOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-		),
+		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
 	)
 	row.AddChild(label)
 

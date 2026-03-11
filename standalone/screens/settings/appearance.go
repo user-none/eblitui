@@ -31,13 +31,17 @@ func (a *AppearanceSection) SetConfig(config *storage.Config) {
 
 // Build creates the appearance section UI
 func (a *AppearanceSection) Build(focus types.FocusManager) *widget.Container {
-	// Use GridLayout so the scrollable list can stretch
-	section := widget.NewContainer(
+	outer := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewGridLayout(
 			widget.GridLayoutOpts.Columns(1),
-			// Row stretch: font row=no, theme label=no, theme list=YES
-			widget.GridLayoutOpts.Stretch([]bool{true}, []bool{false, false, true}),
-			widget.GridLayoutOpts.Spacing(0, style.DefaultSpacing),
+			widget.GridLayoutOpts.Stretch([]bool{true}, []bool{true}),
+		)),
+	)
+
+	section := widget.NewContainer(
+		widget.ContainerOpts.Layout(widget.NewRowLayout(
+			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
+			widget.RowLayoutOpts.Spacing(style.SmallSpacing),
 		)),
 	)
 
@@ -50,35 +54,26 @@ func (a *AppearanceSection) Build(focus types.FocusManager) *widget.Container {
 	)
 	section.AddChild(themeLabel)
 
-	// Theme cards in scrollable list
-	themeListContent := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewRowLayout(
-			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
-			widget.RowLayoutOpts.Spacing(style.DefaultSpacing),
-		)),
-	)
-
+	// Theme cards
 	for _, theme := range style.AvailableThemes {
-		themeListContent.AddChild(a.buildThemeCard(theme, focus))
+		section.AddChild(a.buildThemeCard(theme, focus))
 	}
 
-	// Wrap in scrollable container using existing style helper
+	// Set up navigation zones
+	a.setupNavigation(focus)
+
 	scrollContainer, vSlider, scrollWrapper := style.ScrollableContainer(style.ScrollableOpts{
-		Content:     themeListContent,
+		Content:     section,
 		BgColor:     style.Background,
 		BorderColor: style.Border,
 		Spacing:     0,
 		Padding:     style.SmallSpacing,
 	})
 	focus.SetScrollWidgets(scrollContainer, vSlider)
-	// Restore scroll position after rebuild
 	focus.RestoreScrollPosition()
-	section.AddChild(scrollWrapper)
+	outer.AddChild(scrollWrapper)
 
-	// Set up navigation zones
-	a.setupNavigation(focus)
-
-	return section
+	return outer
 }
 
 // setupNavigation registers navigation zones for the appearance section
@@ -129,11 +124,7 @@ func (a *AppearanceSection) buildFontSizeRow(focus types.FocusManager) *widget.C
 	// Label on left
 	labelText := widget.NewText(
 		widget.TextOpts.Text("Font Size", style.FontFace(), style.Text),
-		widget.TextOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-		),
+		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
 	)
 	row.AddChild(labelText)
 
