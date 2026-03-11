@@ -583,7 +583,7 @@ func (s *InputSection) buildRumbleRow(focus types.FocusManager) *widget.Containe
 			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
 				VerticalPosition: widget.GridLayoutPositionCenter,
 			}),
-			widget.WidgetOpts.MinSize(style.Px(70), 0),
+			widget.WidgetOpts.MinSize(style.Px(50), 0),
 		),
 		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
 			s.config.Input.RumbleLevel = (s.config.Input.RumbleLevel + 1) % 6
