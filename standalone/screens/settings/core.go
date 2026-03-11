@@ -208,24 +208,11 @@ func (c *CoreSection) buildBIOSVariantRow(section *widget.Container, focus types
 	)
 
 	// Left: info column (label + status)
-	infoContainer := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewRowLayout(
-			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
-			widget.RowLayoutOpts.Spacing(style.TinySpacing),
-		)),
-	)
-	infoContainer.AddChild(widget.NewText(
-		widget.TextOpts.Text(v.Label, style.FontFace(), style.Text),
-	))
-
 	statusText := "(Not Found)"
 	if hasFile {
 		statusText = filepath.Base(filePath)
 	}
-	infoContainer.AddChild(widget.NewText(
-		widget.TextOpts.Text(statusText, style.FontFace(), style.TextSecondary),
-	))
-	row.AddChild(infoContainer)
+	row.AddChild(style.LabeledText(v.Label, statusText))
 
 	// Right: Browse or Remove button
 	if hasFile {

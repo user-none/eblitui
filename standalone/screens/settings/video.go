@@ -283,24 +283,7 @@ func (v *VideoSection) buildShaderRow(info shader.ShaderInfo, focus types.FocusM
 	)
 
 	// Info column
-	infoContainer := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewRowLayout(
-			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
-			widget.RowLayoutOpts.Spacing(style.TinySpacing),
-		)),
-	)
-
-	nameLabel := widget.NewText(
-		widget.TextOpts.Text(displayName, style.FontFace(), style.Text),
-	)
-	infoContainer.AddChild(nameLabel)
-
-	descLabel := widget.NewText(
-		widget.TextOpts.Text(displayDesc, style.FontFace(), style.TextSecondary),
-	)
-	infoContainer.AddChild(descLabel)
-
-	row.AddChild(infoContainer)
+	row.AddChild(style.LabeledText(displayName, displayDesc))
 
 	// UI toggle button (hidden for game-only preprocessing effects)
 	supportsUI := info.Context&shader.ContextUI != 0

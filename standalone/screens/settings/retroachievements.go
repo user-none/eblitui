@@ -254,31 +254,11 @@ func (r *RetroAchievementsSection) buildToggleRow(focus types.FocusManager, key,
 	)
 
 	// Info column (label + optional description)
-	infoContainer := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewRowLayout(
-			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
-			widget.RowLayoutOpts.Spacing(style.TinySpacing),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-		),
-	)
-
-	labelText := widget.NewText(
-		widget.TextOpts.Text(displayLabel, style.FontFace(), style.Text),
-	)
-	infoContainer.AddChild(labelText)
-
-	if displayDesc != "" {
-		descText := widget.NewText(
-			widget.TextOpts.Text(displayDesc, style.FontFace(), style.TextSecondary),
-		)
-		infoContainer.AddChild(descText)
-	}
-
-	row.AddChild(infoContainer)
+	row.AddChild(style.LabeledText(displayLabel, displayDesc,
+		widget.WidgetOpts.LayoutData(widget.GridLayoutData{
+			VerticalPosition: widget.GridLayoutPositionCenter,
+		}),
+	))
 
 	// Toggle button (right-aligned via grid)
 	toggleBtn := widget.NewButton(

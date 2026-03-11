@@ -427,6 +427,33 @@ func (g *TextInputGroup) Update() {
 	}
 }
 
+// LabeledText creates a vertical container with a primary label and optional
+// secondary subtext. Accepts optional WidgetOpts for the container (e.g. LayoutData).
+func LabeledText(label, subtext string, opts ...widget.WidgetOpt) *widget.Container {
+	containerOpts := []widget.ContainerOpt{
+		widget.ContainerOpts.Layout(widget.NewRowLayout(
+			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
+			widget.RowLayoutOpts.Spacing(TinySpacing),
+		)),
+	}
+	if len(opts) > 0 {
+		containerOpts = append(containerOpts,
+			widget.ContainerOpts.WidgetOpts(opts...),
+		)
+	}
+
+	c := widget.NewContainer(containerOpts...)
+	c.AddChild(widget.NewText(
+		widget.TextOpts.Text(label, FontFace(), Text),
+	))
+	if subtext != "" {
+		c.AddChild(widget.NewText(
+			widget.TextOpts.Text(subtext, FontFace(), TextSecondary),
+		))
+	}
+	return c
+}
+
 // StyledTextInput creates a text input with consistent styling.
 func StyledTextInput(placeholder string, secure bool, minWidth int) *widget.TextInput {
 	return widget.NewTextInput(
