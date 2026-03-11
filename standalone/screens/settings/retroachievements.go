@@ -239,19 +239,7 @@ func (r *RetroAchievementsSection) buildToggleRow(focus types.FocusManager, key,
 		displayDesc, _ = style.TruncateToWidth(description, face, maxW)
 	}
 
-	// Outer container with background color
-	row := widget.NewContainer(
-		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(2),
-			widget.GridLayoutOpts.Stretch([]bool{true, false}, []bool{true}),
-			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
-			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
+	row := style.SettingsRow(2)
 
 	// Info column (label + optional description)
 	row.AddChild(style.LabeledText(displayLabel, displayDesc))
@@ -301,19 +289,7 @@ func (r *RetroAchievementsSection) setupNavigation(focus types.FocusManager) {
 
 // buildLoggedInSection creates the logged-in status section
 func (r *RetroAchievementsSection) buildLoggedInSection(focus types.FocusManager) *widget.Container {
-	// Row with background
-	row := widget.NewContainer(
-		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(2),
-			widget.GridLayoutOpts.Stretch([]bool{true, false}, []bool{true}),
-			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
-			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
+	row := style.SettingsRow(2)
 
 	// Get username from manager if available, otherwise from config
 	username := r.config.RetroAchievements.Username

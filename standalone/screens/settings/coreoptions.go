@@ -1,7 +1,6 @@
 package settings
 
 import (
-	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
 	emucore "github.com/user-none/eblitui/api"
 	"github.com/user-none/eblitui/standalone/storage"
@@ -12,18 +11,7 @@ import (
 // buildCoreOptionRow creates a settings row for a core option.
 // prefix is used for focus key namespacing (e.g. "audio", "video", "input").
 func buildCoreOptionRow(focus types.FocusManager, callback types.ScreenCallback, config *storage.Config, opt emucore.CoreOption, prefix string) *widget.Container {
-	row := widget.NewContainer(
-		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(2),
-			widget.GridLayoutOpts.Stretch([]bool{true, false}, []bool{true}),
-			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
-			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
+	row := style.SettingsRow(2)
 
 	row.AddChild(style.LabeledText(opt.Label, opt.Description))
 

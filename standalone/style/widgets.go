@@ -11,6 +11,25 @@ import (
 	"golang.design/x/clipboard"
 )
 
+// SettingsRow creates a standard settings row container with Surface background,
+// N-column grid layout, and RowLayoutData stretch.
+func SettingsRow(columns int) *widget.Container {
+	stretch := make([]bool, columns)
+	stretch[0] = true
+	return widget.NewContainer(
+		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(Surface)),
+		widget.ContainerOpts.Layout(widget.NewGridLayout(
+			widget.GridLayoutOpts.Columns(columns),
+			widget.GridLayoutOpts.Stretch(stretch, []bool{true}),
+			widget.GridLayoutOpts.Spacing(DefaultSpacing, 0),
+			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(SmallSpacing)),
+		)),
+		widget.ContainerOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
+		),
+	)
+}
+
 // ScrollSlider creates a vertical scroll slider bound to a scroll container.
 // The needsScroll function should return true when content exceeds view height.
 // Returns the slider widget.

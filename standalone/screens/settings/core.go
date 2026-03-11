@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"path/filepath"
 
-	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/sqweek/dialog"
 	emucore "github.com/user-none/eblitui/api"
@@ -132,18 +131,7 @@ func (c *CoreSection) buildBIOSOption(section *widget.Container, focus types.Foc
 	}
 	nextIdx := (currentIdx + 1) % len(cycleOptions)
 
-	activeRow := widget.NewContainer(
-		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(2),
-			widget.GridLayoutOpts.Stretch([]bool{true, false}, []bool{true}),
-			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
-			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
+	activeRow := style.SettingsRow(2)
 	activeRow.AddChild(widget.NewText(
 		widget.TextOpts.Text("Active", style.FontFace(), style.Text),
 		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
@@ -192,16 +180,7 @@ func (c *CoreSection) buildBIOSVariantRow(section *widget.Container, focus types
 	}
 	hasFile := filePath != ""
 
-	row := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(2),
-			widget.GridLayoutOpts.Stretch([]bool{true, false}, []bool{true}),
-			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
+	row := style.SettingsRow(2)
 
 	// Left: info column (label + status)
 	statusText := "(Not Found)"

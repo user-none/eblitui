@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
 	emucore "github.com/user-none/eblitui/api"
 	"github.com/user-none/eblitui/standalone/storage"
@@ -131,18 +130,7 @@ func (a *AudioSection) setupNavigation(focus types.FocusManager) {
 
 // buildVolumeRow creates the volume control row with [-] value [+] buttons
 func (a *AudioSection) buildVolumeRow(focus types.FocusManager) *widget.Container {
-	row := widget.NewContainer(
-		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(2),
-			widget.GridLayoutOpts.Stretch([]bool{true, false}, []bool{true}),
-			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
-			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
+	row := style.SettingsRow(2)
 
 	labelText := widget.NewText(
 		widget.TextOpts.Text("Volume", style.FontFace(), style.Text),
@@ -239,18 +227,7 @@ func (a *AudioSection) updateVolumeLabel() {
 
 // buildMuteRow creates the mute toggle row
 func (a *AudioSection) buildMuteRow(focus types.FocusManager) *widget.Container {
-	row := widget.NewContainer(
-		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(2),
-			widget.GridLayoutOpts.Stretch([]bool{true, false}, []bool{true}),
-			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
-			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
+	row := style.SettingsRow(2)
 
 	label := widget.NewText(
 		widget.TextOpts.Text("Mute Game Audio", style.FontFace(), style.Text),
@@ -283,18 +260,7 @@ func (a *AudioSection) buildMuteRow(focus types.FocusManager) *widget.Container 
 
 // buildFastForwardMuteRow creates the fast-forward audio mute toggle row
 func (a *AudioSection) buildFastForwardMuteRow(focus types.FocusManager) *widget.Container {
-	row := widget.NewContainer(
-		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(2),
-			widget.GridLayoutOpts.Stretch([]bool{true, false}, []bool{true}),
-			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
-			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
+	row := style.SettingsRow(2)
 
 	label := widget.NewText(
 		widget.TextOpts.Text("Mute Fast-Forward Audio", style.FontFace(), style.Text),

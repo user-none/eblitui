@@ -1,7 +1,6 @@
 package settings
 
 import (
-	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
@@ -376,18 +375,7 @@ func (s *InputSection) buildHeaderRow() *widget.Container {
 
 // buildBindingRow creates a row for a single button binding
 func (s *InputSection) buildBindingRow(focus types.FocusManager, buttonName, defaultKey, defaultPad string) *widget.Container {
-	row := widget.NewContainer(
-		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(3),
-			widget.GridLayoutOpts.Stretch([]bool{true, false, false}, []bool{true}),
-			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
-			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
+	row := style.SettingsRow(3)
 
 	// Button name label
 	row.AddChild(widget.NewText(
@@ -526,18 +514,7 @@ func (s *InputSection) buildResetRow(focus types.FocusManager) *widget.Container
 
 // buildAnalogStickRow creates the "Disable Analog Stick" toggle row
 func (s *InputSection) buildAnalogStickRow(focus types.FocusManager) *widget.Container {
-	row := widget.NewContainer(
-		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(2),
-			widget.GridLayoutOpts.Stretch([]bool{true, false}, []bool{true}),
-			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
-			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
+	row := style.SettingsRow(2)
 
 	label := widget.NewText(
 		widget.TextOpts.Text("Disable Analog Stick", style.FontFace(), style.Text),
@@ -589,18 +566,7 @@ func rumbleLevelLabel(level int) string {
 
 // buildRumbleRow creates the "Rumble" cycle row (Off / On / On 2x / On 3x)
 func (s *InputSection) buildRumbleRow(focus types.FocusManager) *widget.Container {
-	row := widget.NewContainer(
-		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(2),
-			widget.GridLayoutOpts.Stretch([]bool{true, false}, []bool{true}),
-			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
-			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
+	row := style.SettingsRow(2)
 
 	label := widget.NewText(
 		widget.TextOpts.Text("Rumble", style.FontFace(), style.Text),
