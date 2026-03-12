@@ -1,4 +1,4 @@
-package emucore
+package coreif
 
 // Region represents a console video region.
 type Region int

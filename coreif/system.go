@@ -1,4 +1,4 @@
-package emucore
+package coreif
 
 // Standard d-pad button bit positions (always bits 0-3).
 const (

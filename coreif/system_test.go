@@ -1,4 +1,4 @@
-package emucore
+package coreif
 
 import (
 	"math"

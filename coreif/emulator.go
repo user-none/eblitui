@@ -1,4 +1,4 @@
-package emucore
+package coreif
 
 // Emulator is the core interface that every emulator adapter must implement.
 type Emulator interface {
