@@ -11,7 +11,7 @@ import (
 	"strings"
 	"unsafe"
 
-	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/coreif"
 )
 
 // Libretro joypad button ID constants for use in RetropadMapping.
@@ -30,10 +30,10 @@ const (
 	JoypadR3     = C.RETRO_DEVICE_ID_JOYPAD_R3
 )
 
-// RetropadMapping maps a libretro button ID to an emucore bit position.
+// RetropadMapping maps a libretro button ID to a coreif bit position.
 type RetropadMapping struct {
 	RetroID int // RETRO_DEVICE_ID_JOYPAD_* constant
-	BitID   int // emucore bit position (from Button.ID)
+	BitID   int // coreif bit position (from Button.ID)
 }
 
 // memoryBuffer holds a C-allocated buffer for a memory region.
@@ -43,15 +43,15 @@ type memoryBuffer struct {
 }
 
 var (
-	factory  emucore.CoreFactory
+	factory  coreif.CoreFactory
 	inputMap []RetropadMapping
-	sysInfo  emucore.SystemInfo
+	sysInfo  coreif.SystemInfo
 
-	emulator     emucore.Emulator
-	saveStater   emucore.SaveStater
-	memoryMapper emucore.MemoryMapper
+	emulator     coreif.Emulator
+	saveStater   coreif.SaveStater
+	memoryMapper coreif.MemoryMapper
 
-	region        emucore.Region
+	region        coreif.Region
 	romData       []byte
 	xrgbBuf       []byte
 	currentWidth  int
@@ -68,7 +68,7 @@ var (
 
 	// Core option state
 	optionRegion   string = "Auto"
-	detectedRegion emucore.Region
+	detectedRegion coreif.Region
 
 	// Pre-allocated C strings for options
 	optKeyRegion *C.char
@@ -85,7 +85,7 @@ var (
 
 // RegisterFactory sets the CoreFactory and input mapping used by the libretro core.
 // Must be called during init() before any retro_* function runs.
-func RegisterFactory(f emucore.CoreFactory, mapping []RetropadMapping) {
+func RegisterFactory(f coreif.CoreFactory, mapping []RetropadMapping) {
 	factory = f
 	inputMap = mapping
 	sysInfo = f.SystemInfo()
@@ -231,16 +231,16 @@ func retro_run() {
 
 		// D-pad (fixed mapping)
 		if C.call_input_state_cb(port, C.RETRO_DEVICE_JOYPAD, 0, C.RETRO_DEVICE_ID_JOYPAD_UP) != 0 {
-			buttons |= 1 << emucore.ButtonUp
+			buttons |= 1 << coreif.ButtonUp
 		}
 		if C.call_input_state_cb(port, C.RETRO_DEVICE_JOYPAD, 0, C.RETRO_DEVICE_ID_JOYPAD_DOWN) != 0 {
-			buttons |= 1 << emucore.ButtonDown
+			buttons |= 1 << coreif.ButtonDown
 		}
 		if C.call_input_state_cb(port, C.RETRO_DEVICE_JOYPAD, 0, C.RETRO_DEVICE_ID_JOYPAD_LEFT) != 0 {
-			buttons |= 1 << emucore.ButtonLeft
+			buttons |= 1 << coreif.ButtonLeft
 		}
 		if C.call_input_state_cb(port, C.RETRO_DEVICE_JOYPAD, 0, C.RETRO_DEVICE_ID_JOYPAD_RIGHT) != 0 {
-			buttons |= 1 << emucore.ButtonRight
+			buttons |= 1 << coreif.ButtonRight
 		}
 
 		// System-specific buttons via input mapping
@@ -255,11 +255,11 @@ func retro_run() {
 
 	// Sync save RAM from C buffer to Go before frame
 	if memoryMapper != nil {
-		if buf, ok := memBuffers[emucore.MemorySaveRAM]; ok && buf.buf != nil {
+		if buf, ok := memBuffers[coreif.MemorySaveRAM]; ok && buf.buf != nil {
 			data := unsafe.Slice((*byte)(unsafe.Pointer(buf.buf)), int(buf.size))
 			goData := make([]byte, int(buf.size))
 			copy(goData, data)
-			memoryMapper.WriteRegion(emucore.MemorySaveRAM, goData)
+			memoryMapper.WriteRegion(coreif.MemorySaveRAM, goData)
 		}
 	}
 
@@ -397,7 +397,7 @@ func retro_unload_game() {
 
 //export retro_get_region
 func retro_get_region() C.uint {
-	if region == emucore.RegionPAL {
+	if region == coreif.RegionPAL {
 		return C.RETRO_REGION_PAL
 	}
 	return C.RETRO_REGION_NTSC
@@ -406,8 +406,8 @@ func retro_get_region() C.uint {
 //export retro_get_memory_data
 func retro_get_memory_data(id C.uint) unsafe.Pointer {
 	retroToEmu := map[C.uint]int{
-		C.RETRO_MEMORY_SAVE_RAM:   emucore.MemorySaveRAM,
-		C.RETRO_MEMORY_SYSTEM_RAM: emucore.MemorySystemRAM,
+		C.RETRO_MEMORY_SAVE_RAM:   coreif.MemorySaveRAM,
+		C.RETRO_MEMORY_SYSTEM_RAM: coreif.MemorySystemRAM,
 	}
 
 	if emuType, ok := retroToEmu[id]; ok {
@@ -421,8 +421,8 @@ func retro_get_memory_data(id C.uint) unsafe.Pointer {
 //export retro_get_memory_size
 func retro_get_memory_size(id C.uint) C.size_t {
 	retroToEmu := map[C.uint]int{
-		C.RETRO_MEMORY_SAVE_RAM:   emucore.MemorySaveRAM,
-		C.RETRO_MEMORY_SYSTEM_RAM: emucore.MemorySystemRAM,
+		C.RETRO_MEMORY_SAVE_RAM:   coreif.MemorySaveRAM,
+		C.RETRO_MEMORY_SYSTEM_RAM: coreif.MemorySystemRAM,
 	}
 
 	if emuType, ok := retroToEmu[id]; ok {
@@ -434,16 +434,16 @@ func retro_get_memory_size(id C.uint) C.size_t {
 }
 
 // setEmulator sets the emulator and detects optional interface support.
-func setEmulator(emu emucore.Emulator) {
+func setEmulator(emu coreif.Emulator) {
 	emulator = emu
 
-	if ss, ok := emu.(emucore.SaveStater); ok {
+	if ss, ok := emu.(coreif.SaveStater); ok {
 		saveStater = ss
 	} else {
 		saveStater = nil
 	}
 
-	if mm, ok := emu.(emucore.MemoryMapper); ok {
+	if mm, ok := emu.(coreif.MemoryMapper); ok {
 		memoryMapper = mm
 	} else {
 		memoryMapper = nil
@@ -475,13 +475,13 @@ func ensureOptionStrings() {
 
 		var valStr string
 		switch opt.Type {
-		case emucore.CoreOptionBool:
+		case coreif.CoreOptionBool:
 			if opt.Default == "true" {
 				valStr = opt.Label + "; true|false"
 			} else {
 				valStr = opt.Label + "; false|true"
 			}
-		case emucore.CoreOptionSelect:
+		case coreif.CoreOptionSelect:
 			ordered := reorderDefault(opt.Values, opt.Default)
 			valStr = opt.Label + "; " + strings.Join(ordered, "|")
 		default:
@@ -547,12 +547,12 @@ func applyCoreOptions() {
 
 // applyRegionOption applies the current region option setting.
 func applyRegionOption() {
-	var newRegion emucore.Region
+	var newRegion coreif.Region
 	switch optionRegion {
 	case "NTSC":
-		newRegion = emucore.RegionNTSC
+		newRegion = coreif.RegionNTSC
 	case "PAL":
-		newRegion = emucore.RegionPAL
+		newRegion = coreif.RegionPAL
 	default:
 		newRegion = detectedRegion
 	}
@@ -596,7 +596,7 @@ func updateGeometry() {
 	geom.base_height = C.uint(currentHeight)
 	geom.max_width = C.uint(sysInfo.ScreenWidth)
 	geom.max_height = C.uint(sysInfo.MaxScreenHeight)
-	geom.aspect_ratio = C.float(emucore.DisplayAspectRatio(currentWidth, currentHeight, sysInfo.PixelAspectRatio))
+	geom.aspect_ratio = C.float(coreif.DisplayAspectRatio(currentWidth, currentHeight, sysInfo.PixelAspectRatio))
 	C.call_environ_cb(C.RETRO_ENVIRONMENT_SET_GEOMETRY, unsafe.Pointer(&geom))
 }
 

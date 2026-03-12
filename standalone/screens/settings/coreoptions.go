@@ -2,7 +2,7 @@ package settings
 
 import (
 	"github.com/ebitenui/ebitenui/widget"
-	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/standalone/storage"
 	"github.com/user-none/eblitui/standalone/style"
 	"github.com/user-none/eblitui/standalone/types"
@@ -10,7 +10,7 @@ import (
 
 // buildCoreOptionRow creates a settings row for a core option.
 // prefix is used for focus key namespacing (e.g. "audio", "video", "input").
-func buildCoreOptionRow(focus types.FocusManager, callback types.ScreenCallback, config *storage.Config, opt emucore.CoreOption, prefix string) *widget.Container {
+func buildCoreOptionRow(focus types.FocusManager, callback types.ScreenCallback, config *storage.Config, opt coreif.CoreOption, prefix string) *widget.Container {
 	row := style.SettingsRow(2)
 
 	row.AddChild(style.LabeledText(opt.Label, opt.Description))
@@ -18,7 +18,7 @@ func buildCoreOptionRow(focus types.FocusManager, callback types.ScreenCallback,
 	focusKey := prefix + "-opt-" + opt.Key
 
 	switch opt.Type {
-	case emucore.CoreOptionBool:
+	case coreif.CoreOptionBool:
 		current := getCoreOptionValue(config, opt)
 		isOn := current == "true" || current == "1" || current == "on"
 
@@ -45,7 +45,7 @@ func buildCoreOptionRow(focus types.FocusManager, callback types.ScreenCallback,
 		focus.RegisterFocusButton(focusKey, toggleBtn)
 		row.AddChild(toggleBtn)
 
-	case emucore.CoreOptionSelect:
+	case coreif.CoreOptionSelect:
 		current := getCoreOptionValue(config, opt)
 		nextIdx := 0
 		for i, v := range opt.Values {
@@ -74,7 +74,7 @@ func buildCoreOptionRow(focus types.FocusManager, callback types.ScreenCallback,
 		focus.RegisterFocusButton(focusKey, cycleBtn)
 		row.AddChild(cycleBtn)
 
-	case emucore.CoreOptionRange:
+	case coreif.CoreOptionRange:
 		current := getCoreOptionValue(config, opt)
 		displayBtn := widget.NewButton(
 			widget.ButtonOpts.Image(style.ButtonImage()),
@@ -96,7 +96,7 @@ func buildCoreOptionRow(focus types.FocusManager, callback types.ScreenCallback,
 
 // getCoreOptionValue returns the current value for a core option,
 // checking config overrides first, then falling back to the option's default.
-func getCoreOptionValue(config *storage.Config, opt emucore.CoreOption) string {
+func getCoreOptionValue(config *storage.Config, opt coreif.CoreOption) string {
 	if config.CoreOptions != nil {
 		if v, ok := config.CoreOptions[opt.Key]; ok {
 			return v

@@ -3,7 +3,7 @@ package screens
 import (
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
-	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/standalone/achievements"
 	"github.com/user-none/eblitui/standalone/screens/settings"
 	"github.com/user-none/eblitui/standalone/storage"
@@ -41,7 +41,7 @@ type SettingsScreen struct {
 // NewSettingsScreen creates a new settings screen.
 // serializeSize is the bytes per save state for rewind duration estimates.
 // systemInfo provides button definitions and core options for the input section.
-func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config *storage.Config, achievementMgr *achievements.Manager, serializeSize int, systemInfo emucore.SystemInfo) *SettingsScreen {
+func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config *storage.Config, achievementMgr *achievements.Manager, serializeSize int, systemInfo coreif.SystemInfo) *SettingsScreen {
 	s := &SettingsScreen{
 		callback:          callback,
 		selectedSection:   0,
@@ -67,7 +67,7 @@ func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config
 
 	hasCoreOpts := false
 	for _, opt := range systemInfo.CoreOptions {
-		if opt.Category == emucore.CoreOptionCategoryCore {
+		if opt.Category == coreif.CoreOptionCategoryCore {
 			hasCoreOpts = true
 			break
 		}
@@ -237,7 +237,7 @@ func (s *SettingsScreen) setupNavigation() {
 func (s *SettingsScreen) setupVideoNav() {
 	firstVideoZone := "video-shaders"
 	for _, opt := range s.video.SystemInfo().CoreOptions {
-		if opt.Category == emucore.CoreOptionCategoryVideo {
+		if opt.Category == coreif.CoreOptionCategoryVideo {
 			firstVideoZone = "video-core-opts"
 			break
 		}
@@ -251,7 +251,7 @@ func (s *SettingsScreen) setupVideoNav() {
 func (s *SettingsScreen) setupAudioNav() {
 	firstAudioZone := "audio-mute"
 	for _, opt := range s.audio.SystemInfo().CoreOptions {
-		if opt.Category == emucore.CoreOptionCategoryAudio {
+		if opt.Category == coreif.CoreOptionCategoryAudio {
 			firstAudioZone = "audio-core-opts"
 			break
 		}
@@ -266,7 +266,7 @@ func (s *SettingsScreen) setupAudioNav() {
 func (s *SettingsScreen) setupInputNav() {
 	firstZone := "input-bindings"
 	for _, opt := range s.input.SystemInfo().CoreOptions {
-		if opt.Category == emucore.CoreOptionCategoryInput {
+		if opt.Category == coreif.CoreOptionCategoryInput {
 			firstZone = "input-core-opts"
 			break
 		}

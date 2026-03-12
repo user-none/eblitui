@@ -8,7 +8,7 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
-	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/romloader"
 	"github.com/user-none/eblitui/standalone/display"
 )
@@ -17,8 +17,8 @@ import (
 // It skips the full UI (library, settings, save states, achievements, etc.)
 // and runs the emulator with just input, audio, and rendering.
 type directRunner struct {
-	emulator     emucore.Emulator
-	systemInfo   emucore.SystemInfo
+	emulator     coreif.Emulator
+	systemInfo   coreif.SystemInfo
 	inputMapping InputMapping
 	renderer     *FramebufferRenderer
 	audioPlayer  *AudioPlayer
@@ -32,7 +32,7 @@ type directRunner struct {
 // The regionStr parameter accepts "auto", "ntsc", or "pal".
 // The options map is applied to the emulator via SetOption.
 // The bios map provides BIOS data keyed by BIOSOption.Key (may be nil).
-func RunDirect(factory emucore.CoreFactory, romPath, regionStr string, options map[string]string, bios map[string][]byte) error {
+func RunDirect(factory coreif.CoreFactory, romPath, regionStr string, options map[string]string, bios map[string][]byte) error {
 	systemInfo := factory.SystemInfo()
 
 	romData, _, err := romloader.Load(romPath, systemInfo.Extensions)
@@ -207,17 +207,17 @@ func (dr *directRunner) Close() {
 	dr.emulator.Close()
 }
 
-// parseRegion converts a region string to emucore.Region.
+// parseRegion converts a region string to coreif.Region.
 // "auto" uses the factory's DetectRegion, "ntsc" and "pal" map directly.
-func parseRegion(regionStr string, factory emucore.CoreFactory, romData []byte) (emucore.Region, error) {
+func parseRegion(regionStr string, factory coreif.CoreFactory, romData []byte) (coreif.Region, error) {
 	switch strings.ToLower(regionStr) {
 	case "auto":
 		region, _ := factory.DetectRegion(romData)
 		return region, nil
 	case "ntsc":
-		return emucore.RegionNTSC, nil
+		return coreif.RegionNTSC, nil
 	case "pal":
-		return emucore.RegionPAL, nil
+		return coreif.RegionPAL, nil
 	default:
 		return 0, fmt.Errorf("unknown region %q: use auto, ntsc, or pal", regionStr)
 	}

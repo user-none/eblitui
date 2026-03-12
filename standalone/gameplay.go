@@ -11,7 +11,7 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
-	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/romloader"
 	"github.com/user-none/eblitui/standalone/achievements"
 	"github.com/user-none/eblitui/standalone/storage"
@@ -33,14 +33,14 @@ const (
 // The Ebiten thread handles UI, input polling, and reads the shared framebuffer.
 type GameplayManager struct {
 	// Core factory and system info
-	factory      emucore.CoreFactory
-	systemInfo   emucore.SystemInfo
+	factory      coreif.CoreFactory
+	systemInfo   coreif.SystemInfo
 	inputMapping InputMapping
 
 	// Emulation state
-	emulator     emucore.Emulator
-	saveStater   emucore.SaveStater   // Detected at launch (may be nil)
-	batterySaver emucore.BatterySaver // Detected at launch (may be nil)
+	emulator     coreif.Emulator
+	saveStater   coreif.SaveStater   // Detected at launch (may be nil)
+	batterySaver coreif.BatterySaver // Detected at launch (may be nil)
 	renderer     *FramebufferRenderer
 	audioPlayer  *AudioPlayer
 	currentGame  *storage.GameEntry
@@ -79,7 +79,7 @@ type GameplayManager struct {
 
 	// Rumble
 	rumbleEngine    *RumbleEngine
-	memoryInspector emucore.MemoryInspector
+	memoryInspector coreif.MemoryInspector
 	pendingRumble   []RumbleEvent
 	pendingRumbleMu sync.Mutex
 
@@ -110,8 +110,8 @@ type PlayTimeTracker struct {
 
 // NewGameplayManager creates a new gameplay manager
 func NewGameplayManager(
-	factory emucore.CoreFactory,
-	systemInfo emucore.SystemInfo,
+	factory coreif.CoreFactory,
+	systemInfo coreif.SystemInfo,
 	saveStateManager *SaveStateManager,
 	screenshotManager *ScreenshotManager,
 	notification *Notification,
@@ -294,8 +294,8 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 	emu.Start()
 
 	// Detect optional interfaces
-	gm.saveStater, _ = emu.(emucore.SaveStater)
-	gm.batterySaver, _ = emu.(emucore.BatterySaver)
+	gm.saveStater, _ = emu.(coreif.SaveStater)
+	gm.batterySaver, _ = emu.(coreif.BatterySaver)
 
 	// Create renderer and shared structures for ADT
 	gm.renderer = NewFramebufferRenderer(gm.systemInfo.ScreenWidth, gm.systemInfo.PixelAspectRatio)
@@ -362,7 +362,7 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 			gm.achievementScreenshotMu.Unlock()
 		})
 
-		if mi, ok := gm.emulator.(emucore.MemoryInspector); ok {
+		if mi, ok := gm.emulator.(coreif.MemoryInspector); ok {
 			gm.achievementManager.SetEmulator(mi)
 		}
 		// Look up MD5 from RDB for fast path (avoids re-hashing ROM)
@@ -378,7 +378,7 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 
 	// Initialize rumble engine if enabled and emulator supports memory inspection
 	if gm.config.Input.RumbleLevel > 0 {
-		if mi, ok := gm.emulator.(emucore.MemoryInspector); ok {
+		if mi, ok := gm.emulator.(coreif.MemoryInspector); ok {
 			rumblePath, err := storage.GetGameRumblePath(game.CRC32)
 			if err == nil {
 				entries, err := ParseRumbleFile(rumblePath)
@@ -955,11 +955,11 @@ func (gm *GameplayManager) updatePlayTime() {
 }
 
 // regionFromLibraryEntry determines the region from a library entry
-func (gm *GameplayManager) regionFromLibraryEntry(game *storage.GameEntry) emucore.Region {
+func (gm *GameplayManager) regionFromLibraryEntry(game *storage.GameEntry) coreif.Region {
 	switch strings.ToLower(game.Region) {
 	case "eu", "europe", "pal":
-		return emucore.RegionPAL
+		return coreif.RegionPAL
 	default:
-		return emucore.RegionNTSC
+		return coreif.RegionNTSC
 	}
 }

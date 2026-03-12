@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/standalone/storage"
 )
 
@@ -85,7 +85,7 @@ func (m *SaveStateManager) persistSlot() {
 }
 
 // Save saves the current state to the current slot
-func (m *SaveStateManager) Save(saveStater emucore.SaveStater) error {
+func (m *SaveStateManager) Save(saveStater coreif.SaveStater) error {
 	if m.gameCRC == "" {
 		return fmt.Errorf("no game set")
 	}
@@ -119,7 +119,7 @@ func (m *SaveStateManager) Save(saveStater emucore.SaveStater) error {
 }
 
 // Load loads the state from the current slot
-func (m *SaveStateManager) Load(saveStater emucore.SaveStater) error {
+func (m *SaveStateManager) Load(saveStater coreif.SaveStater) error {
 	if m.gameCRC == "" {
 		return fmt.Errorf("no game set")
 	}
@@ -156,7 +156,7 @@ func (m *SaveStateManager) Load(saveStater emucore.SaveStater) error {
 }
 
 // SaveResume saves the resume state
-func (m *SaveStateManager) SaveResume(saveStater emucore.SaveStater) error {
+func (m *SaveStateManager) SaveResume(saveStater coreif.SaveStater) error {
 	if m.gameCRC == "" {
 		return fmt.Errorf("no game set")
 	}
@@ -201,7 +201,7 @@ func (m *SaveStateManager) SaveResumeData(state []byte) error {
 }
 
 // LoadResume loads the resume state
-func (m *SaveStateManager) LoadResume(saveStater emucore.SaveStater) error {
+func (m *SaveStateManager) LoadResume(saveStater coreif.SaveStater) error {
 	if m.gameCRC == "" {
 		return fmt.Errorf("no game set")
 	}
@@ -238,7 +238,7 @@ func (m *SaveStateManager) HasResumeState() bool {
 }
 
 // SaveSRAM saves the cartridge SRAM
-func (m *SaveStateManager) SaveSRAM(batterySaver emucore.BatterySaver) error {
+func (m *SaveStateManager) SaveSRAM(batterySaver coreif.BatterySaver) error {
 	if m.gameCRC == "" {
 		return fmt.Errorf("no game set")
 	}
@@ -261,7 +261,7 @@ func (m *SaveStateManager) SaveSRAM(batterySaver emucore.BatterySaver) error {
 }
 
 // LoadSRAM loads the cartridge SRAM
-func (m *SaveStateManager) LoadSRAM(batterySaver emucore.BatterySaver) error {
+func (m *SaveStateManager) LoadSRAM(batterySaver coreif.BatterySaver) error {
 	if m.gameCRC == "" {
 		return nil
 	}

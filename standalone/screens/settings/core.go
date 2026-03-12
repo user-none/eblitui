@@ -7,7 +7,7 @@ import (
 
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/sqweek/dialog"
-	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/romloader"
 	"github.com/user-none/eblitui/standalone/storage"
 	"github.com/user-none/eblitui/standalone/style"
@@ -18,11 +18,11 @@ import (
 type CoreSection struct {
 	callback   types.ScreenCallback
 	config     *storage.Config
-	systemInfo emucore.SystemInfo
+	systemInfo coreif.SystemInfo
 }
 
 // NewCoreSection creates a new core options section
-func NewCoreSection(callback types.ScreenCallback, config *storage.Config, systemInfo emucore.SystemInfo) *CoreSection {
+func NewCoreSection(callback types.ScreenCallback, config *storage.Config, systemInfo coreif.SystemInfo) *CoreSection {
 	return &CoreSection{
 		callback:   callback,
 		config:     config,
@@ -38,7 +38,7 @@ func (c *CoreSection) SetConfig(config *storage.Config) {
 // HasCoreOpts returns true if any core-category options exist
 func (c *CoreSection) HasCoreOpts() bool {
 	for _, opt := range c.systemInfo.CoreOptions {
-		if opt.Category == emucore.CoreOptionCategoryCore {
+		if opt.Category == coreif.CoreOptionCategoryCore {
 			return true
 		}
 	}
@@ -67,7 +67,7 @@ func (c *CoreSection) Build(focus types.FocusManager) *widget.Container {
 	)
 
 	for _, opt := range c.systemInfo.CoreOptions {
-		if opt.Category == emucore.CoreOptionCategoryCore {
+		if opt.Category == coreif.CoreOptionCategoryCore {
 			section.AddChild(buildCoreOptionRow(focus, c.callback, c.config, opt, "core"))
 		}
 	}
@@ -98,7 +98,7 @@ func (c *CoreSection) Build(focus types.FocusManager) *widget.Container {
 // - Section header (opt.Label)
 // - Active toggle (None / variant labels with files)
 // - One row per variant: label + status, Browse or Remove button
-func (c *CoreSection) buildBIOSOption(section *widget.Container, focus types.FocusManager, opt emucore.BIOSOption) {
+func (c *CoreSection) buildBIOSOption(section *widget.Container, focus types.FocusManager, opt coreif.BIOSOption) {
 	bc := c.getBIOSConfig(opt.Key)
 
 	// Section header using the BIOSOption label
@@ -173,7 +173,7 @@ func (c *CoreSection) buildBIOSOption(section *widget.Container, focus types.Foc
 // buildBIOSVariantRow builds a single variant row with shader-style layout:
 // left: label (primary) + filename or "(Not Found)" (secondary)
 // right: Browse or Remove button
-func (c *CoreSection) buildBIOSVariantRow(section *widget.Container, focus types.FocusManager, opt emucore.BIOSOption, v emucore.BIOSVariant, bc storage.BIOSConfig) {
+func (c *CoreSection) buildBIOSVariantRow(section *widget.Container, focus types.FocusManager, opt coreif.BIOSOption, v coreif.BIOSVariant, bc storage.BIOSConfig) {
 	filePath := ""
 	if bc.Files != nil {
 		filePath = bc.Files[v.Label]
@@ -242,7 +242,7 @@ func (c *CoreSection) buildBIOSVariantRow(section *widget.Container, focus types
 }
 
 // onBrowseBIOS opens a file dialog for a specific BIOS variant.
-func (c *CoreSection) onBrowseBIOS(opt emucore.BIOSOption, v emucore.BIOSVariant, focusKey string, focus types.FocusManager) {
+func (c *CoreSection) onBrowseBIOS(opt coreif.BIOSOption, v coreif.BIOSVariant, focusKey string, focus types.FocusManager) {
 	go func() {
 		path, err := dialog.File().
 			Title("Select BIOS: " + v.Label).
@@ -299,7 +299,7 @@ func (c *CoreSection) setBIOSConfig(key string, bc storage.BIOSConfig) {
 func (c *CoreSection) setupNavigation(focus types.FocusManager) {
 	coreOptKeys := make([]string, 0)
 	for _, opt := range c.systemInfo.CoreOptions {
-		if opt.Category == emucore.CoreOptionCategoryCore {
+		if opt.Category == coreif.CoreOptionCategoryCore {
 			coreOptKeys = append(coreOptKeys, "core-opt-"+opt.Key)
 		}
 	}

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"unicode"
 
-	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/rdb"
 	"github.com/user-none/eblitui/standalone/storage"
 	"github.com/user-none/eblitui/standalone/style"
@@ -54,7 +54,7 @@ type MetadataManager struct {
 }
 
 // NewMetadataManager creates a new metadata manager from the given variants.
-func NewMetadataManager(variants []emucore.MetadataVariant) *MetadataManager {
+func NewMetadataManager(variants []coreif.MetadataVariant) *MetadataManager {
 	mv := make([]metadataVariant, len(variants))
 	for i, v := range variants {
 		mv[i] = metadataVariant{

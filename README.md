@@ -11,7 +11,7 @@ individual emulators build on top of.
 
 ## Components
 
-### api
+### coreif
 
 Shared interface contract between emulator cores and UI implementations.
 Defines the `CoreFactory`, `Emulator`, and optional capability interfaces
@@ -30,7 +30,7 @@ keyboard navigation, and audio-driven timing.
 
 ### libretro
 
-Libretro core wrapper that bridges the emucore interfaces to the
+Libretro core wrapper that bridges the coreif interfaces to the
 [libretro API](https://www.libretro.com). Builds as a shared library
 (`.so`/`.dylib`/`.dll`) loadable by any libretro-compatible frontend
 such as RetroArch.
@@ -53,7 +53,7 @@ and extracts ROMs by extension.
 
 ## How It Works
 
-An emulator core implements the interfaces defined in `api`. The core
+An emulator core implements the interfaces defined in `coreif`. The core
 then links one of the UI packages (`standalone` or `libretro`)
 and provides its `CoreFactory` as the entry point. The UI handles
 everything else: rendering, audio, input, saves, settings, and any
@@ -62,7 +62,7 @@ additional features.
 ```
 Emulator Core (e.g. emkiii, emmd)
     |
-    implements emucore interfaces (api)
+    implements coreif interfaces
     |
     +---> standalone   (desktop app)
     +---> libretro     (shared library for RetroArch etc.)
@@ -78,7 +78,7 @@ This is a Go workspace. Each component is its own Go module:
 
 | Module | Import Path |
 |---|---|
-| api | `github.com/user-none/eblitui/api` |
+| coreif | `github.com/user-none/eblitui/coreif` |
 | standalone | `github.com/user-none/eblitui/standalone` |
 | libretro | `github.com/user-none/eblitui/libretro` |
 | rdb | `github.com/user-none/eblitui/rdb` |
@@ -94,7 +94,7 @@ this repository directly.
 Tests for each component can be run from their directories:
 
 ```
-go test ./api/...
+go test ./coreif/...
 go test ./romloader/...
 go test ./standalone/...
 go test ./libretro/...

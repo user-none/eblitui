@@ -1,6 +1,6 @@
-# eblitui-api
+# eblitui-coreif
 
-Shared API interfaces for the eblitui emulator UI framework. This module
+Shared core interfaces for the eblitui emulator UI framework. This module
 defines the contract between emulator cores and UI implementations, allowing
 each to be developed independently.
 
@@ -11,11 +11,11 @@ management, and settings without knowing the details of any specific system.
 ## Package
 
 ```
-package emucore
+package coreif
 ```
 
 ```
-import "github.com/user-none/eblitui/api"
+import "github.com/user-none/eblitui/coreif"
 ```
 
 ## Interfaces

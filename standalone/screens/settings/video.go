@@ -2,7 +2,7 @@ package settings
 
 import (
 	"github.com/ebitenui/ebitenui/widget"
-	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/standalone/shader"
 	"github.com/user-none/eblitui/standalone/storage"
 	"github.com/user-none/eblitui/standalone/style"
@@ -13,11 +13,11 @@ import (
 type VideoSection struct {
 	callback   types.ScreenCallback
 	config     *storage.Config
-	systemInfo emucore.SystemInfo
+	systemInfo coreif.SystemInfo
 }
 
 // NewVideoSection creates a new video section
-func NewVideoSection(callback types.ScreenCallback, config *storage.Config, systemInfo emucore.SystemInfo) *VideoSection {
+func NewVideoSection(callback types.ScreenCallback, config *storage.Config, systemInfo coreif.SystemInfo) *VideoSection {
 	return &VideoSection{
 		callback:   callback,
 		config:     config,
@@ -26,7 +26,7 @@ func NewVideoSection(callback types.ScreenCallback, config *storage.Config, syst
 }
 
 // SystemInfo returns the system info for navigation setup
-func (v *VideoSection) SystemInfo() emucore.SystemInfo {
+func (v *VideoSection) SystemInfo() coreif.SystemInfo {
 	return v.systemInfo
 }
 
@@ -58,7 +58,7 @@ func (v *VideoSection) setupNavigation(focus types.FocusManager) {
 	// Core options zone
 	coreOptKeys := make([]string, 0)
 	for _, opt := range v.systemInfo.CoreOptions {
-		if opt.Category == emucore.CoreOptionCategoryVideo {
+		if opt.Category == coreif.CoreOptionCategoryVideo {
 			coreOptKeys = append(coreOptKeys, "video-opt-"+opt.Key)
 		}
 	}
@@ -125,7 +125,7 @@ func (v *VideoSection) buildShadersList(focus types.FocusManager) widget.Preferr
 	// Core options filtered by video category
 	hasVideoOptions := false
 	for _, opt := range v.systemInfo.CoreOptions {
-		if opt.Category == emucore.CoreOptionCategoryVideo {
+		if opt.Category == coreif.CoreOptionCategoryVideo {
 			hasVideoOptions = true
 			listContent.AddChild(buildCoreOptionRow(focus, v.callback, v.config, opt, "video"))
 		}

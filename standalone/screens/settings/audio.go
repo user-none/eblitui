@@ -5,7 +5,7 @@ import (
 	"math"
 
 	"github.com/ebitenui/ebitenui/widget"
-	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/standalone/storage"
 	"github.com/user-none/eblitui/standalone/style"
 	"github.com/user-none/eblitui/standalone/types"
@@ -21,14 +21,14 @@ const (
 type AudioSection struct {
 	callback   types.ScreenCallback
 	config     *storage.Config
-	systemInfo emucore.SystemInfo
+	systemInfo coreif.SystemInfo
 
 	// Live-updated text widget (avoid rebuild on +/- to preserve focus)
 	volumeValueText *widget.Text
 }
 
 // NewAudioSection creates a new audio section
-func NewAudioSection(callback types.ScreenCallback, config *storage.Config, systemInfo emucore.SystemInfo) *AudioSection {
+func NewAudioSection(callback types.ScreenCallback, config *storage.Config, systemInfo coreif.SystemInfo) *AudioSection {
 	return &AudioSection{
 		callback:   callback,
 		config:     config,
@@ -37,7 +37,7 @@ func NewAudioSection(callback types.ScreenCallback, config *storage.Config, syst
 }
 
 // SystemInfo returns the system info for navigation setup
-func (a *AudioSection) SystemInfo() emucore.SystemInfo {
+func (a *AudioSection) SystemInfo() coreif.SystemInfo {
 	return a.systemInfo
 }
 
@@ -65,7 +65,7 @@ func (a *AudioSection) Build(focus types.FocusManager) *widget.Container {
 	// Core options filtered by audio category
 	hasAudioOptions := false
 	for _, opt := range a.systemInfo.CoreOptions {
-		if opt.Category == emucore.CoreOptionCategoryAudio {
+		if opt.Category == coreif.CoreOptionCategoryAudio {
 			hasAudioOptions = true
 			section.AddChild(buildCoreOptionRow(focus, a.callback, a.config, opt, "audio"))
 		}
@@ -106,7 +106,7 @@ func (a *AudioSection) setupNavigation(focus types.FocusManager) {
 	// Core options zone
 	coreOptKeys := make([]string, 0)
 	for _, opt := range a.systemInfo.CoreOptions {
-		if opt.Category == emucore.CoreOptionCategoryAudio {
+		if opt.Category == coreif.CoreOptionCategoryAudio {
 			coreOptKeys = append(coreOptKeys, "audio-opt-"+opt.Key)
 		}
 	}

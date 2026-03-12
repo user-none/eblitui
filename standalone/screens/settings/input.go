@@ -4,7 +4,7 @@ import (
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
-	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/standalone/storage"
 	"github.com/user-none/eblitui/standalone/style"
 	"github.com/user-none/eblitui/standalone/types"
@@ -38,7 +38,7 @@ var dpadEntries = []dpadEntry{
 type InputSection struct {
 	callback   types.ScreenCallback
 	config     *storage.Config
-	systemInfo emucore.SystemInfo
+	systemInfo coreif.SystemInfo
 	focus      types.FocusManager
 
 	// Capture state
@@ -48,7 +48,7 @@ type InputSection struct {
 }
 
 // NewInputSection creates a new input section
-func NewInputSection(callback types.ScreenCallback, config *storage.Config, systemInfo emucore.SystemInfo) *InputSection {
+func NewInputSection(callback types.ScreenCallback, config *storage.Config, systemInfo coreif.SystemInfo) *InputSection {
 	return &InputSection{
 		callback:   callback,
 		config:     config,
@@ -62,7 +62,7 @@ func (s *InputSection) SetConfig(config *storage.Config) {
 }
 
 // SystemInfo returns the system info for navigation setup
-func (s *InputSection) SystemInfo() emucore.SystemInfo {
+func (s *InputSection) SystemInfo() coreif.SystemInfo {
 	return s.systemInfo
 }
 
@@ -235,7 +235,7 @@ func (s *InputSection) Build(focus types.FocusManager) *widget.Container {
 	// Core options section (options with Category == "Input")
 	hasInputOptions := false
 	for _, opt := range s.systemInfo.CoreOptions {
-		if opt.Category == emucore.CoreOptionCategoryInput {
+		if opt.Category == coreif.CoreOptionCategoryInput {
 			hasInputOptions = true
 			section.AddChild(buildCoreOptionRow(focus, s.callback, s.config, opt, "input"))
 		}
@@ -297,7 +297,7 @@ func (s *InputSection) setupNavigation(focus types.FocusManager) {
 	// Core options zone
 	coreOptKeys := make([]string, 0)
 	for _, opt := range s.systemInfo.CoreOptions {
-		if opt.Category == emucore.CoreOptionCategoryInput {
+		if opt.Category == coreif.CoreOptionCategoryInput {
 			coreOptKeys = append(coreOptKeys, "input-opt-"+opt.Key)
 		}
 	}

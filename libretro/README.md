@@ -1,6 +1,6 @@
 # eblitui-libretro
 
-Libretro core wrapper for eblitui. Bridges the `emucore` interfaces to
+Libretro core wrapper for eblitui. Bridges the `coreif` interfaces to
 the [libretro API](https://www.libretro.com) so emulator cores can be
 built as shared libraries loadable by any libretro-compatible frontend
 (RetroArch, etc.).
@@ -15,7 +15,7 @@ resulting binary exports all required `retro_*` functions.
 package main
 
 import (
-    emucore "github.com/user-none/eblitui/api"
+    coreif "github.com/user-none/eblitui/coreif"
     "github.com/user-none/eblitui/libretro"
 )
 
@@ -42,7 +42,7 @@ go build -buildmode=c-shared -o mycore_libretro.so
 ### RegisterFactory
 
 ```go
-func RegisterFactory(f emucore.CoreFactory, mapping []RetropadMapping)
+func RegisterFactory(f coreif.CoreFactory, mapping []RetropadMapping)
 ```
 
 Sets the `CoreFactory` and joypad button mapping. Must be called during
@@ -55,11 +55,11 @@ and memory buffers.
 ```go
 type RetropadMapping struct {
     RetroID int // RETRO_DEVICE_ID_JOYPAD_* constant
-    BitID   int // emucore bit position (from Button.ID)
+    BitID   int // coreif bit position (from Button.ID)
 }
 ```
 
-Maps libretro joypad buttons to emucore button bit positions. D-pad
+Maps libretro joypad buttons to coreif button bit positions. D-pad
 directions (Up/Down/Left/Right) are mapped automatically and do not
 need entries.
 
@@ -113,7 +113,7 @@ using the core's short name as a key prefix.
 
 ## Optional Interface Support
 
-The wrapper detects optional emucore interfaces via type assertion when
+The wrapper detects optional coreif interfaces via type assertion when
 a game is loaded:
 
 | Interface | libretro Feature |
@@ -124,13 +124,13 @@ a game is loaded:
 
 ## Pixel Format
 
-Video output uses XRGB8888. The wrapper converts from the emucore
+Video output uses XRGB8888. The wrapper converts from the coreif
 RGBA framebuffer to XRGB8888 for the frontend.
 
 
 ## Dependencies
 
-- `github.com/user-none/eblitui/api`
+- `github.com/user-none/eblitui/coreif`
 
 No other external dependencies. The C headers (`libretro.h`, `cfuncs.h`)
 are included in the package.

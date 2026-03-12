@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/standalone/screens"
 	"github.com/user-none/eblitui/standalone/storage"
 )
@@ -19,8 +19,8 @@ type ScanManager struct {
 	// External dependencies (not owned by ScanManager)
 	library    *storage.Library
 	scanScreen *screens.ScanProgressScreen
-	extensions []string                  // Supported ROM file extensions
-	variants   []emucore.MetadataVariant // Metadata variants for RDB/thumbnail lookups
+	extensions []string                 // Supported ROM file extensions
+	variants   []coreif.MetadataVariant // Metadata variants for RDB/thumbnail lookups
 
 	// Callbacks to App
 	onProgress func() // Called when progress updates (triggers UI rebuild)
@@ -32,7 +32,7 @@ func NewScanManager(
 	library *storage.Library,
 	scanScreen *screens.ScanProgressScreen,
 	extensions []string,
-	variants []emucore.MetadataVariant,
+	variants []coreif.MetadataVariant,
 	onProgress func(),
 	onComplete func(msg string),
 ) *ScanManager {

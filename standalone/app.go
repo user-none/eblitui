@@ -10,7 +10,7 @@ import (
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
-	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/standalone/achievements"
 	"github.com/user-none/eblitui/standalone/display"
 	"github.com/user-none/eblitui/standalone/screens"
@@ -26,8 +26,8 @@ type App struct {
 	ui *ebitenui.UI
 
 	// Core factory and system info (set by Run)
-	factory    emucore.CoreFactory
-	systemInfo emucore.SystemInfo
+	factory    coreif.CoreFactory
+	systemInfo coreif.SystemInfo
 
 	// State management
 	state         AppState
@@ -106,7 +106,7 @@ type App struct {
 
 // Run is the public entry point for the standalone UI. It initializes storage,
 // configures the window, creates the app, and starts the Ebiten game loop.
-func Run(factory emucore.CoreFactory) error {
+func Run(factory coreif.CoreFactory) error {
 	info := factory.SystemInfo()
 
 	// Initialize storage with core-specific data directory
@@ -151,7 +151,7 @@ func Run(factory emucore.CoreFactory) error {
 }
 
 // newApp creates and initializes the application with the given core factory and system info.
-func newApp(factory emucore.CoreFactory, info emucore.SystemInfo) (*App, error) {
+func newApp(factory coreif.CoreFactory, info coreif.SystemInfo) (*App, error) {
 	app := &App{
 		state:      StateLibrary,
 		factory:    factory,

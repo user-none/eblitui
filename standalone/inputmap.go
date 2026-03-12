@@ -2,7 +2,7 @@ package standalone
 
 import (
 	"github.com/hajimehoshi/ebiten/v2"
-	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/coreif"
 )
 
 // InputMapping maps button bit IDs to ebiten input types.
@@ -183,16 +183,16 @@ var dpadButtons = []struct {
 	DefaultKey string
 	DefaultPad string
 }{
-	{"Up", emucore.ButtonUp, "W", "DpadUp"},
-	{"Down", emucore.ButtonDown, "S", "DpadDown"},
-	{"Left", emucore.ButtonLeft, "A", "DpadLeft"},
-	{"Right", emucore.ButtonRight, "D", "DpadRight"},
+	{"Up", coreif.ButtonUp, "W", "DpadUp"},
+	{"Down", coreif.ButtonDown, "S", "DpadDown"},
+	{"Left", coreif.ButtonLeft, "A", "DpadLeft"},
+	{"Right", coreif.ButtonRight, "D", "DpadRight"},
 }
 
 // BuildDefaultMapping creates an InputMapping from the given button definitions.
 // It includes D-pad defaults (WASD keyboard, D-pad controller) plus adaptor buttons.
 // Keys that conflict with reserved standalone UI keys are skipped.
-func BuildDefaultMapping(buttons []emucore.Button) InputMapping {
+func BuildDefaultMapping(buttons []coreif.Button) InputMapping {
 	m := InputMapping{
 		Keys:    make(map[int]ebiten.Key),
 		Gamepad: make(map[int]ebiten.StandardGamepadButton),
@@ -231,7 +231,7 @@ func BuildDefaultMapping(buttons []emucore.Button) InputMapping {
 // adaptor defaults as fallback. D-pad defaults are WASD (keyboard) and
 // DpadUp/Down/Left/Right (controller). For each button, the override map
 // is checked first; if absent or invalid, the adaptor default is used.
-func BuildMappingFromConfig(buttons []emucore.Button, kbOverrides, padOverrides map[string]string) InputMapping {
+func BuildMappingFromConfig(buttons []coreif.Button, kbOverrides, padOverrides map[string]string) InputMapping {
 	m := InputMapping{
 		Keys:    make(map[int]ebiten.Key),
 		Gamepad: make(map[int]ebiten.StandardGamepadButton),

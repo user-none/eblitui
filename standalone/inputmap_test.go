@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/coreif"
 )
 
 func TestParseKeyValid(t *testing.T) {
@@ -146,7 +146,7 @@ const dpadKeyCount = 4
 const dpadPadCount = 4
 
 func TestBuildDefaultMappingGenesis6Button(t *testing.T) {
-	buttons := []emucore.Button{
+	buttons := []coreif.Button{
 		{Name: "A", ID: 4, DefaultKey: "J", DefaultPad: "A"},
 		{Name: "B", ID: 5, DefaultKey: "K", DefaultPad: "B"},
 		{Name: "C", ID: 6, DefaultKey: "L", DefaultPad: "R1"},
@@ -160,17 +160,17 @@ func TestBuildDefaultMappingGenesis6Button(t *testing.T) {
 
 	// Verify adaptor keyboard mappings (d-pad is also included)
 	expectedKeys := map[int]ebiten.Key{
-		emucore.ButtonUp:    ebiten.KeyW,
-		emucore.ButtonDown:  ebiten.KeyS,
-		emucore.ButtonLeft:  ebiten.KeyA,
-		emucore.ButtonRight: ebiten.KeyD,
-		4:                   ebiten.KeyJ,
-		5:                   ebiten.KeyK,
-		6:                   ebiten.KeyL,
-		8:                   ebiten.KeyU,
-		9:                   ebiten.KeyI,
-		10:                  ebiten.KeyO,
-		7:                   ebiten.KeyEnter,
+		coreif.ButtonUp:    ebiten.KeyW,
+		coreif.ButtonDown:  ebiten.KeyS,
+		coreif.ButtonLeft:  ebiten.KeyA,
+		coreif.ButtonRight: ebiten.KeyD,
+		4:                  ebiten.KeyJ,
+		5:                  ebiten.KeyK,
+		6:                  ebiten.KeyL,
+		8:                  ebiten.KeyU,
+		9:                  ebiten.KeyI,
+		10:                 ebiten.KeyO,
+		7:                  ebiten.KeyEnter,
 	}
 	if len(m.Keys) != len(expectedKeys) {
 		t.Errorf("Keys map has %d entries, want %d", len(m.Keys), len(expectedKeys))
@@ -188,17 +188,17 @@ func TestBuildDefaultMappingGenesis6Button(t *testing.T) {
 
 	// Verify all gamepad mappings
 	expectedPad := map[int]ebiten.StandardGamepadButton{
-		emucore.ButtonUp:    ebiten.StandardGamepadButtonLeftTop,
-		emucore.ButtonDown:  ebiten.StandardGamepadButtonLeftBottom,
-		emucore.ButtonLeft:  ebiten.StandardGamepadButtonLeftLeft,
-		emucore.ButtonRight: ebiten.StandardGamepadButtonLeftRight,
-		4:                   ebiten.StandardGamepadButtonRightBottom,
-		5:                   ebiten.StandardGamepadButtonRightRight,
-		6:                   ebiten.StandardGamepadButtonFrontTopRight,
-		8:                   ebiten.StandardGamepadButtonRightLeft,
-		9:                   ebiten.StandardGamepadButtonRightTop,
-		10:                  ebiten.StandardGamepadButtonFrontTopLeft,
-		7:                   ebiten.StandardGamepadButtonCenterRight,
+		coreif.ButtonUp:    ebiten.StandardGamepadButtonLeftTop,
+		coreif.ButtonDown:  ebiten.StandardGamepadButtonLeftBottom,
+		coreif.ButtonLeft:  ebiten.StandardGamepadButtonLeftLeft,
+		coreif.ButtonRight: ebiten.StandardGamepadButtonLeftRight,
+		4:                  ebiten.StandardGamepadButtonRightBottom,
+		5:                  ebiten.StandardGamepadButtonRightRight,
+		6:                  ebiten.StandardGamepadButtonFrontTopRight,
+		8:                  ebiten.StandardGamepadButtonRightLeft,
+		9:                  ebiten.StandardGamepadButtonRightTop,
+		10:                 ebiten.StandardGamepadButtonFrontTopLeft,
+		7:                  ebiten.StandardGamepadButtonCenterRight,
 	}
 	if len(m.Gamepad) != len(expectedPad) {
 		t.Errorf("Gamepad map has %d entries, want %d", len(m.Gamepad), len(expectedPad))
@@ -216,7 +216,7 @@ func TestBuildDefaultMappingGenesis6Button(t *testing.T) {
 }
 
 func TestBuildDefaultMapping3Button(t *testing.T) {
-	buttons := []emucore.Button{
+	buttons := []coreif.Button{
 		{Name: "A", ID: 4, DefaultKey: "J", DefaultPad: "A"},
 		{Name: "B", ID: 5, DefaultKey: "K", DefaultPad: "B"},
 		{Name: "C", ID: 6, DefaultKey: "L", DefaultPad: "R1"},
@@ -245,7 +245,7 @@ func TestBuildDefaultMapping3Button(t *testing.T) {
 }
 
 func TestBuildDefaultMappingEmptyDefaults(t *testing.T) {
-	buttons := []emucore.Button{
+	buttons := []coreif.Button{
 		{Name: "A", ID: 4},
 		{Name: "B", ID: 5},
 	}
@@ -271,7 +271,7 @@ func TestBuildDefaultMappingReservedKeysSkipped(t *testing.T) {
 	}
 
 	for _, name := range reservedNames {
-		buttons := []emucore.Button{
+		buttons := []coreif.Button{
 			{Name: "Test", ID: 4, DefaultKey: name, DefaultPad: "A"},
 		}
 		m := BuildDefaultMapping(buttons)
@@ -286,7 +286,7 @@ func TestBuildDefaultMappingReservedKeysSkipped(t *testing.T) {
 }
 
 func TestBuildDefaultMappingUnknownStringsSkipped(t *testing.T) {
-	buttons := []emucore.Button{
+	buttons := []coreif.Button{
 		{Name: "A", ID: 4, DefaultKey: "BadKey", DefaultPad: "BadPad"},
 	}
 
@@ -302,7 +302,7 @@ func TestBuildDefaultMappingUnknownStringsSkipped(t *testing.T) {
 }
 
 func TestBuildMappingFromConfigDefaults(t *testing.T) {
-	buttons := []emucore.Button{
+	buttons := []coreif.Button{
 		{Name: "A", ID: 4, DefaultKey: "J", DefaultPad: "A"},
 		{Name: "Start", ID: 7, DefaultKey: "Enter", DefaultPad: "Start"},
 	}
@@ -311,13 +311,13 @@ func TestBuildMappingFromConfigDefaults(t *testing.T) {
 	m := BuildMappingFromConfig(buttons, nil, nil)
 
 	// D-pad defaults
-	if m.Keys[emucore.ButtonUp] != ebiten.KeyW {
+	if m.Keys[coreif.ButtonUp] != ebiten.KeyW {
 		t.Error("expected d-pad up = W")
 	}
-	if m.Keys[emucore.ButtonDown] != ebiten.KeyS {
+	if m.Keys[coreif.ButtonDown] != ebiten.KeyS {
 		t.Error("expected d-pad down = S")
 	}
-	if m.Gamepad[emucore.ButtonUp] != ebiten.StandardGamepadButtonLeftTop {
+	if m.Gamepad[coreif.ButtonUp] != ebiten.StandardGamepadButtonLeftTop {
 		t.Error("expected d-pad up = DpadUp")
 	}
 
@@ -331,7 +331,7 @@ func TestBuildMappingFromConfigDefaults(t *testing.T) {
 }
 
 func TestBuildMappingFromConfigOverrides(t *testing.T) {
-	buttons := []emucore.Button{
+	buttons := []coreif.Button{
 		{Name: "A", ID: 4, DefaultKey: "J", DefaultPad: "A"},
 		{Name: "B", ID: 5, DefaultKey: "K", DefaultPad: "B"},
 	}
@@ -347,11 +347,11 @@ func TestBuildMappingFromConfigOverrides(t *testing.T) {
 	m := BuildMappingFromConfig(buttons, kbOverrides, padOverrides)
 
 	// Overridden d-pad
-	if m.Keys[emucore.ButtonUp] != ebiten.KeyArrowUp {
+	if m.Keys[coreif.ButtonUp] != ebiten.KeyArrowUp {
 		t.Error("expected d-pad up override = ArrowUp")
 	}
 	// Non-overridden d-pad stays default
-	if m.Keys[emucore.ButtonDown] != ebiten.KeyS {
+	if m.Keys[coreif.ButtonDown] != ebiten.KeyS {
 		t.Error("expected d-pad down = S (default)")
 	}
 
@@ -373,7 +373,7 @@ func TestBuildMappingFromConfigOverrides(t *testing.T) {
 }
 
 func TestBuildMappingFromConfigReservedOverrideSkipped(t *testing.T) {
-	buttons := []emucore.Button{
+	buttons := []coreif.Button{
 		{Name: "A", ID: 4, DefaultKey: "J", DefaultPad: "A"},
 	}
 

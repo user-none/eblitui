@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/rdb"
 	"github.com/user-none/eblitui/romloader"
 	"github.com/user-none/eblitui/standalone/storage"
@@ -77,7 +77,7 @@ type artworkJob struct {
 }
 
 // NewScanner creates a new scanner instance
-func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[string]*storage.GameEntry, rescanAll bool, extensions []string, variants []emucore.MetadataVariant) *Scanner {
+func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[string]*storage.GameEntry, rescanAll bool, extensions []string, variants []coreif.MetadataVariant) *Scanner {
 	excludedMap := make(map[string]bool)
 	for _, p := range excluded {
 		excludedMap[p] = true

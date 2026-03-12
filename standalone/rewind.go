@@ -3,7 +3,7 @@ package standalone
 import (
 	"fmt"
 
-	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/coreif"
 )
 
 // RewindBuffer stores serialized emulator states in a ring buffer
@@ -38,7 +38,7 @@ func NewRewindBuffer(bufferSizeMB, frameStep, stateSize int) *RewindBuffer {
 
 // Capture serializes the emulator state and stores it in the ring buffer.
 // Only captures every frameStep frames. Should be called after RunFrame.
-func (rb *RewindBuffer) Capture(saveStater emucore.SaveStater) error {
+func (rb *RewindBuffer) Capture(saveStater coreif.SaveStater) error {
 	rb.frameTick++
 	if rb.frameTick < rb.frameStep {
 		return nil
@@ -63,7 +63,7 @@ func (rb *RewindBuffer) Capture(saveStater emucore.SaveStater) error {
 // After deserializing, RunFrame is called to regenerate the framebuffer
 // since the serialized state doesn't include rendered pixels.
 // Returns false if the buffer is empty.
-func (rb *RewindBuffer) Rewind(emu emucore.Emulator, saveStater emucore.SaveStater, count int) bool {
+func (rb *RewindBuffer) Rewind(emu coreif.Emulator, saveStater coreif.SaveStater, count int) bool {
 	if rb.count == 0 {
 		return false
 	}

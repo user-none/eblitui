@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/coreif"
 )
 
 // Minimum thresholds for rumble events. CHT files often specify low intensity
@@ -154,11 +154,11 @@ func ParseRumbleFile(path string) ([]RumbleEntry, error) {
 
 // RumbleEngine evaluates rumble entries each frame and produces rumble events.
 type RumbleEngine struct {
-	entries        []RumbleEntry
-	prevValues     []uint32
-	initialized    int // warmup frame counter
-	primaryEnd     []time.Time
-	secondaryEnd   []time.Time
+	entries         []RumbleEntry
+	prevValues      []uint32
+	initialized     int // warmup frame counter
+	primaryEnd      []time.Time
+	secondaryEnd    []time.Time
 	systemBigEndian bool // true when the core uses big-endian memory (e.g. 68K)
 }
 
@@ -185,7 +185,7 @@ func NewRumbleEngine(entries []RumbleEntry, systemBigEndian bool) *RumbleEngine 
 }
 
 // Evaluate reads memory for each entry, checks conditions, and returns rumble events.
-func (re *RumbleEngine) Evaluate(mi emucore.MemoryInspector) []RumbleEvent {
+func (re *RumbleEngine) Evaluate(mi coreif.MemoryInspector) []RumbleEvent {
 	if re.initialized < 30 {
 		// Warmup: read values to populate prevValues without triggering
 		for i := range re.entries {
@@ -282,7 +282,7 @@ func evaluateCondition(rumbleType int, current, prev, rumbleValue uint32) bool {
 // appropriate width based on MemorySearchSize.
 // byteSwap is true when the CHT entry's endianness differs from the system's,
 // requiring address and byte order adjustments.
-func readMemoryValue(mi emucore.MemoryInspector, addr uint32, searchSize int, byteSwap bool) uint32 {
+func readMemoryValue(mi coreif.MemoryInspector, addr uint32, searchSize int, byteSwap bool) uint32 {
 	var buf [4]byte
 
 	switch searchSize {

@@ -2,7 +2,7 @@ package display
 
 import (
 	"github.com/hajimehoshi/ebiten/v2"
-	emucore "github.com/user-none/eblitui/api"
+	"github.com/user-none/eblitui/coreif"
 )
 
 // Size computes the display dimensions for the given aspect ratio mode,
@@ -23,7 +23,7 @@ func Size(mode string, screenW, screenH, sourceW, sourceH int, par float64) (flo
 		}
 		return displayW, displayH
 	case "1:1":
-		dar := emucore.DisplayAspectRatio(sourceW, sourceH, 1.0)
+		dar := coreif.DisplayAspectRatio(sourceW, sourceH, 1.0)
 		displayW := float64(screenW)
 		displayH := displayW / dar
 		if displayH > float64(screenH) {
@@ -32,7 +32,7 @@ func Size(mode string, screenW, screenH, sourceW, sourceH int, par float64) (flo
 		}
 		return displayW, displayH
 	default: // "dar" or unset
-		dar := emucore.DisplayAspectRatio(sourceW, sourceH, par)
+		dar := coreif.DisplayAspectRatio(sourceW, sourceH, par)
 		displayW := float64(screenW)
 		displayH := displayW / dar
 		if displayH > float64(screenH) {

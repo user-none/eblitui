@@ -17,12 +17,12 @@ package main
 import (
     "log"
 
-    emucore "github.com/user-none/eblitui/api"
+    "github.com/user-none/eblitui/coreif"
     "github.com/user-none/eblitui/standalone"
 )
 
 func main() {
-    var factory emucore.CoreFactory = myFactory()
+    var factory coreif.CoreFactory = myFactory()
     if err := standalone.Run(factory); err != nil {
         log.Fatal(err)
     }
@@ -230,7 +230,7 @@ Key external dependencies:
 - `github.com/ebitenui/ebitenui` - UI widget framework
 - `github.com/ebitengine/oto/v3` - Audio output
 - `github.com/sqweek/dialog` - Native file dialogs
-- `github.com/user-none/eblitui/api` - Core interfaces
+- `github.com/user-none/eblitui/coreif` - Core interfaces
 - `github.com/user-none/eblitui/romloader` - ROM loading
 - `github.com/user-none/go-rcheevos` - RetroAchievements client
 - `golang.design/x/clipboard` - Clipboard access

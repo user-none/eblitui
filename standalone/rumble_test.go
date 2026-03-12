@@ -368,7 +368,7 @@ func TestEvaluateConditionUnknownType(t *testing.T) {
 	}
 }
 
-// mockMemoryInspector implements emucore.MemoryInspector for testing.
+// mockMemoryInspector implements coreif.MemoryInspector for testing.
 type mockMemoryInspector struct {
 	data map[uint32]byte
 }

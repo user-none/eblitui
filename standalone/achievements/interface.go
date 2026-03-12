@@ -1,7 +1,7 @@
 package achievements
 
 // EmulatorInterface defines the interface for emulator memory access.
-// This matches the emucore.MemoryInspector interface, decoupling the
+// This matches the coreif.MemoryInspector interface, decoupling the
 // achievement manager from the concrete emulator type. The core adapter
 // handles mapping flat addresses to internal memory regions.
 type EmulatorInterface interface {
