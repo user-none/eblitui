@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/user-none/eblitui/coreif"
+	"github.com/user-none/eblitui/standalone/metadata"
+	"github.com/user-none/eblitui/standalone/scanner"
 	"github.com/user-none/eblitui/standalone/screens"
 	"github.com/user-none/eblitui/standalone/storage"
 )
@@ -14,13 +15,13 @@ import (
 // and merging results into the library.
 type ScanManager struct {
 	// Active scanner instance
-	scanner *Scanner
+	activeScanner *scanner.Scanner
 
 	// External dependencies (not owned by ScanManager)
 	library    *storage.Library
 	scanScreen *screens.ScanProgressScreen
-	extensions []string                 // Supported ROM file extensions
-	variants   []coreif.MetadataVariant // Metadata variants for RDB/thumbnail lookups
+	extensions []string                  // Supported ROM file extensions
+	metadata   *metadata.MetadataManager // Metadata for RDB/thumbnail lookups
 
 	// Callbacks to App
 	onProgress func() // Called when progress updates (triggers UI rebuild)
@@ -32,7 +33,7 @@ func NewScanManager(
 	library *storage.Library,
 	scanScreen *screens.ScanProgressScreen,
 	extensions []string,
-	variants []coreif.MetadataVariant,
+	md *metadata.MetadataManager,
 	onProgress func(),
 	onComplete func(msg string),
 ) *ScanManager {
@@ -40,7 +41,7 @@ func NewScanManager(
 		library:    library,
 		scanScreen: scanScreen,
 		extensions: extensions,
-		variants:   variants,
+		metadata:   md,
 		onProgress: onProgress,
 		onComplete: onComplete,
 	}
@@ -58,39 +59,39 @@ func (sm *ScanManager) SetScanScreen(screen *screens.ScanProgressScreen) {
 
 // IsScanning returns true if a scan is in progress
 func (sm *ScanManager) IsScanning() bool {
-	return sm.scanner != nil
+	return sm.activeScanner != nil
 }
 
 // Start begins a new scan operation
 func (sm *ScanManager) Start(rescanAll bool) {
 	// Create scanner with current library data
-	sm.scanner = NewScanner(
+	sm.activeScanner = scanner.NewScanner(
 		sm.library.ScanDirectories,
 		sm.library.ExcludedPaths,
 		sm.library.Games,
 		rescanAll,
 		sm.extensions,
-		sm.variants,
+		sm.metadata,
 	)
 
 	// Configure scan screen
-	sm.scanScreen.SetScanner(sm.scanner)
+	sm.scanScreen.SetScanner(sm.activeScanner)
 
 	// Start scanner in background
-	go sm.scanner.Run()
+	go sm.activeScanner.Run()
 }
 
 // Update polls for scan progress and completion.
 // Should be called each frame while scanning.
 func (sm *ScanManager) Update() {
-	if sm.scanner == nil {
+	if sm.activeScanner == nil {
 		return
 	}
 
 	// Non-blocking read from progress channel
 	select {
-	case progress := <-sm.scanner.Progress():
-		// Convert ui.ScanProgress to screens.ScanProgress
+	case progress := <-sm.activeScanner.Progress():
+		// Convert scanner.ScanProgress to screens.ScanProgress
 		sm.scanScreen.UpdateProgress(screens.ScanProgress{
 			Phase:           int(progress.Phase),
 			Progress:        progress.Progress,
@@ -109,7 +110,7 @@ func (sm *ScanManager) Update() {
 
 	// Check for completion
 	select {
-	case result := <-sm.scanner.Done():
+	case result := <-sm.activeScanner.Done():
 		sm.handleComplete(result)
 	default:
 		// Still running
@@ -118,15 +119,15 @@ func (sm *ScanManager) Update() {
 
 // Cancel stops the current scan
 func (sm *ScanManager) Cancel() {
-	if sm.scanner != nil {
-		sm.scanner.Cancel()
+	if sm.activeScanner != nil {
+		sm.activeScanner.Cancel()
 	}
 }
 
 // handleComplete processes scan results
-func (sm *ScanManager) handleComplete(result ScanResult) {
+func (sm *ScanManager) handleComplete(result scanner.ScanResult) {
 	// Merge discovered games into library
-	for gameCRC, game := range sm.scanner.Games() {
+	for gameCRC, game := range sm.activeScanner.Games() {
 		sm.library.Games[gameCRC] = game
 	}
 
@@ -148,7 +149,7 @@ func (sm *ScanManager) handleComplete(result ScanResult) {
 	}
 
 	// Clear scanner reference
-	sm.scanner = nil
+	sm.activeScanner = nil
 
 	// Notify App of completion
 	if sm.onComplete != nil {

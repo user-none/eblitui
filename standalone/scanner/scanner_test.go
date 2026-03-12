@@ -1,10 +1,11 @@
-package standalone
+package scanner
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/user-none/eblitui/standalone/metadata"
 	"github.com/user-none/eblitui/standalone/storage"
 )
 
@@ -139,7 +140,8 @@ func TestNewScanner(t *testing.T) {
 		"aabbccdd": {CRC32: "aabbccdd", DisplayName: "Existing Game"},
 	}
 
-	s := NewScanner(dirs, excluded, existing, false, []string{".sms"}, nil)
+	md := metadata.NewMetadataManager(nil)
+	s := NewScanner(dirs, excluded, existing, false, []string{".sms"}, md)
 
 	if len(s.directories) != 2 {
 		t.Errorf("expected 2 directories, got %d", len(s.directories))
@@ -256,7 +258,8 @@ func TestScanDirectoryWithExclusions(t *testing.T) {
 }
 
 func TestScannerCancellation(t *testing.T) {
-	s := NewScanner(nil, nil, nil, false, nil, nil)
+	md := metadata.NewMetadataManager(nil)
+	s := NewScanner(nil, nil, nil, false, nil, md)
 
 	if s.isCancelled() {
 		t.Error("new scanner should not be cancelled")
@@ -272,7 +275,8 @@ func TestScannerCancellation(t *testing.T) {
 }
 
 func TestScannerGamesCount(t *testing.T) {
-	s := NewScanner(nil, nil, nil, false, nil, nil)
+	md := metadata.NewMetadataManager(nil)
+	s := NewScanner(nil, nil, nil, false, nil, md)
 
 	if s.gamesCount() != 0 {
 		t.Errorf("expected 0 games, got %d", s.gamesCount())

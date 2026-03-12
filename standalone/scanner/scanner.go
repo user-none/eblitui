@@ -1,17 +1,19 @@
-package standalone
+package scanner
 
 import (
 	"fmt"
 	"hash/crc32"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/rdb"
 	"github.com/user-none/eblitui/romloader"
+	"github.com/user-none/eblitui/standalone/metadata"
+	"github.com/user-none/eblitui/standalone/netutil"
 	"github.com/user-none/eblitui/standalone/storage"
 )
 
@@ -22,8 +24,23 @@ const (
 	ScanPhaseInit ScanPhase = iota
 	ScanPhaseDiscovery
 	ScanPhaseArtwork
-	ScanPhaseComplete
 )
+
+const (
+	// Base URL for libretro-thumbnails repositories
+	thumbnailBaseURL = "https://github.com/libretro-thumbnails"
+
+	// Base URL for libretro-database CHT rumble files
+	chtBaseURL = "https://raw.githubusercontent.com/libretro/libretro-database/master/cht"
+)
+
+// Artwork types in fallback order
+var artworkTypes = []string{
+	"Named_Boxarts",
+	"Named_Titles",
+	"Named_Snaps",
+	"Named_Logos",
+}
 
 // ScanProgress represents progress updates from the scanner
 type ScanProgress struct {
@@ -52,10 +69,9 @@ type Scanner struct {
 	extensions    []string // Supported ROM file extensions
 
 	// Metadata
-	metadata *MetadataManager
+	metadata *metadata.MetadataManager
 
 	// Channels
-	cancel   chan struct{}
 	progress chan ScanProgress
 	done     chan ScanResult
 
@@ -76,8 +92,15 @@ type artworkJob struct {
 	variantIdx int    // Index into MetadataVariants for correct repo
 }
 
+// resolvedJob represents a download that has been matched against a listing
+// and has a fully built download URL and save path.
+type resolvedJob struct {
+	downloadURL string
+	savePath    string
+}
+
 // NewScanner creates a new scanner instance
-func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[string]*storage.GameEntry, rescanAll bool, extensions []string, variants []coreif.MetadataVariant) *Scanner {
+func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[string]*storage.GameEntry, rescanAll bool, extensions []string, md *metadata.MetadataManager) *Scanner {
 	excludedMap := make(map[string]bool)
 	for _, p := range excluded {
 		excludedMap[p] = true
@@ -89,8 +112,7 @@ func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[st
 		existingGames: existing, // Keep full map to preserve user data
 		rescanAll:     rescanAll,
 		extensions:    extensions,
-		metadata:      NewMetadataManager(variants),
-		cancel:        make(chan struct{}),
+		metadata:      md,
 		progress:      make(chan ScanProgress, 10),
 		done:          make(chan ScanResult, 1),
 		games:         make(map[string]*storage.GameEntry),
@@ -113,10 +135,7 @@ func (s *Scanner) Done() <-chan ScanResult {
 // Cancel signals the scanner to stop
 func (s *Scanner) Cancel() {
 	s.mu.Lock()
-	if !s.cancelled {
-		s.cancelled = true
-		close(s.cancel)
-	}
+	s.cancelled = true
 	s.mu.Unlock()
 }
 
@@ -194,9 +213,22 @@ func (s *Scanner) Run() {
 		return
 	}
 
-	// Phase 3: Download artwork and rumble files
-	s.downloadAssets(s.artworkQueue, "Downloading artwork...", s.metadata.DownloadArtwork)
-	s.downloadAssets(s.rumbleQueue, "Downloading rumble data...", s.metadata.DownloadRumble)
+	// Phase 3: Resolve and download artwork, then rumble
+	s.sendProgress(ScanProgress{
+		Phase:      ScanPhaseArtwork,
+		StatusText: "Resolving artwork...",
+	})
+	artworkJobs := s.resolveArtwork(s.artworkQueue)
+	s.downloadAssets(artworkJobs, "Downloading artwork...")
+
+	if !s.isCancelled() {
+		s.sendProgress(ScanProgress{
+			Phase:      ScanPhaseArtwork,
+			StatusText: "Resolving rumble data...",
+		})
+		rumbleJobs := s.resolveRumble(s.rumbleQueue)
+		s.downloadAssets(rumbleJobs, "Downloading rumble data...")
+	}
 
 	// Send final result
 	s.done <- ScanResult{
@@ -314,7 +346,8 @@ func (s *Scanner) processROM(path string) {
 	}
 
 	// Look up in RDB for metadata - only fill in empty fields
-	if game, variantIdx := s.metadata.LookupByCRC32(crcValue); game != nil {
+	game, variantIdx := s.metadata.LookupByCRC32(crcValue)
+	if game != nil {
 		if entry.Name == "" {
 			entry.Name = game.Name
 		}
@@ -380,6 +413,22 @@ func (s *Scanner) processROM(path string) {
 		}
 	}
 
+	// No RDB match - queue artwork job using filename for fuzzy matching
+	if game == nil {
+		artPath, _ := storage.GetGameArtworkPath(crcHex)
+		if _, err := os.Stat(artPath); os.IsNotExist(err) {
+			// Use filename without extension (keep region parenthetical)
+			artName := strings.TrimSuffix(filename, filepath.Ext(filename))
+			s.mu.Lock()
+			s.artworkQueue = append(s.artworkQueue, artworkJob{
+				gameCRC:    crcHex,
+				gameName:   artName,
+				variantIdx: -1, // Non-RDB: try all variants
+			})
+			s.mu.Unlock()
+		}
+	}
+
 	// Fallback to filename when no RDB match provided Name/DisplayName
 	if entry.Name == "" {
 		entry.Name = strings.TrimSuffix(filename, filepath.Ext(filename))
@@ -404,9 +453,206 @@ func (s *Scanner) cleanDisplayName(filename string) string {
 	return name
 }
 
-// downloadAssets downloads queued assets using the provided download function.
-func (s *Scanner) downloadAssets(queue []artworkJob, statusText string, downloadFn func(gameCRC, gameName string, variantIdx int)) {
-	total := len(queue)
+// resolveArtwork resolves artwork download URLs for queued games by fetching
+// listings one artwork type at a time per variant. Games are removed from the
+// need queue as they are matched. Returns early if the queue is emptied.
+func (s *Scanner) resolveArtwork(queue []artworkJob) []resolvedJob {
+	if len(queue) == 0 {
+		return nil
+	}
+
+	var resolved []resolvedJob
+
+	// Build per-variant sub-queues
+	type variantQueue struct {
+		jobs []artworkJob
+	}
+	byVariant := make(map[int]*variantQueue)
+	var nonRDB []artworkJob
+
+	for _, job := range queue {
+		if job.variantIdx == -1 {
+			nonRDB = append(nonRDB, job)
+			continue
+		}
+		vq := byVariant[job.variantIdx]
+		if vq == nil {
+			vq = &variantQueue{}
+			byVariant[job.variantIdx] = vq
+		}
+		vq.jobs = append(vq.jobs, job)
+	}
+
+	// Process each artType in priority order
+	variantCount := s.metadata.VariantCount()
+	for _, artType := range artworkTypes {
+		if s.isCancelled() {
+			break
+		}
+
+		// Per-artType listing cache: one slot per variant
+		listings := make([]*ThumbnailListing, variantCount)
+		fetched := make([]bool, variantCount)
+
+		// Fetch listing for each variant that still has pending jobs
+		for vi, vq := range byVariant {
+			if len(vq.jobs) == 0 {
+				continue
+			}
+			if s.isCancelled() {
+				break
+			}
+
+			if !fetched[vi] {
+				listings[vi] = fetchArtworkTypeListing(s.metadata.VariantThumbnailRepo(vi), artType)
+				fetched[vi] = true
+			}
+			listing := listings[vi]
+			if listing == nil {
+				continue
+			}
+
+			repo := s.metadata.VariantThumbnailRepo(vi)
+			remaining := vq.jobs[:0]
+			for _, job := range vq.jobs {
+				fileName, found := resolveArtworkNameForType(listing, artType, job.gameName)
+				if found {
+					savePath, err := storage.GetGameArtworkPath(job.gameCRC)
+					if err != nil {
+						continue
+					}
+					encodedName := url.PathEscape(strings.ReplaceAll(fileName, "&", "_"))
+					dlURL := fmt.Sprintf("%s/%s/raw/refs/heads/master/%s/%s.png",
+						thumbnailBaseURL, repo, artType, encodedName)
+					resolved = append(resolved, resolvedJob{
+						downloadURL: dlURL,
+						savePath:    savePath,
+					})
+				} else {
+					remaining = append(remaining, job)
+				}
+			}
+			vq.jobs = remaining
+		}
+
+		// Non-RDB games: try all variants for this artType
+		if len(nonRDB) > 0 && !s.isCancelled() {
+			remaining := nonRDB[:0]
+			for _, job := range nonRDB {
+				matched := false
+				for vi := 0; vi < variantCount; vi++ {
+					if s.isCancelled() {
+						remaining = append(remaining, job)
+						matched = true
+						break
+					}
+
+					if !fetched[vi] {
+						listings[vi] = fetchArtworkTypeListing(s.metadata.VariantThumbnailRepo(vi), artType)
+						fetched[vi] = true
+					}
+					listing := listings[vi]
+					if listing == nil {
+						continue
+					}
+
+					fileName, found := resolveArtworkNameForType(listing, artType, job.gameName)
+					if found {
+						savePath, err := storage.GetGameArtworkPath(job.gameCRC)
+						if err != nil {
+							continue
+						}
+						repo := s.metadata.VariantThumbnailRepo(vi)
+						encodedName := url.PathEscape(strings.ReplaceAll(fileName, "&", "_"))
+						dlURL := fmt.Sprintf("%s/%s/raw/refs/heads/master/%s/%s.png",
+							thumbnailBaseURL, repo, artType, encodedName)
+						resolved = append(resolved, resolvedJob{
+							downloadURL: dlURL,
+							savePath:    savePath,
+						})
+						matched = true
+						break
+					}
+				}
+				if !matched {
+					remaining = append(remaining, job)
+				}
+			}
+			nonRDB = remaining
+		}
+
+		// Check if all queues are empty
+		allDone := len(nonRDB) == 0
+		if allDone {
+			for _, vq := range byVariant {
+				if len(vq.jobs) > 0 {
+					allDone = false
+					break
+				}
+			}
+		}
+		if allDone {
+			break
+		}
+	}
+
+	return resolved
+}
+
+// resolveRumble resolves rumble download URLs for queued games by fetching
+// a single listing per variant. Returns early if the queue is empty.
+func (s *Scanner) resolveRumble(queue []artworkJob) []resolvedJob {
+	if len(queue) == 0 {
+		return nil
+	}
+
+	var resolved []resolvedJob
+
+	// Group by variant
+	byVariant := make(map[int][]artworkJob)
+	for _, job := range queue {
+		byVariant[job.variantIdx] = append(byVariant[job.variantIdx], job)
+	}
+
+	for vi, jobs := range byVariant {
+		if s.isCancelled() {
+			break
+		}
+
+		listing := fetchRumbleListing(s.metadata.VariantRDBName(vi))
+		if listing == nil {
+			continue
+		}
+
+		rdbName := s.metadata.VariantRDBName(vi)
+		for _, job := range jobs {
+			displayName := rdb.GetDisplayName(job.gameName)
+			resolvedName, found := resolveRumbleName(listing, displayName)
+			if !found {
+				continue
+			}
+
+			savePath, err := storage.GetGameRumblePath(job.gameCRC)
+			if err != nil {
+				continue
+			}
+
+			encodedName := url.PathEscape(strings.ReplaceAll(resolvedName, "&", "_"))
+			dlURL := fmt.Sprintf("%s/%s/%s (Rumbles).cht",
+				chtBaseURL, url.PathEscape(rdbName), encodedName)
+			resolved = append(resolved, resolvedJob{
+				downloadURL: dlURL,
+				savePath:    savePath,
+			})
+		}
+	}
+
+	return resolved
+}
+
+// downloadAssets downloads resolved asset jobs in parallel with a semaphore.
+func (s *Scanner) downloadAssets(jobs []resolvedJob, statusText string) {
+	total := len(jobs)
 	if total == 0 {
 		return
 	}
@@ -423,13 +669,13 @@ func (s *Scanner) downloadAssets(queue []artworkJob, statusText string, download
 	var wg sync.WaitGroup
 	var complete int
 
-	for _, job := range queue {
+	for _, job := range jobs {
 		if s.isCancelled() {
 			break
 		}
 
 		wg.Add(1)
-		go func(j artworkJob) {
+		go func(j resolvedJob) {
 			defer wg.Done()
 
 			s.downloadSem <- struct{}{}
@@ -439,7 +685,7 @@ func (s *Scanner) downloadAssets(queue []artworkJob, statusText string, download
 				return
 			}
 
-			downloadFn(j.gameCRC, j.gameName, j.variantIdx)
+			netutil.DownloadToFile(j.downloadURL, j.savePath)
 
 			s.mu.Lock()
 			complete++

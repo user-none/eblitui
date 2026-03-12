@@ -141,10 +141,9 @@ const (
 	NavAcceleration  = 20 * time.Millisecond  // Speed increase per repeat
 )
 
-// Auto-save and timing constants
+// Auto-save timing constant
 const (
 	AutoSaveInterval = 5 * time.Second
-	HTTPTimeout      = 10 * time.Second
 )
 
 // Mouse wheel scroll sensitivity

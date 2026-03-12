@@ -13,6 +13,7 @@ import (
 	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/standalone/achievements"
 	"github.com/user-none/eblitui/standalone/display"
+	"github.com/user-none/eblitui/standalone/metadata"
 	"github.com/user-none/eblitui/standalone/screens"
 	"github.com/user-none/eblitui/standalone/shader"
 	"github.com/user-none/eblitui/standalone/storage"
@@ -45,7 +46,7 @@ type App struct {
 	errorScreen    *screens.ErrorScreen
 
 	// Metadata for RDB lookups
-	metadata *MetadataManager
+	metadata *metadata.MetadataManager
 
 	// Gameplay (emulation, input, save states, pause menu)
 	gameplay *GameplayManager
@@ -172,7 +173,7 @@ func newApp(factory coreif.CoreFactory, info coreif.SystemInfo) (*App, error) {
 	}
 
 	// Start RDB download in background if missing (non-blocking)
-	app.metadata = NewMetadataManager(info.MetadataVariants)
+	app.metadata = metadata.NewMetadataManager(info.MetadataVariants)
 	if !app.metadata.RDBExists() {
 		go func() {
 			if err := app.metadata.DownloadRDB(); err != nil {
@@ -328,7 +329,7 @@ func newApp(factory coreif.CoreFactory, info coreif.SystemInfo) (*App, error) {
 		app.library,
 		app.scanScreen,
 		app.systemInfo.Extensions,
-		app.systemInfo.MetadataVariants,
+		app.metadata,
 		func() { app.rebuildCurrentScreen() }, // onProgress
 		func(msg string) { // onComplete
 			app.libraryScreen.ClearArtworkCache()
@@ -1020,7 +1021,7 @@ func (a *App) handleDeleteAndContinue() {
 			a.library,
 			a.scanScreen,
 			a.systemInfo.Extensions,
-			a.systemInfo.MetadataVariants,
+			a.metadata,
 			func() { a.rebuildCurrentScreen() },
 			func(msg string) {
 				a.state = StateSettings
@@ -1114,7 +1115,7 @@ func (a *App) handleResetAndContinue() {
 			a.library,
 			a.scanScreen,
 			a.systemInfo.Extensions,
-			a.systemInfo.MetadataVariants,
+			a.metadata,
 			func() { a.rebuildCurrentScreen() },
 			func(msg string) {
 				a.state = StateSettings
@@ -1177,7 +1178,7 @@ func (a *App) handleLibraryResetAndContinue() {
 			a.library,
 			a.scanScreen,
 			a.systemInfo.Extensions,
-			a.systemInfo.MetadataVariants,
+			a.metadata,
 			func() { a.rebuildCurrentScreen() },
 			func(msg string) {
 				a.state = StateSettings

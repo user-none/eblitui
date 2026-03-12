@@ -14,6 +14,7 @@ import (
 	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/romloader"
 	"github.com/user-none/eblitui/standalone/achievements"
+	"github.com/user-none/eblitui/standalone/metadata"
 	"github.com/user-none/eblitui/standalone/storage"
 	"github.com/user-none/eblitui/standalone/style"
 )
@@ -94,7 +95,7 @@ type GameplayManager struct {
 	library            *storage.Library
 	config             *storage.Config
 	achievementManager *achievements.Manager
-	metadata           *MetadataManager
+	metadata           *metadata.MetadataManager
 
 	// Callbacks to App
 	onExitToLibrary func()
@@ -118,7 +119,7 @@ func NewGameplayManager(
 	library *storage.Library,
 	config *storage.Config,
 	achievementManager *achievements.Manager,
-	metadata *MetadataManager,
+	metadata *metadata.MetadataManager,
 	onExitToLibrary func(),
 	onExitApp func(),
 ) *GameplayManager {

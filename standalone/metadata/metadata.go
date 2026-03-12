@@ -1,43 +1,21 @@
-package standalone
+package metadata
 
 import (
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
-	"unicode"
 
 	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/rdb"
+	"github.com/user-none/eblitui/standalone/netutil"
 	"github.com/user-none/eblitui/standalone/storage"
-	"github.com/user-none/eblitui/standalone/style"
 )
 
 const (
 	// Base URL for libretro-database RDB files
 	rdbBaseURL = "https://github.com/libretro/libretro-database/raw/refs/heads/master/rdb"
-
-	// Base URL for libretro-thumbnails repositories
-	thumbnailBaseURL = "https://github.com/libretro-thumbnails"
-
-	// Base URL for libretro-database CHT rumble files
-	chtBaseURL = "https://raw.githubusercontent.com/libretro/libretro-database/master/cht"
 )
-
-// Artwork types in fallback order
-var artworkTypes = []string{
-	"Named_Boxarts",
-	"Named_Titles",
-	"Named_Snaps",
-}
-
-// HTTP client with timeout
-var httpClient = &http.Client{
-	Timeout: style.HTTPTimeout,
-}
 
 // metadataVariant holds the loaded RDB and config for a single variant.
 type metadataVariant struct {
@@ -103,20 +81,9 @@ func (m *MetadataManager) downloadVariantRDB(idx int) error {
 	tempPath := rdbPath + ".tmp"
 
 	rdbURL := fmt.Sprintf("%s/%s.rdb", rdbBaseURL, url.PathEscape(v.rdbName))
-	resp, err := httpClient.Get(rdbURL)
+	data, err := netutil.DownloadToMemory(rdbURL)
 	if err != nil {
 		return fmt.Errorf("failed to download RDB: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("RDB download failed with status: %d", resp.StatusCode)
-	}
-
-	// Read entire response into memory first
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read RDB data: %w", err)
 	}
 
 	// Write to temp file
@@ -223,129 +190,18 @@ func (m *MetadataManager) VariantCount() int {
 	return len(m.variants)
 }
 
-// DownloadArtwork downloads artwork for a game using the specified variant's
-// thumbnail repo. Returns silently on any error (per spec).
-func (m *MetadataManager) DownloadArtwork(gameCRC, gameName string, variantIdx int) {
-	if gameName == "" || variantIdx < 0 || variantIdx >= len(m.variants) {
-		return
+// VariantThumbnailRepo returns the thumbnail repo name for a variant index.
+func (m *MetadataManager) VariantThumbnailRepo(idx int) string {
+	if idx < 0 || idx >= len(m.variants) {
+		return ""
 	}
-
-	// Check if artwork already exists
-	artworkPath, err := storage.GetGameArtworkPath(gameCRC)
-	if err != nil {
-		return
-	}
-
-	if _, err := os.Stat(artworkPath); err == nil {
-		return // Already exists
-	}
-
-	// Ensure directory exists
-	artworkDir := filepath.Dir(artworkPath)
-	if err := os.MkdirAll(artworkDir, 0755); err != nil {
-		return
-	}
-
-	thumbnailRepo := m.variants[variantIdx].thumbnailRepo
-
-	// Replace & with _ and URL-encode the game name
-	encodedName := url.PathEscape(strings.ReplaceAll(gameName, "&", "_"))
-
-	// Try each artwork type in fallback order
-	for _, artType := range artworkTypes {
-		artURL := fmt.Sprintf("%s/%s/raw/refs/heads/master/%s/%s.png",
-			thumbnailBaseURL, thumbnailRepo, artType, encodedName)
-
-		data, err := downloadToMemory(artURL)
-		if err != nil {
-			continue // Try next type
-		}
-
-		// Successfully downloaded, write to disk
-		if err := os.WriteFile(artworkPath, data, 0644); err != nil {
-			return // Silently fail
-		}
-
-		return // Success
-	}
-
-	// All downloads failed - silently return
+	return m.variants[idx].thumbnailRepo
 }
 
-// DownloadRumble downloads the rumble CHT file for a game using the
-// specified variant's RDB name. Returns silently on any error.
-func (m *MetadataManager) DownloadRumble(gameCRC, gameName string, variantIdx int) {
-	if gameName == "" || variantIdx < 0 || variantIdx >= len(m.variants) {
-		return
+// VariantRDBName returns the RDB name for a variant index.
+func (m *MetadataManager) VariantRDBName(idx int) string {
+	if idx < 0 || idx >= len(m.variants) {
+		return ""
 	}
-
-	// Check if rumble file already exists
-	rumblePath, err := storage.GetGameRumblePath(gameCRC)
-	if err != nil {
-		return
-	}
-	if _, err := os.Stat(rumblePath); err == nil {
-		return
-	}
-
-	rdbName := m.variants[variantIdx].rdbName
-
-	// Strip parenthetical metadata from game name
-	displayName := rdb.GetDisplayName(gameName)
-
-	// Replace & with _ and URL-encode (same as artwork)
-	encodedName := url.PathEscape(strings.ReplaceAll(displayName, "&", "_"))
-
-	// Build URL: cht/{rdbName}/{name} (Rumbles).cht
-	chtURL := fmt.Sprintf("%s/%s/%s (Rumbles).cht",
-		chtBaseURL, url.PathEscape(rdbName), encodedName)
-
-	data, err := downloadToMemory(chtURL)
-	if err != nil {
-		// Try title-cased variant for casing mismatches
-		tcName := titleCase(displayName)
-		if tcName != displayName {
-			tcEncoded := url.PathEscape(strings.ReplaceAll(tcName, "&", "_"))
-			tcURL := fmt.Sprintf("%s/%s/%s (Rumbles).cht",
-				chtBaseURL, url.PathEscape(rdbName), tcEncoded)
-			data, err = downloadToMemory(tcURL)
-			if err != nil {
-				return
-			}
-		} else {
-			return
-		}
-	}
-
-	if err := os.WriteFile(rumblePath, data, 0644); err != nil {
-		return
-	}
-}
-
-// titleCase capitalizes the first letter of each word in a string.
-func titleCase(s string) string {
-	prev := ' '
-	return strings.Map(func(r rune) rune {
-		if unicode.IsSpace(rune(prev)) || prev == '-' {
-			prev = r
-			return unicode.ToUpper(r)
-		}
-		prev = r
-		return r
-	}, s)
-}
-
-// downloadToMemory downloads a URL entirely into memory
-func downloadToMemory(urlStr string) ([]byte, error) {
-	resp, err := httpClient.Get(urlStr)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-
-	return io.ReadAll(resp.Body)
+	return m.variants[idx].rdbName
 }

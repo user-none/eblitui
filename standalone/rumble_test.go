@@ -568,24 +568,3 @@ func TestRumbleEngineReset(t *testing.T) {
 		t.Fatal("expected no events after reset (should be in warmup)")
 	}
 }
-
-func TestTitleCase(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"sonic the hedgehog", "Sonic The Hedgehog"},
-		{"Already Cased", "Already Cased"},
-		{"the legend of zelda", "The Legend Of Zelda"},
-		{"one-two-three", "One-Two-Three"},
-		{"", ""},
-		{"a", "A"},
-	}
-
-	for _, tc := range tests {
-		got := titleCase(tc.input)
-		if got != tc.expected {
-			t.Errorf("titleCase(%q) = %q, want %q", tc.input, got, tc.expected)
-		}
-	}
-}
