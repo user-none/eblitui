@@ -234,6 +234,99 @@ func TestArtworkLoaderHaveNewClearedByCancelAndClear(t *testing.T) {
 	}
 }
 
+func TestArtworkLoaderStartLoadsMissingCRCsOnFilterChange(t *testing.T) {
+	loader := newArtworkLoader(nil, nil)
+
+	// Simulate a completed first Start with two CRCs already cached
+	loader.cardWidth = 100
+	loader.artHeight = 75
+	loader.cancel = make(chan struct{})
+	loader.done = make(chan struct{})
+	close(loader.done) // goroutine already finished
+
+	missing := &iconArtwork{}
+	loader.mu.Lock()
+	loader.cache["missing"] = missing
+	loader.cache["crc_a"] = &iconArtwork{}
+	loader.cache["crc_b"] = &iconArtwork{}
+	loader.mu.Unlock()
+
+	// Start again with same dimensions but additional CRCs (filter expanded)
+	loader.Start([]string{"crc_a", "crc_b", "crc_c", "crc_d"}, 100, 75)
+
+	// Wait for the new goroutine to finish
+	if loader.done != nil {
+		<-loader.done
+	}
+
+	// crc_c and crc_d should now be in the cache (as "missing" since no real files)
+	if loader.Get("crc_c") == nil {
+		t.Error("crc_c should be loaded after filter change")
+	}
+	if loader.Get("crc_d") == nil {
+		t.Error("crc_d should be loaded after filter change")
+	}
+
+	// Original entries should still be present (cache not cleared)
+	if loader.Get("crc_a") == nil {
+		t.Error("crc_a should still be cached")
+	}
+	if loader.Get("crc_b") == nil {
+		t.Error("crc_b should still be cached")
+	}
+}
+
+func TestArtworkLoaderStartNoOpWhenAllCRCsCached(t *testing.T) {
+	loader := newArtworkLoader(nil, nil)
+
+	// Simulate completed first Start with all CRCs cached
+	loader.cardWidth = 100
+	loader.artHeight = 75
+	loader.cancel = make(chan struct{})
+	oldDone := make(chan struct{})
+	close(oldDone)
+	loader.done = oldDone
+
+	loader.mu.Lock()
+	loader.cache["crc_a"] = &iconArtwork{}
+	loader.cache["crc_b"] = &iconArtwork{}
+	loader.mu.Unlock()
+
+	// Start with same dimensions and same CRCs - should be no-op
+	loader.Start([]string{"crc_a", "crc_b"}, 100, 75)
+
+	// done channel should still be the old one (no new goroutine launched)
+	if loader.done != oldDone {
+		t.Error("Start should be no-op when all CRCs are already cached")
+	}
+}
+
+func TestArtworkLoaderFindMissing(t *testing.T) {
+	loader := newArtworkLoader(nil, nil)
+
+	loader.mu.Lock()
+	loader.cache["crc_a"] = &iconArtwork{}
+	loader.cache["crc_b"] = &iconArtwork{}
+	loader.mu.Unlock()
+
+	missing := loader.findMissing([]string{"crc_a", "crc_b", "crc_c"})
+	if len(missing) != 1 || missing[0] != "crc_c" {
+		t.Errorf("expected [crc_c], got %v", missing)
+	}
+
+	// All cached
+	missing = loader.findMissing([]string{"crc_a", "crc_b"})
+	if len(missing) != 0 {
+		t.Errorf("expected empty, got %v", missing)
+	}
+
+	// Nil input
+	missing = loader.findMissing(nil)
+	if len(missing) != 0 {
+		t.Errorf("expected empty for nil input, got %v", missing)
+	}
+}
+
 func TestArtworkLoaderConcurrentGet(t *testing.T) {
 	loader := newArtworkLoader(nil, nil)
 

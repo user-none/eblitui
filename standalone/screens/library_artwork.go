@@ -74,6 +74,19 @@ func (a *artworkLoader) stop() {
 	}
 }
 
+// findMissing returns CRCs from gameCRCs that are not yet in the cache.
+func (a *artworkLoader) findMissing(gameCRCs []string) []string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	var missing []string
+	for _, crc := range gameCRCs {
+		if a.cache[crc] == nil {
+			missing = append(missing, crc)
+		}
+	}
+	return missing
+}
+
 // Halt permanently stops the loader. The goroutine is cancelled, waited on,
 // and no future Start calls will launch a new one.
 func (a *artworkLoader) Halt() {
@@ -118,6 +131,16 @@ func (a *artworkLoader) Start(gameCRCs []string, cardWidth, artHeight int) {
 	}
 
 	if a.cardWidth == cardWidth && a.artHeight == artHeight && a.cancel != nil {
+		// Dimensions match but CRC list may have changed (e.g. filter toggle).
+		// Load any CRCs not yet in the cache.
+		missing := a.findMissing(gameCRCs)
+		if len(missing) == 0 {
+			return
+		}
+		a.stop()
+		a.cancel = make(chan struct{})
+		a.done = make(chan struct{})
+		go a.run(missing, cardWidth, artHeight, a.cancel, a.done)
 		return
 	}
 
