@@ -67,8 +67,8 @@ github.com/user-none/eblitui/coreif v0.4.0 h1:DpoXTG3BZj0UOsp4/zZoNqWsPMCP+kJOoH
 github.com/user-none/eblitui/coreif v0.4.0/go.mod h1:NyEjTmsAHI3Zfterj6rlgZiFt++4ACfONQzCQaxJZ7E=
 github.com/user-none/eblitui/rdb v0.1.0 h1:/ZIzlkTTUqGaFtMT8HNgiHouJ/SMpRv+uUVbxJlDmZM=
 github.com/user-none/eblitui/rdb v0.1.0/go.mod h1:UyIx+HTKfiqL6246Qoe2vKvrhbJc73cBkRqpw6Db4AU=
-github.com/user-none/eblitui/romloader v0.1.0 h1:Il7ydlgKA+nPZ7yAxzEScXrgo6ecRAWMn/SyJJvcfv0=
-github.com/user-none/eblitui/romloader v0.1.0/go.mod h1:klV9imkjiFof1IgsZTBATmwfVF900dMirQ6q8VysJIQ=
+github.com/user-none/eblitui/romloader v0.2.0 h1:r97DR/7JMkA8TKeV4BsICc1KE85Otz1UaacOVOag3MM=
+github.com/user-none/eblitui/romloader v0.2.0/go.mod h1:klV9imkjiFof1IgsZTBATmwfVF900dMirQ6q8VysJIQ=
 github.com/user-none/go-rcheevos v0.0.0 h1:K256DmfvgirwkLAt/Y09HZ/WcZe2zr3BAyxjnbdbXFg=
 github.com/user-none/go-rcheevos v0.0.0/go.mod h1:MRIzBVxEdFPCdhxXvAvLHkyInXUzJCrb6v6mWI61A90=
 github.com/xyproto/randomstring v1.0.5 h1:YtlWPoRdgMu3NZtP45drfy1GKoojuR7hmRcnhZqKjWU=
