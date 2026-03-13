@@ -696,8 +696,9 @@ func (s *LibraryScreen) buildIconView(container *widget.Container) int {
 
 // buildGameCardSized creates a game card with specific dimensions
 func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, cardHeight, artHeight int) *widget.Container {
-	// Load dual-size artwork for zoom effect
-	normalArt, focusedArt := s.loadGameArtworkPair(game.CRC32, cardWidth, artHeight)
+	// Load dual-size artwork for zoom effect. pending is true when the
+	// loading placeholder was returned (artwork not yet processed).
+	normalArt, focusedArt, pending := s.loadGameArtworkPair(game.CRC32, cardWidth, artHeight)
 
 	// Create mutable ref so closures and UpdateArtwork can swap images
 	ref := &artRef{normal: normalArt, focused: focusedArt}
@@ -783,8 +784,12 @@ func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, c
 		}
 	})
 
-	// Only track cards that still need artwork updates
-	if s.artLoader.Get(gameCRC) == nil {
+	// Track cards that were built with the loading placeholder so
+	// UpdateArtwork can swap in the real image once the background
+	// goroutine finishes. The pending flag comes from the same cache
+	// lookup that chose the image, avoiding a race where the goroutine
+	// caches a result between loadGameArtworkPair and this point.
+	if pending {
 		s.artRefs[gameCRC] = ref
 	}
 
@@ -817,19 +822,20 @@ func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, c
 }
 
 // loadGameArtworkPair returns cached artwork for the icon view zoom effect.
-// Returns (normal, focused) where normal is ~91% and focused is 100%.
-// If the artwork is not yet processed by the background goroutine, the
-// loading image is returned. If processing determined no artwork exists,
-// the missing-art image is returned (stored under the CRC by loadOne).
-func (s *LibraryScreen) loadGameArtworkPair(gameCRC string, maxWidth, maxHeight int) (normal, focused *ebiten.Image) {
+// Returns (normal, focused, pending) where normal is ~91% and focused is
+// 100%. pending is true when the loading placeholder was returned because
+// the background goroutine has not yet processed this CRC. If processing
+// determined no artwork exists, the missing-art image is returned (stored
+// under the CRC by loadOne).
+func (s *LibraryScreen) loadGameArtworkPair(gameCRC string, maxWidth, maxHeight int) (normal, focused *ebiten.Image, pending bool) {
 	// Non-nil means processed: real artwork or missing-art image
 	if cached := s.artLoader.Get(gameCRC); cached != nil {
-		return cached.normal, cached.focused
+		return cached.normal, cached.focused, false
 	}
 
 	// Not yet processed - show loading image
 	loading := s.artLoader.Get("loading")
-	return loading.normal, loading.focused
+	return loading.normal, loading.focused, true
 }
 
 // dimImage returns a new image with reduced brightness for unfocused cards.
