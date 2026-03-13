@@ -28,6 +28,7 @@ type DetailScreen struct {
 	config             *storage.Config
 	game               *storage.GameEntry
 	achievementManager *achievements.Manager
+	defaultConsoleID   int
 
 	// Achievement loading state
 	achMu       sync.Mutex
@@ -38,12 +39,13 @@ type DetailScreen struct {
 }
 
 // NewDetailScreen creates a new detail screen
-func NewDetailScreen(callback ScreenCallback, library *storage.Library, config *storage.Config, achievementManager *achievements.Manager) *DetailScreen {
+func NewDetailScreen(callback ScreenCallback, library *storage.Library, config *storage.Config, achievementManager *achievements.Manager, defaultConsoleID int) *DetailScreen {
 	s := &DetailScreen{
 		callback:           callback,
 		library:            library,
 		config:             config,
 		achievementManager: achievementManager,
+		defaultConsoleID:   defaultConsoleID,
 	}
 	s.InitBase()
 	return s
@@ -118,7 +120,11 @@ func (s *DetailScreen) loadAchievementProgress() {
 			s.callback.RequestRebuild()
 			return
 		}
-		md5Hash = s.achievementManager.ComputeGameHash(romData)
+		gameConsoleID := uint32(s.defaultConsoleID)
+		if s.game.ConsoleID != 0 {
+			gameConsoleID = uint32(s.game.ConsoleID)
+		}
+		md5Hash = s.achievementManager.ComputeGameHash(romData, gameConsoleID)
 	}
 
 	// Look up progress using MD5

@@ -18,10 +18,11 @@ type ScanManager struct {
 	activeScanner *scanner.Scanner
 
 	// External dependencies (not owned by ScanManager)
-	library    *storage.Library
-	scanScreen *screens.ScanProgressScreen
-	extensions []string                  // Supported ROM file extensions
-	metadata   *metadata.MetadataManager // Metadata for RDB/thumbnail lookups
+	library          *storage.Library
+	scanScreen       *screens.ScanProgressScreen
+	extensions       []string                  // Supported ROM file extensions
+	metadata         *metadata.MetadataManager // Metadata for RDB/thumbnail lookups
+	defaultConsoleID int
 
 	// Callbacks to App
 	onProgress func() // Called when progress updates (triggers UI rebuild)
@@ -34,16 +35,18 @@ func NewScanManager(
 	scanScreen *screens.ScanProgressScreen,
 	extensions []string,
 	md *metadata.MetadataManager,
+	defaultConsoleID int,
 	onProgress func(),
 	onComplete func(msg string),
 ) *ScanManager {
 	return &ScanManager{
-		library:    library,
-		scanScreen: scanScreen,
-		extensions: extensions,
-		metadata:   md,
-		onProgress: onProgress,
-		onComplete: onComplete,
+		library:          library,
+		scanScreen:       scanScreen,
+		extensions:       extensions,
+		metadata:         md,
+		defaultConsoleID: defaultConsoleID,
+		onProgress:       onProgress,
+		onComplete:       onComplete,
 	}
 }
 
@@ -72,6 +75,7 @@ func (sm *ScanManager) Start(rescanAll bool) {
 		rescanAll,
 		sm.extensions,
 		sm.metadata,
+		sm.defaultConsoleID,
 	)
 
 	// Configure scan screen

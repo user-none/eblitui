@@ -366,10 +366,15 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 		if mi, ok := gm.emulator.(coreif.MemoryInspector); ok {
 			gm.achievementManager.SetEmulator(mi)
 		}
+		// Resolve per-game console ID for achievements
+		gameConsoleID := uint32(gm.systemInfo.ConsoleID)
+		if game.ConsoleID != 0 {
+			gameConsoleID = uint32(game.ConsoleID)
+		}
 		// Look up MD5 from RDB for fast path (avoids re-hashing ROM)
 		crc32, _ := strconv.ParseUint(game.CRC32, 16, 32)
 		md5Hash := gm.metadata.GetMD5ByCRC32(uint32(crc32))
-		if err := gm.achievementManager.LoadGame(romData, game.File, md5Hash); err != nil {
+		if err := gm.achievementManager.LoadGame(romData, game.File, md5Hash, gameConsoleID); err != nil {
 			log.Printf("Failed to load achievements: %v", err)
 		} else {
 			// Initialize overlay with achievement data for this game

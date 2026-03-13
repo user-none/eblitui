@@ -22,6 +22,7 @@ type metadataVariant struct {
 	name          string   // Display name
 	rdbName       string   // e.g. "SNK - Neo Geo Pocket Color"
 	thumbnailRepo string   // e.g. "SNK_-_Neo_Geo_Pocket_Color"
+	consoleID     int      // RetroAchievements console ID override; 0 = use default
 	rdb           *rdb.RDB // Loaded RDB, nil if not loaded
 }
 
@@ -39,6 +40,7 @@ func NewMetadataManager(variants []coreif.MetadataVariant) *MetadataManager {
 			name:          v.Name,
 			rdbName:       v.RDBName,
 			thumbnailRepo: v.ThumbnailRepo,
+			consoleID:     v.ConsoleID,
 		}
 	}
 	return &MetadataManager{variants: mv}
@@ -204,4 +206,13 @@ func (m *MetadataManager) VariantRDBName(idx int) string {
 		return ""
 	}
 	return m.variants[idx].rdbName
+}
+
+// ResolveConsoleID returns the console ID for a variant, falling back to
+// defaultID when the variant has no override (zero value).
+func (m *MetadataManager) ResolveConsoleID(variantIdx, defaultID int) int {
+	if variantIdx >= 0 && variantIdx < len(m.variants) && m.variants[variantIdx].consoleID != 0 {
+		return m.variants[variantIdx].consoleID
+	}
+	return defaultID
 }

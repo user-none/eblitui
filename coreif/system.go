@@ -84,6 +84,7 @@ type MetadataVariant struct {
 	Name          string // Display name, e.g. "Neo Geo Pocket"
 	RDBName       string // e.g. "SNK - Neo Geo Pocket"
 	ThumbnailRepo string // e.g. "SNK_-_Neo_Geo_Pocket"
+	ConsoleID     int    // RetroAchievements console ID override; 0 = use SystemInfo.ConsoleID
 }
 
 // SystemInfo describes an emulator system for UI configuration.

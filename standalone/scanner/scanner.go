@@ -69,7 +69,8 @@ type Scanner struct {
 	extensions    []string // Supported ROM file extensions
 
 	// Metadata
-	metadata *metadata.MetadataManager
+	metadata         *metadata.MetadataManager
+	defaultConsoleID int
 
 	// Channels
 	progress chan ScanProgress
@@ -100,25 +101,26 @@ type resolvedJob struct {
 }
 
 // NewScanner creates a new scanner instance
-func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[string]*storage.GameEntry, rescanAll bool, extensions []string, md *metadata.MetadataManager) *Scanner {
+func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[string]*storage.GameEntry, rescanAll bool, extensions []string, md *metadata.MetadataManager, defaultConsoleID int) *Scanner {
 	excludedMap := make(map[string]bool)
 	for _, p := range excluded {
 		excludedMap[p] = true
 	}
 
 	return &Scanner{
-		directories:   dirs,
-		excludedPaths: excludedMap,
-		existingGames: existing, // Keep full map to preserve user data
-		rescanAll:     rescanAll,
-		extensions:    extensions,
-		metadata:      md,
-		progress:      make(chan ScanProgress, 10),
-		done:          make(chan ScanResult, 1),
-		games:         make(map[string]*storage.GameEntry),
-		artworkQueue:  make([]artworkJob, 0),
-		rumbleQueue:   make([]artworkJob, 0),
-		downloadSem:   make(chan struct{}, 2), // Limit to 2 concurrent downloads
+		directories:      dirs,
+		excludedPaths:    excludedMap,
+		existingGames:    existing, // Keep full map to preserve user data
+		rescanAll:        rescanAll,
+		extensions:       extensions,
+		metadata:         md,
+		defaultConsoleID: defaultConsoleID,
+		progress:         make(chan ScanProgress, 10),
+		done:             make(chan ScanResult, 1),
+		games:            make(map[string]*storage.GameEntry),
+		artworkQueue:     make([]artworkJob, 0),
+		rumbleQueue:      make([]artworkJob, 0),
+		downloadSem:      make(chan struct{}, 2), // Limit to 2 concurrent downloads
 	}
 }
 
@@ -388,6 +390,9 @@ func (s *Scanner) processROM(path string) {
 			entry.System = s.metadata.VariantName(variantIdx)
 		}
 
+		// Resolve per-variant console ID for achievements
+		entry.ConsoleID = s.metadata.ResolveConsoleID(variantIdx, s.defaultConsoleID)
+
 		// Queue artwork download only if artwork doesn't exist
 		artPath, _ := storage.GetGameArtworkPath(crcHex)
 		if _, err := os.Stat(artPath); os.IsNotExist(err) {
@@ -427,6 +432,11 @@ func (s *Scanner) processROM(path string) {
 			})
 			s.mu.Unlock()
 		}
+	}
+
+	// Set default console ID for non-RDB matches
+	if game == nil {
+		entry.ConsoleID = s.defaultConsoleID
 	}
 
 	// Fallback to filename when no RDB match provided Name/DisplayName

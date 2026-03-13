@@ -141,7 +141,7 @@ func TestNewScanner(t *testing.T) {
 	}
 
 	md := metadata.NewMetadataManager(nil)
-	s := NewScanner(dirs, excluded, existing, false, []string{".sms"}, md)
+	s := NewScanner(dirs, excluded, existing, false, []string{".sms"}, md, 0)
 
 	if len(s.directories) != 2 {
 		t.Errorf("expected 2 directories, got %d", len(s.directories))
@@ -259,7 +259,7 @@ func TestScanDirectoryWithExclusions(t *testing.T) {
 
 func TestScannerCancellation(t *testing.T) {
 	md := metadata.NewMetadataManager(nil)
-	s := NewScanner(nil, nil, nil, false, nil, md)
+	s := NewScanner(nil, nil, nil, false, nil, md, 0)
 
 	if s.isCancelled() {
 		t.Error("new scanner should not be cancelled")
@@ -276,7 +276,7 @@ func TestScannerCancellation(t *testing.T) {
 
 func TestScannerGamesCount(t *testing.T) {
 	md := metadata.NewMetadataManager(nil)
-	s := NewScanner(nil, nil, nil, false, nil, md)
+	s := NewScanner(nil, nil, nil, false, nil, md, 0)
 
 	if s.gamesCount() != 0 {
 		t.Errorf("expected 0 games, got %d", s.gamesCount())
@@ -285,5 +285,13 @@ func TestScannerGamesCount(t *testing.T) {
 	s.games["abc"] = &storage.GameEntry{CRC32: "abc"}
 	if s.gamesCount() != 1 {
 		t.Errorf("expected 1 game, got %d", s.gamesCount())
+	}
+}
+
+func TestNewScannerDefaultConsoleID(t *testing.T) {
+	md := metadata.NewMetadataManager(nil)
+	s := NewScanner(nil, nil, nil, false, nil, md, 42)
+	if s.defaultConsoleID != 42 {
+		t.Errorf("expected defaultConsoleID 42, got %d", s.defaultConsoleID)
 	}
 }

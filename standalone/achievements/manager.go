@@ -227,7 +227,8 @@ func (m *Manager) SetEmulator(emu EmulatorInterface) {
 // LoadGame identifies and loads a game for achievement tracking.
 // If md5Hash is provided and non-empty, it will be used directly (fast path).
 // Otherwise, the hash will be computed from romData (fallback).
-func (m *Manager) LoadGame(romData []byte, filePath string, md5Hash string) error {
+// consoleID specifies the RetroAchievements console ID for hash computation.
+func (m *Manager) LoadGame(romData []byte, filePath string, md5Hash string, consoleID uint32) error {
 	m.mu.Lock()
 	if !m.loggedIn {
 		m.mu.Unlock()
@@ -264,7 +265,7 @@ func (m *Manager) LoadGame(romData []byte, filePath string, md5Hash string) erro
 	if md5Hash != "" {
 		m.client.LoadGame(md5Hash, loadCallback)
 	} else {
-		m.client.IdentifyAndLoadGame(m.consoleID, filePath, romData, loadCallback)
+		m.client.IdentifyAndLoadGame(consoleID, filePath, romData, loadCallback)
 	}
 
 	// Wait for the callback with a timeout
@@ -705,8 +706,9 @@ func (m *Manager) GetBadgeImageAsync(achievementID uint32, callback func(*ebiten
 
 // --- Library Pre-loading API ---
 
-// EnsureLibrariesLoaded fetches the hash library and user progress for SMS if not already cached.
-// Call this when logged in to pre-fetch data for the detail screen.
+// EnsureLibrariesLoaded fetches the hash library and user progress if not
+// already cached. Call this when logged in to pre-fetch data for the detail
+// screen.
 func (m *Manager) EnsureLibrariesLoaded(callback func(success bool)) {
 	m.mu.Lock()
 	if m.librariesLoaded {
@@ -854,6 +856,7 @@ func (m *Manager) LookupGameProgress(md5Hash string) (found bool, progress *rche
 
 // ComputeGameHash generates the MD5 hash for ROM data in rcheevos format.
 // Use this as a fallback when the MD5 is not in the RDB.
-func (m *Manager) ComputeGameHash(romData []byte) string {
-	return rcheevos.HashFromBuffer(m.consoleID, romData)
+// consoleID specifies the RetroAchievements console ID for hash computation.
+func (m *Manager) ComputeGameHash(romData []byte, consoleID uint32) string {
+	return rcheevos.HashFromBuffer(consoleID, romData)
 }

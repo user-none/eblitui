@@ -334,6 +334,7 @@ func newApp(factory coreif.CoreFactory, info coreif.SystemInfo) (*App, error) {
 		app.scanScreen,
 		app.systemInfo.Extensions,
 		app.metadata,
+		app.systemInfo.ConsoleID,
 		func() { app.rebuildCurrentScreen() }, // onProgress
 		func(msg string) { // onComplete
 			app.libraryScreen.ClearArtworkCache()
@@ -400,7 +401,7 @@ func (a *App) toggleFullscreen() {
 // initScreens creates all screen instances
 func (a *App) initScreens() {
 	a.libraryScreen = screens.NewLibraryScreen(a, a.library, a.config)
-	a.detailScreen = screens.NewDetailScreen(a, a.library, a.config, a.achievementManager)
+	a.detailScreen = screens.NewDetailScreen(a, a.library, a.config, a.achievementManager, a.systemInfo.ConsoleID)
 	a.settingsScreen = screens.NewSettingsScreen(a, a.library, a.config, a.achievementManager, a.systemInfo.SerializeSize, a.systemInfo)
 	a.scanScreen = screens.NewScanProgressScreen(a)
 	a.errorScreen = screens.NewErrorScreen(a, a.errorFile, a.errorPath, a.handleDeleteAndContinue)
@@ -1034,6 +1035,7 @@ func (a *App) handleDeleteAndContinue() {
 			a.scanScreen,
 			a.systemInfo.Extensions,
 			a.metadata,
+			a.systemInfo.ConsoleID,
 			func() { a.rebuildCurrentScreen() },
 			func(msg string) {
 				a.state = StateSettings
@@ -1128,6 +1130,7 @@ func (a *App) handleResetAndContinue() {
 			a.scanScreen,
 			a.systemInfo.Extensions,
 			a.metadata,
+			a.systemInfo.ConsoleID,
 			func() { a.rebuildCurrentScreen() },
 			func(msg string) {
 				a.state = StateSettings
@@ -1191,6 +1194,7 @@ func (a *App) handleLibraryResetAndContinue() {
 			a.scanScreen,
 			a.systemInfo.Extensions,
 			a.metadata,
+			a.systemInfo.ConsoleID,
 			func() { a.rebuildCurrentScreen() },
 			func(msg string) {
 				a.state = StateSettings
