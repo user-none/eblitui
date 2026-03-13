@@ -143,6 +143,10 @@ func Run(factory coreif.CoreFactory) error {
 		ebiten.SetFullscreen(true)
 	}
 
+	// Handle window close manually so background goroutines can be
+	// stopped before RunGame returns (ebiten panics on NewImage after that).
+	ebiten.SetWindowClosingHandled(true)
+
 	if err := ebiten.RunGame(app); err != nil {
 		return err
 	}
@@ -442,12 +446,19 @@ func (a *App) rebuildCurrentScreen() {
 
 // Update implements ebiten.Game
 func (a *App) Update() error {
-	// Track window position and fullscreen state for save on exit.
-	// Layout() handles width/height, but position must be queried here.
-	// Fullscreen is tracked because macOS exits native fullscreen before
-	// the save handler runs on Cmd+Q, so we can't rely on IsFullscreen() at exit.
-	a.windowX, a.windowY = ebiten.WindowPosition()
-	a.lastFullscreenState = ebiten.IsFullscreen()
+	// Handle manual window close: halt background goroutines while still
+	// inside RunGame so ebiten image APIs cannot be called after exit.
+	if ebiten.IsWindowBeingClosed() {
+		// Track window position and fullscreen state for save on exit.
+		// Layout() handles width/height, but position must be queried here.
+		// Fullscreen is tracked because macOS exits native fullscreen before
+		// the save handler runs on Cmd+Q, so we can't rely on IsFullscreen() at exit.
+		a.windowX, a.windowY = ebiten.WindowPosition()
+		a.lastFullscreenState = ebiten.IsFullscreen()
+
+		a.libraryScreen.HaltArtworkLoader()
+		return ebiten.Termination
+	}
 
 	// Process any pending rebuild request (set from goroutines)
 	if a.rebuildPending {
@@ -583,6 +594,8 @@ func (a *App) Update() error {
 		if a.state != StateLibrary {
 			return nil
 		}
+		// Update artwork graphics in place when background loader has new entries
+		a.libraryScreen.UpdateArtwork()
 		if !a.rebuildPending {
 			a.restorePendingFocus(a.libraryScreen)
 		}
@@ -900,12 +913,16 @@ func (a *App) LaunchGame(gameCRC string, resume bool) {
 // Exit closes the application
 func (a *App) Exit() {
 	// Save window state before exiting
+	a.windowX, a.windowY = ebiten.WindowPosition()
+	a.lastFullscreenState = ebiten.IsFullscreen()
 	a.saveWindowState()
 
 	// Clean up achievement manager resources
 	if a.achievementManager != nil {
 		a.achievementManager.Destroy()
 	}
+
+	a.libraryScreen.HaltArtworkLoader()
 
 	// Clean exit using os.Exit to avoid log.Fatal's stack trace
 	os.Exit(0)
@@ -921,11 +938,6 @@ func (a *App) GetWindowWidth() int {
 // Focus restoration is handled in the Update loop after ui.Update()
 func (a *App) RequestRebuild() {
 	a.rebuildPending = true
-}
-
-// GetPlaceholderImageData returns the raw embedded placeholder image data
-func (a *App) GetPlaceholderImageData() []byte {
-	return placeholderImageData
 }
 
 // GetMD5ByCRC32 returns the MD5 hash for a game by CRC32 from loaded RDBs

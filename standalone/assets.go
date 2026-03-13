@@ -1,36 +1,23 @@
 package standalone
 
 import (
-	"bytes"
 	_ "embed"
-	"image"
-	_ "image/png"
-	"log"
-
-	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/user-none/eblitui/standalone/style"
 )
 
 //go:embed assets/placeholder.png
 var placeholderImageData []byte
 
-var placeholderImage *ebiten.Image
+//go:embed assets/missing.png
+var missingArtImageData []byte
 
-// GetPlaceholderImage returns the placeholder image for missing artwork
-func GetPlaceholderImage() *ebiten.Image {
-	if placeholderImage != nil {
-		return placeholderImage
-	}
+// GetPlaceholderImageData returns the raw embedded placeholder image data
+// used as the loading indicator while artwork is being loaded asynchronously.
+func (a *App) GetPlaceholderImageData() []byte {
+	return placeholderImageData
+}
 
-	img, _, err := image.Decode(bytes.NewReader(placeholderImageData))
-	if err != nil {
-		log.Printf("Failed to decode placeholder image: %v", err)
-		// Return a solid color fallback
-		fallback := ebiten.NewImage(style.Px(120), style.Px(90))
-		fallback.Fill(style.Surface)
-		return fallback
-	}
-
-	placeholderImage = ebiten.NewImageFromImage(img)
-	return placeholderImage
+// GetMissingArtImageData returns the raw embedded missing-art image data
+// shown for games that have no artwork file.
+func (a *App) GetMissingArtImageData() []byte {
+	return missingArtImageData
 }

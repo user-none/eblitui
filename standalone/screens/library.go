@@ -1,12 +1,7 @@
 package screens
 
 import (
-	"bytes"
-	goimage "image"
-	"os"
 	"strings"
-
-	_ "image/png"
 
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
@@ -20,6 +15,17 @@ import (
 type iconArtwork struct {
 	normal  *ebiten.Image // Unfocused size (slightly smaller than 100%)
 	focused *ebiten.Image // Full size (100%)
+}
+
+// artRef holds mutable references to a game card's artwork and widgets.
+// Closures in buildGameCardSized reference the artRef fields, so updating
+// them here updates what the closures see without rebuilding the widget tree.
+type artRef struct {
+	normal  *ebiten.Image
+	focused *ebiten.Image
+	graphic *widget.Graphic
+	button  *widget.Button
+	hovered bool
 }
 
 // LibraryScreen displays the game library
@@ -46,9 +52,9 @@ type LibraryScreen struct {
 	listScrollContainer *widget.ScrollContainer
 	listVSlider         *widget.Slider
 
-	// Artwork cache: key = "crc32", value = dual-size artwork
-	artworkCache      map[string]*iconArtwork
-	cachedWindowWidth int // Track window width to detect resize
+	// Async artwork loader
+	artLoader *artworkLoader
+	artRefs   map[string]*artRef
 
 	// Search filter
 	searchText string
@@ -61,8 +67,8 @@ func NewLibraryScreen(callback ScreenCallback, library *storage.Library, config 
 		library:       library,
 		config:        config,
 		selectedIndex: 0,
-		artworkCache:  make(map[string]*iconArtwork),
 	}
+	s.artLoader = newArtworkLoader(callback.GetPlaceholderImageData(), callback.GetMissingArtImageData())
 	s.InitBase()
 	return s
 }
@@ -77,21 +83,39 @@ func (s *LibraryScreen) SetConfig(config *storage.Config) {
 	s.config = config
 }
 
+// UpdateArtwork checks if new artwork has been cached by the background loader
+// and updates existing widget graphics in place without rebuilding the screen.
+func (s *LibraryScreen) UpdateArtwork() {
+	if !s.artLoader.HaveNew() {
+		return
+	}
+
+	for crc, ref := range s.artRefs {
+		cached := s.artLoader.Get(crc)
+		if cached == nil {
+			continue
+		}
+		ref.normal = cached.normal
+		ref.focused = cached.focused
+		if ref.button.IsFocused() || ref.hovered {
+			ref.graphic.Image = ref.focused
+		} else {
+			ref.graphic.Image = ref.normal
+		}
+		delete(s.artRefs, crc)
+	}
+}
+
+// HaltArtworkLoader permanently stops the background artwork loading goroutine.
+// After halting, Start is a no-op.
+func (s *LibraryScreen) HaltArtworkLoader() {
+	s.artLoader.Halt()
+}
+
 // ClearArtworkCache clears the cached artwork images.
 // Should be called after library scan or when library locations change.
 func (s *LibraryScreen) ClearArtworkCache() {
-	for _, art := range s.artworkCache {
-		if art != nil {
-			if art.normal != nil {
-				art.normal.Deallocate()
-			}
-			if art.focused != nil {
-				art.focused.Deallocate()
-			}
-		}
-	}
-	s.artworkCache = make(map[string]*iconArtwork)
-	s.cachedWindowWidth = 0
+	s.artLoader.CancelAndClear()
 }
 
 // Build creates the library screen UI
@@ -595,17 +619,13 @@ func (s *LibraryScreen) buildListView() widget.PreferredSizeLocateableWidget {
 // buildIconView creates the icon/grid view of games with artwork
 // Returns the number of columns for navigation setup
 func (s *LibraryScreen) buildIconView(container *widget.Container) int {
+	s.artRefs = make(map[string]*artRef)
+
 	// Calculate responsive grid dimensions
 	windowWidth := s.callback.GetWindowWidth()
 	if windowWidth < 400 {
 		windowWidth = style.IconDefaultWindowWidth
 	}
-
-	// Clear cache if window width changed (artwork needs re-scaling)
-	if s.cachedWindowWidth != 0 && s.cachedWindowWidth != windowWidth {
-		s.ClearArtworkCache()
-	}
-	s.cachedWindowWidth = windowWidth
 
 	// Available width for cards (subtract padding and scrollbar)
 	availableWidth := windowWidth - (style.DefaultPadding * 2) - style.ScrollbarWidth
@@ -624,6 +644,13 @@ func (s *LibraryScreen) buildIconView(container *widget.Container) int {
 	// Card height maintains ~4:3 aspect ratio for artwork + text
 	artHeight := cardWidth * 4 / 3
 	cardHeight := artHeight + style.IconCardTextHeight
+
+	// Start async artwork loading if dimensions changed
+	gameCRCs := make([]string, len(s.games))
+	for i, g := range s.games {
+		gameCRCs[i] = g.CRC32
+	}
+	s.artLoader.Start(gameCRCs, cardWidth, artHeight)
 
 	// Create stretch array - all columns stretch equally to fill width
 	columnStretches := make([]bool, columns)
@@ -672,6 +699,9 @@ func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, c
 	// Load dual-size artwork for zoom effect
 	normalArt, focusedArt := s.loadGameArtworkPair(game.CRC32, cardWidth, artHeight)
 
+	// Create mutable ref so closures and UpdateArtwork can swap images
+	ref := &artRef{normal: normalArt, focused: focusedArt}
+
 	// Inner card content
 	cardContent := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
@@ -700,8 +730,9 @@ func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, c
 
 	// Artwork graphic (renders on top of button, swapped for zoom effect)
 	artGraphic := widget.NewGraphic(
-		widget.GraphicOpts.Image(normalArt),
+		widget.GraphicOpts.Image(ref.normal),
 	)
+	ref.graphic = artGraphic
 
 	// Artwork button (handles bg colors, click, focus - no graphic image)
 	gameCRC := game.CRC32 // Capture for closure
@@ -715,13 +746,15 @@ func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, c
 		widget.ButtonOpts.WidgetOpts(
 			widget.WidgetOpts.MinSize(cardWidth, artHeight),
 			widget.WidgetOpts.CursorEnterHandler(func(args *widget.WidgetCursorEnterEventArgs) {
+				ref.hovered = true
 				titleLabel.SetColor(style.Accent)
-				artGraphic.Image = focusedArt
+				artGraphic.Image = ref.focused
 			}),
 			widget.WidgetOpts.CursorExitHandler(func(args *widget.WidgetCursorExitEventArgs) {
+				ref.hovered = false
 				if !artButton.IsFocused() {
 					titleLabel.SetColor(style.Text)
-					artGraphic.Image = normalArt
+					artGraphic.Image = ref.normal
 				}
 			}),
 		),
@@ -735,19 +768,25 @@ func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, c
 			s.callback.SwitchToDetail(gameCRC)
 		}),
 	)
+	ref.button = artButton
 
 	// Update title color and artwork on keyboard/gamepad focus changes
 	artButton.GetWidget().FocusEvent.AddHandler(func(args interface{}) {
 		if a, ok := args.(*widget.WidgetFocusEventArgs); ok {
 			if a.Focused {
 				titleLabel.SetColor(style.Accent)
-				artGraphic.Image = focusedArt
+				artGraphic.Image = ref.focused
 			} else {
 				titleLabel.SetColor(style.Text)
-				artGraphic.Image = normalArt
+				artGraphic.Image = ref.normal
 			}
 		}
 	})
+
+	// Only track cards that still need artwork updates
+	if s.artLoader.Get(gameCRC) == nil {
+		s.artRefs[gameCRC] = ref
+	}
 
 	// Store button reference for focus restoration
 	s.RegisterFocusButton("game-"+gameCRC, artButton)
@@ -777,74 +816,20 @@ func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, c
 	return card
 }
 
-// loadGameArtworkPair loads artwork at two sizes for the icon view zoom effect.
+// loadGameArtworkPair returns cached artwork for the icon view zoom effect.
 // Returns (normal, focused) where normal is ~91% and focused is 100%.
+// If the artwork is not yet processed by the background goroutine, the
+// loading image is returned. If processing determined no artwork exists,
+// the missing-art image is returned (stored under the CRC by loadOne).
 func (s *LibraryScreen) loadGameArtworkPair(gameCRC string, maxWidth, maxHeight int) (normal, focused *ebiten.Image) {
-	// Check cache first
-	if cached, ok := s.artworkCache[gameCRC]; ok {
+	// Non-nil means processed: real artwork or missing-art image
+	if cached := s.artLoader.Get(gameCRC); cached != nil {
 		return cached.normal, cached.focused
 	}
 
-	artPath, err := storage.GetGameArtworkPath(gameCRC)
-	if err != nil {
-		return s.getPlaceholderImagePair(maxWidth, maxHeight)
-	}
-
-	data, err := os.ReadFile(artPath)
-	if err != nil {
-		return s.getPlaceholderImagePair(maxWidth, maxHeight)
-	}
-
-	img, _, err := goimage.Decode(bytes.NewReader(data))
-	if err != nil {
-		return s.getPlaceholderImagePair(maxWidth, maxHeight)
-	}
-
-	focusedImg := style.ScaleImage(img, maxWidth, maxHeight)
-	normalW := int(float64(maxWidth) * style.IconUnfocusedScale)
-	normalH := int(float64(maxHeight) * style.IconUnfocusedScale)
-	normalImg := dimImage(style.ScaleImage(img, normalW, normalH))
-
-	s.artworkCache[gameCRC] = &iconArtwork{normal: normalImg, focused: focusedImg}
-	return normalImg, focusedImg
-}
-
-// getPlaceholderImagePair returns the placeholder image at two sizes for the zoom effect.
-func (s *LibraryScreen) getPlaceholderImagePair(width, height int) (normal, focused *ebiten.Image) {
-	const placeholderKey = "placeholder"
-	if cached, ok := s.artworkCache[placeholderKey]; ok {
-		return cached.normal, cached.focused
-	}
-
-	normalW := int(float64(width) * style.IconUnfocusedScale)
-	normalH := int(float64(height) * style.IconUnfocusedScale)
-
-	data := s.callback.GetPlaceholderImageData()
-	if data == nil {
-		// Fallback to solid color if no placeholder data
-		focusedImg := ebiten.NewImage(width, height)
-		focusedImg.Fill(style.Surface)
-		normalImg := ebiten.NewImage(normalW, normalH)
-		normalImg.Fill(style.Surface)
-		s.artworkCache[placeholderKey] = &iconArtwork{normal: normalImg, focused: focusedImg}
-		return normalImg, focusedImg
-	}
-
-	img, _, err := goimage.Decode(bytes.NewReader(data))
-	if err != nil {
-		// Fallback to solid color on decode error
-		focusedImg := ebiten.NewImage(width, height)
-		focusedImg.Fill(style.Surface)
-		normalImg := ebiten.NewImage(normalW, normalH)
-		normalImg.Fill(style.Surface)
-		s.artworkCache[placeholderKey] = &iconArtwork{normal: normalImg, focused: focusedImg}
-		return normalImg, focusedImg
-	}
-
-	focusedImg := style.ScaleImage(img, width, height)
-	normalImg := dimImage(style.ScaleImage(img, normalW, normalH))
-	s.artworkCache[placeholderKey] = &iconArtwork{normal: normalImg, focused: focusedImg}
-	return normalImg, focusedImg
+	// Not yet processed - show loading image
+	loading := s.artLoader.Get("loading")
+	return loading.normal, loading.focused
 }
 
 // dimImage returns a new image with reduced brightness for unfocused cards.
