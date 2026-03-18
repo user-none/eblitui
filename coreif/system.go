@@ -13,8 +13,8 @@ const (
 type Button struct {
 	Name       string
 	ID         int    // Bit position in the uint32 bitmask (4+)
-	DefaultKey string // Default keyboard key for standalone UI (e.g., "J", "Enter")
-	DefaultPad string // Default gamepad button for standalone UI (e.g., "A", "Start")
+	DefaultKey string // Default keyboard key for desktop UI (e.g., "J", "Enter")
+	DefaultPad string // Default gamepad button for desktop UI (e.g., "A", "Start")
 }
 
 // CoreOptionType identifies the kind of core option.

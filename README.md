@@ -21,7 +21,7 @@ knowing each other's internals.
 
 Zero external dependencies.
 
-### standalone
+### desktop
 
 Full-featured desktop application UI built on [Ebiten](https://ebitengine.org).
 Includes a game library with scanning and artwork, settings, save states,
@@ -54,7 +54,7 @@ and extracts ROMs by extension.
 ## How It Works
 
 An emulator core implements the interfaces defined in `coreif`. The core
-then links one of the UI packages (`standalone` or `libretro`)
+then links one of the UI packages (`desktop` or `libretro`)
 and provides its `CoreFactory` as the entry point. The UI handles
 everything else: rendering, audio, input, saves, settings, and any
 additional features.
@@ -64,7 +64,7 @@ Emulator Core (e.g. emkiii, emmd)
     |
     implements coreif interfaces
     |
-    +---> standalone   (desktop app)
+    +---> desktop      (desktop app)
     +---> libretro     (shared library for RetroArch etc.)
 ```
 
@@ -79,7 +79,7 @@ This is a Go workspace. Each component is its own Go module:
 | Module | Import Path |
 |---|---|
 | coreif | `github.com/user-none/eblitui/coreif` |
-| standalone | `github.com/user-none/eblitui/standalone` |
+| desktop | `github.com/user-none/eblitui/desktop` |
 | libretro | `github.com/user-none/eblitui/libretro` |
 | rdb | `github.com/user-none/eblitui/rdb` |
 | romloader | `github.com/user-none/eblitui/romloader` |
@@ -96,7 +96,7 @@ Tests for each component can be run from their directories:
 ```
 go test ./coreif/...
 go test ./romloader/...
-go test ./standalone/...
+go test ./desktop/...
 go test ./libretro/...
 go test ./rdb/...
 ```
