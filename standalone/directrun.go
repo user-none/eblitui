@@ -3,7 +3,6 @@ package standalone
 import (
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -29,10 +28,9 @@ type directRunner struct {
 }
 
 // RunDirect loads a ROM and runs it directly without the full UI.
-// The regionStr parameter accepts "auto", "ntsc", or "pal".
 // The options map is applied to the emulator via SetOption.
 // The bios map provides BIOS data keyed by BIOSOption.Key (may be nil).
-func RunDirect(factory coreif.CoreFactory, romPath, regionStr string, options map[string]string, bios map[string][]byte) error {
+func RunDirect(factory coreif.CoreFactory, romPath string, options map[string]string, bios map[string][]byte) error {
 	systemInfo := factory.SystemInfo()
 
 	romData, _, err := romloader.Load(romPath, systemInfo.Extensions)
@@ -40,12 +38,7 @@ func RunDirect(factory coreif.CoreFactory, romPath, regionStr string, options ma
 		return fmt.Errorf("failed to load ROM: %w", err)
 	}
 
-	region, err := parseRegion(regionStr, factory, romData)
-	if err != nil {
-		return err
-	}
-
-	emulator, err := factory.CreateEmulator(romData, region)
+	emulator, err := factory.CreateEmulator(romData)
 	if err != nil {
 		return fmt.Errorf("failed to create emulator: %w", err)
 	}
@@ -205,20 +198,4 @@ func (dr *directRunner) Close() {
 		dr.audioPlayer.Close()
 	}
 	dr.emulator.Close()
-}
-
-// parseRegion converts a region string to coreif.Region.
-// "auto" uses the factory's DetectRegion, "ntsc" and "pal" map directly.
-func parseRegion(regionStr string, factory coreif.CoreFactory, romData []byte) (coreif.Region, error) {
-	switch strings.ToLower(regionStr) {
-	case "auto":
-		region, _ := factory.DetectRegion(romData)
-		return region, nil
-	case "ntsc":
-		return coreif.RegionNTSC, nil
-	case "pal":
-		return coreif.RegionPAL, nil
-	default:
-		return 0, fmt.Errorf("unknown region %q: use auto, ntsc, or pal", regionStr)
-	}
 }

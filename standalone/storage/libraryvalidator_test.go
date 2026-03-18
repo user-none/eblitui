@@ -80,50 +80,6 @@ func TestSanitizeLibraryEntries(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid regionOverride cleared", func(t *testing.T) {
-		lib := DefaultLibrary()
-		lib.AddGame(&GameEntry{CRC32: "1", Settings: GameSettings{RegionOverride: "invalid"}})
-
-		SanitizeLibraryEntries(lib)
-
-		if lib.Games["1"].Settings.RegionOverride != "" {
-			t.Errorf("expected empty, got %q", lib.Games["1"].Settings.RegionOverride)
-		}
-	})
-
-	t.Run("valid regionOverride ntsc preserved", func(t *testing.T) {
-		lib := DefaultLibrary()
-		lib.AddGame(&GameEntry{CRC32: "1", Settings: GameSettings{RegionOverride: "ntsc"}})
-
-		SanitizeLibraryEntries(lib)
-
-		if lib.Games["1"].Settings.RegionOverride != "ntsc" {
-			t.Errorf("expected ntsc, got %q", lib.Games["1"].Settings.RegionOverride)
-		}
-	})
-
-	t.Run("valid regionOverride pal preserved", func(t *testing.T) {
-		lib := DefaultLibrary()
-		lib.AddGame(&GameEntry{CRC32: "1", Settings: GameSettings{RegionOverride: "pal"}})
-
-		SanitizeLibraryEntries(lib)
-
-		if lib.Games["1"].Settings.RegionOverride != "pal" {
-			t.Errorf("expected pal, got %q", lib.Games["1"].Settings.RegionOverride)
-		}
-	})
-
-	t.Run("empty regionOverride preserved", func(t *testing.T) {
-		lib := DefaultLibrary()
-		lib.AddGame(&GameEntry{CRC32: "1", Settings: GameSettings{RegionOverride: ""}})
-
-		SanitizeLibraryEntries(lib)
-
-		if lib.Games["1"].Settings.RegionOverride != "" {
-			t.Errorf("expected empty, got %q", lib.Games["1"].Settings.RegionOverride)
-		}
-	})
-
 	t.Run("negative saveSlot set to 0", func(t *testing.T) {
 		lib := DefaultLibrary()
 		lib.AddGame(&GameEntry{CRC32: "1", Settings: GameSettings{SaveSlot: -1}})
@@ -173,8 +129,7 @@ func TestSanitizeLibraryEntries(t *testing.T) {
 			LastPlayed:      -20,
 			Added:           -30,
 			Settings: GameSettings{
-				RegionOverride: "bad",
-				SaveSlot:       99,
+				SaveSlot: 99,
 			},
 		})
 
@@ -189,9 +144,6 @@ func TestSanitizeLibraryEntries(t *testing.T) {
 		}
 		if game.Added != 0 {
 			t.Errorf("added: expected 0, got %d", game.Added)
-		}
-		if game.Settings.RegionOverride != "" {
-			t.Errorf("regionOverride: expected empty, got %q", game.Settings.RegionOverride)
 		}
 		if game.Settings.SaveSlot != 0 {
 			t.Errorf("saveSlot: expected 0, got %d", game.Settings.SaveSlot)

@@ -144,8 +144,7 @@ type GameEntry struct {
 
 // GameSettings contains per-game configuration overrides
 type GameSettings struct {
-	RegionOverride string `json:"regionOverride,omitempty"` // "", "ntsc", "pal"
-	SaveSlot       int    `json:"saveSlot,omitempty"`       // Last-used save state slot (0-9)
+	SaveSlot int `json:"saveSlot,omitempty"` // Last-used save state slot (0-9)
 }
 
 // FontSizePresets lists the available font size options

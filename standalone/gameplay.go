@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"log"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -217,11 +216,8 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 		return false
 	}
 
-	// Determine region
-	region := gm.regionFromLibraryEntry(game)
-
 	// Create emulator
-	emu, err := gm.factory.CreateEmulator(romData, region)
+	emu, err := gm.factory.CreateEmulator(romData)
 	if err != nil {
 		gm.notification.ShowDefault("Failed to create emulator")
 		return false
@@ -957,15 +953,5 @@ func (gm *GameplayManager) updatePlayTime() {
 			gm.playTime.trackStart = time.Now().Unix()
 		}
 		storage.SaveLibrary(gm.library)
-	}
-}
-
-// regionFromLibraryEntry determines the region from a library entry
-func (gm *GameplayManager) regionFromLibraryEntry(game *storage.GameEntry) coreif.Region {
-	switch strings.ToLower(game.Region) {
-	case "eu", "europe", "pal":
-		return coreif.RegionPAL
-	default:
-		return coreif.RegionNTSC
 	}
 }

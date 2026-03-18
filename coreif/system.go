@@ -120,10 +120,6 @@ type CoreFactory interface {
 	// SystemInfo returns system metadata for UI configuration.
 	SystemInfo() SystemInfo
 
-	// CreateEmulator creates a new emulator instance with the given ROM and region.
-	CreateEmulator(rom []byte, region Region) (Emulator, error)
-
-	// DetectRegion auto-detects the region from ROM data.
-	// The bool return indicates whether the region was found in the database.
-	DetectRegion(rom []byte) (Region, bool)
+	// CreateEmulator creates a new emulator instance with the given ROM.
+	CreateEmulator(rom []byte) (Emulator, error)
 }

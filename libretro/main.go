@@ -51,7 +51,6 @@ var (
 	saveStater   coreif.SaveStater
 	memoryMapper coreif.MemoryMapper
 
-	region        coreif.Region
 	romData       []byte
 	xrgbBuf       []byte
 	currentWidth  int
@@ -66,13 +65,6 @@ var (
 	validExtStr  *C.char
 	stringsReady bool
 
-	// Core option state
-	optionRegion   string = "Auto"
-	detectedRegion coreif.Region
-
-	// Pre-allocated C strings for options
-	optKeyRegion *C.char
-	optValRegion *C.char
 	optionPrefix string
 
 	// Core-specific option keys and C strings
@@ -196,9 +188,7 @@ func retro_reset() {
 		return
 	}
 
-	applyRegionOption()
-
-	emu, err := factory.CreateEmulator(romData, region)
+	emu, err := factory.CreateEmulator(romData)
 	if err != nil {
 		return
 	}
@@ -217,7 +207,6 @@ func retro_run() {
 	// Check for option changes
 	var updated C.bool
 	if C.call_environ_cb(C.RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, unsafe.Pointer(&updated)) && updated {
-		updateRegionOption()
 		applyCoreOptions()
 	}
 
@@ -357,15 +346,8 @@ func retro_load_game(game *C.struct_retro_game_info) C.bool {
 	// Copy ROM data
 	romData = C.GoBytes(game.data, C.int(game.size))
 
-	// Detect region
-	detectedRegion, _ = factory.DetectRegion(romData)
-	region = detectedRegion
-
-	// Read region option before creating emulator
-	updateRegionOption()
-
 	// Create emulator
-	emu, err := factory.CreateEmulator(romData, region)
+	emu, err := factory.CreateEmulator(romData)
 	if err != nil {
 		return C.bool(false)
 	}
@@ -397,7 +379,7 @@ func retro_unload_game() {
 
 //export retro_get_region
 func retro_get_region() C.uint {
-	if region == coreif.RegionPAL {
+	if emulator != nil && emulator.GetTiming().FPS <= 50 {
 		return C.RETRO_REGION_PAL
 	}
 	return C.RETRO_REGION_NTSC
@@ -463,11 +445,9 @@ func ensureStrings() {
 
 // ensureOptionStrings allocates C strings for core options once.
 func ensureOptionStrings() {
-	if optKeyRegion != nil {
+	if len(coreOptKeys) > 0 || len(sysInfo.CoreOptions) == 0 {
 		return
 	}
-	optKeyRegion = C.CString(optionPrefix + "region")
-	optValRegion = C.CString("Region; Auto|NTSC|PAL")
 
 	// Build core-specific option strings
 	for _, opt := range sysInfo.CoreOptions {
@@ -493,39 +473,22 @@ func ensureOptionStrings() {
 
 // setVariables registers all core options with the frontend.
 func setVariables() {
-	// Count: region + core options + terminator
-	count := 1 // region
-	count += len(coreOptKeys)
-	count++ // nil terminator
+	if len(coreOptKeys) == 0 {
+		return
+	}
+
+	// Count: core options + nil terminator
+	count := len(coreOptKeys) + 1
 
 	options := make([]C.struct_retro_variable, count)
-	idx := 0
-
-	options[idx] = C.struct_retro_variable{key: optKeyRegion, value: optValRegion}
-	idx++
-
 	for i := range coreOptKeys {
-		options[idx] = C.struct_retro_variable{key: coreOptKeys[i], value: coreOptVals[i]}
-		idx++
+		options[i] = C.struct_retro_variable{key: coreOptKeys[i], value: coreOptVals[i]}
 	}
 
 	// Nil terminator
-	options[idx] = C.struct_retro_variable{key: nil, value: nil}
+	options[len(coreOptKeys)] = C.struct_retro_variable{key: nil, value: nil}
 
 	C.call_environ_cb(C.RETRO_ENVIRONMENT_SET_VARIABLES, unsafe.Pointer(&options[0]))
-}
-
-// updateRegionOption reads the region option from the frontend and applies it.
-func updateRegionOption() {
-	var regionVar C.struct_retro_variable
-	regionVar.key = optKeyRegion
-	if C.call_environ_cb(C.RETRO_ENVIRONMENT_GET_VARIABLE, unsafe.Pointer(&regionVar)) && regionVar.value != nil {
-		newRegion := C.GoString(regionVar.value)
-		if newRegion != optionRegion {
-			optionRegion = newRegion
-			applyRegionOption()
-		}
-	}
 }
 
 // applyCoreOptions reads core-specific options from the frontend and applies
@@ -541,25 +504,6 @@ func applyCoreOptions() {
 			if i < len(sysInfo.CoreOptions) {
 				emulator.SetOption(sysInfo.CoreOptions[i].Key, C.GoString(v.value))
 			}
-		}
-	}
-}
-
-// applyRegionOption applies the current region option setting.
-func applyRegionOption() {
-	var newRegion coreif.Region
-	switch optionRegion {
-	case "NTSC":
-		newRegion = coreif.RegionNTSC
-	case "PAL":
-		newRegion = coreif.RegionPAL
-	default:
-		newRegion = detectedRegion
-	}
-	if newRegion != region {
-		region = newRegion
-		if emulator != nil {
-			emulator.SetRegion(region)
 		}
 	}
 }

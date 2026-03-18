@@ -27,11 +27,9 @@ instances.
 
 - `SystemInfo() SystemInfo` - Returns system metadata used by the UI to
   configure screens, input mapping, settings menus, and data paths.
-- `CreateEmulator(rom []byte, region Region) (Emulator, error)` - Creates
-  a new emulator instance from ROM data and a video region.
-- `DetectRegion(rom []byte) (Region, bool)` - Auto-detects the region from
-  ROM data. The bool indicates whether the region was found in a database
-  versus falling back to a default.
+- `CreateEmulator(rom []byte) (Emulator, error)` - Creates a new emulator
+  instance from ROM data. Video standard detection is handled internally
+  by the core.
 
 ### Emulator (required)
 
@@ -47,8 +45,6 @@ manage region and timing.
 | `GetActiveHeight() int` | Current active display height in pixels |
 | `GetAudioSamples() []int16` | Stereo 16-bit PCM audio samples for the frame |
 | `SetInput(player int, buttons uint32)` | Set controller state as a button bitmask |
-| `GetRegion() Region` | Current video region |
-| `SetRegion(region Region)` | Change the video region |
 | `GetTiming() Timing` | FPS and scanline count for the current region |
 | `SetOption(key string, value string)` | Apply a core option change by key |
 
@@ -94,17 +90,6 @@ Region type constants:
 | `MemorySystemRAM` | Main system RAM (RETRO\_MEMORY\_SYSTEM\_RAM) |
 
 ## Types
-
-### Region
-
-Video region enumeration. Affects frame rate and scanline count.
-
-| Value | Description |
-|---|---|
-| `RegionNTSC` | NTSC (60 Hz) |
-| `RegionPAL` | PAL (50 Hz) |
-
-Implements `String()` returning `"NTSC"`, `"PAL"`, or `"Unknown"`.
 
 ### Timing
 

@@ -20,12 +20,6 @@ type Emulator interface {
 	// SetInput sets controller state as a button bitmask for the given player.
 	SetInput(player int, buttons uint32)
 
-	// GetRegion returns the current video region.
-	GetRegion() Region
-
-	// SetRegion changes the video region.
-	SetRegion(region Region)
-
 	// GetTiming returns FPS and scanline count for the current region.
 	GetTiming() Timing
 

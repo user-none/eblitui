@@ -16,14 +16,6 @@ func SanitizeLibraryEntries(lib *Library) {
 			game.Added = 0
 		}
 
-		// regionOverride: must be "", "ntsc", or "pal"
-		switch game.Settings.RegionOverride {
-		case "", "ntsc", "pal":
-			// valid
-		default:
-			game.Settings.RegionOverride = ""
-		}
-
 		// saveSlot: must be 0-9
 		if game.Settings.SaveSlot < 0 || game.Settings.SaveSlot > 9 {
 			game.Settings.SaveSlot = 0
