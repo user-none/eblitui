@@ -7,8 +7,9 @@ import (
 
 // AudioRingBuffer is a thread-safe ring buffer implementing io.Reader.
 // The emulation goroutine writes samples via Write(), and oto's player
-// reads them via Read(). Read blocks when empty; Write drops oldest
-// samples on overflow to prevent stalling the producer.
+// reads them via Read(). Write blocks when the buffer is full until Read
+// frees space; Read blocks when empty until Write adds data. The audio
+// device's drain rate paces the producer through this back-pressure.
 type AudioRingBuffer struct {
 	buf      []byte
 	readPos  int
@@ -30,8 +31,10 @@ func NewAudioRingBuffer(capacity int) *AudioRingBuffer {
 	return rb
 }
 
-// Write adds data to the buffer. Non-blocking; if the buffer overflows,
-// oldest samples are dropped to make room for new data.
+// Write copies data into the buffer, blocking on a full ring until Read
+// frees space. If the input is larger than the buffer's capacity the
+// leading portion is dropped and only the tail is written, because the
+// audio device would only ever consume the most recent samples anyway.
 func (rb *AudioRingBuffer) Write(p []byte) {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
@@ -45,32 +48,50 @@ func (rb *AudioRingBuffer) Write(p []byte) {
 		return
 	}
 
-	// If data is larger than capacity, only write the last capacity bytes
+	// If the input is larger than the buffer's capacity, keep only the
+	// last capacity bytes; the leading portion would be overwritten
+	// before it could ever be drained anyway.
 	if n > rb.capacity {
 		p = p[n-rb.capacity:]
 		n = rb.capacity
 	}
 
-	// If we need more space, drop oldest data
-	overflow := rb.count + n - rb.capacity
-	if overflow > 0 {
-		rb.readPos = (rb.readPos + overflow) % rb.capacity
-		rb.count -= overflow
-	}
+	written := 0
+	for written < n {
+		for !rb.closed && rb.count == rb.capacity {
+			rb.cond.Wait()
+		}
+		if rb.closed {
+			return
+		}
 
-	// Write data to buffer (may wrap around)
-	firstChunk := rb.capacity - rb.writePos
-	if firstChunk >= n {
-		copy(rb.buf[rb.writePos:], p)
-	} else {
-		copy(rb.buf[rb.writePos:], p[:firstChunk])
-		copy(rb.buf[0:], p[firstChunk:])
-	}
-	rb.writePos = (rb.writePos + n) % rb.capacity
-	rb.count += n
+		// Signal the reader only on the empty->non-empty transition to
+		// avoid a pthread_cond_signal syscall every call.
+		wasEmpty := rb.count == 0
 
-	// Signal readers that data is available
-	rb.cond.Signal()
+		avail := rb.capacity - rb.count
+		chunk := n - written
+		if chunk > avail {
+			chunk = avail
+		}
+
+		// Copy into the buffer, splitting the write if it wraps past
+		// the end of the underlying slice.
+		firstChunk := rb.capacity - rb.writePos
+		if firstChunk >= chunk {
+			copy(rb.buf[rb.writePos:], p[written:written+chunk])
+		} else {
+			copy(rb.buf[rb.writePos:], p[written:written+firstChunk])
+			copy(rb.buf[0:], p[written+firstChunk:written+chunk])
+		}
+		rb.writePos = (rb.writePos + chunk) % rb.capacity
+		rb.count += chunk
+		written += chunk
+
+		if wasEmpty {
+			rb.cond.Signal()
+		}
+	}
 }
 
 // Read implements io.Reader. Blocks until data is available or the buffer
@@ -79,7 +100,6 @@ func (rb *AudioRingBuffer) Read(p []byte) (int, error) {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
 
-	// Wait for data
 	for rb.count == 0 {
 		if rb.closed {
 			return 0, io.EOF
@@ -87,13 +107,17 @@ func (rb *AudioRingBuffer) Read(p []byte) (int, error) {
 		rb.cond.Wait()
 	}
 
-	// Read up to len(p) bytes
+	// Signal a blocked writer only when the buffer transitions out of
+	// the full state.
+	wasFull := rb.count == rb.capacity
+
 	n := len(p)
 	if n > rb.count {
 		n = rb.count
 	}
 
-	// Copy data from buffer (may wrap around)
+	// Copy out of the buffer, splitting the read if it wraps past the
+	// end of the underlying slice.
 	firstChunk := rb.capacity - rb.readPos
 	if firstChunk >= n {
 		copy(p, rb.buf[rb.readPos:rb.readPos+n])
@@ -103,6 +127,10 @@ func (rb *AudioRingBuffer) Read(p []byte) (int, error) {
 	}
 	rb.readPos = (rb.readPos + n) % rb.capacity
 	rb.count -= n
+
+	if wasFull {
+		rb.cond.Signal()
+	}
 
 	return n, nil
 }
@@ -114,17 +142,23 @@ func (rb *AudioRingBuffer) Buffered() int {
 	return rb.count
 }
 
-// Clear resets the buffer, discarding all data.
+// Clear resets the buffer, discarding all data. Any writer parked on a
+// full ring is woken so it can complete its Write against the now-empty
+// buffer.
 func (rb *AudioRingBuffer) Clear() {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
+	wasFull := rb.count == rb.capacity
 	rb.readPos = 0
 	rb.writePos = 0
 	rb.count = 0
+	if wasFull {
+		rb.cond.Signal()
+	}
 }
 
 // Close signals shutdown. Subsequent Reads return io.EOF when the buffer
-// is empty. Unblocks any goroutines waiting in Read.
+// is empty. Unblocks any goroutines waiting in Read or Write.
 func (rb *AudioRingBuffer) Close() {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()

@@ -1,7 +1,6 @@
 package desktop
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -10,16 +9,41 @@ import (
 
 const audioSampleRate = 48000
 
-// ringBufferCapacity is ~167ms at 48kHz stereo 16-bit (~32KB).
-const ringBufferCapacity = 32768
+// ringBufferCapacity is 6400 bytes, exactly two frames at 48kHz stereo
+// 16-bit at 60Hz. Small enough that the writer parks every frame or two,
+// keeping FPS tightly coupled to the audio device's drain rate; large
+// enough to absorb a single slow RunFrame without audio underrun. oto's
+// player buffer plus its context buffer provide additional downstream
+// headroom.
+const ringBufferCapacity = 6400
 
-// AudioPlayer manages audio playback via oto.
-// It writes int16 stereo samples to a ring buffer which oto's player
-// reads from in a pull model.
+// AudioPlayer manages audio playback via oto. It writes int16 stereo
+// samples to a ring buffer which oto's player reads from in a pull
+// model; the ring buffer's blocking Write paces the emulation loop.
+//
+// When the host has no usable audio device (headless, permission
+// denied, device busy) oto initialization fails and the player falls
+// back to a timer-driven drain goroutine. That keeps the ring-backed
+// pacing model intact so emulation still advances at real-time rate;
+// it just plays no sound and uses a software tick instead of the audio
+// device's hardware clock.
 type AudioPlayer struct {
 	player     *oto.Player
 	ringBuffer *AudioRingBuffer
 	audioBytes []byte // Pre-allocated buffer for int16-to-byte conversion
+
+	// nominalFrameSamples is the expected number of stereo int16 values
+	// per emulator frame (2 * audioSampleRate / FPS). QueueSamples pads
+	// short inputs up to this length with zeros so every frame drives
+	// ring-buffer backpressure even when the core returns no samples.
+	// Zero disables padding.
+	nominalFrameSamples int
+	padBuf              []int16 // Reusable scratch for pad-up zero-fill
+
+	// Silent-fallback drain goroutine state. Both channels are nil when
+	// a real oto.Player is driving the ring.
+	silentStop chan struct{}
+	silentDone chan struct{}
 }
 
 // oto context singleton — shared between game audio and notification audio
@@ -48,35 +72,101 @@ func ensureOtoContext() (*oto.Context, error) {
 	return otoCtx, otoInitErr
 }
 
-// NewAudioPlayer creates and initializes audio playback via oto.
-// The volume parameter sets the initial volume before playback starts,
-// preventing audio pops when muted (matching iOS behavior).
-func NewAudioPlayer(volume float64) (*AudioPlayer, error) {
+// NewAudioPlayer creates and initializes audio playback. The volume
+// parameter sets the initial volume before playback starts, preventing
+// audio pops when muted. nominalFrameSamples is the expected stereo
+// int16 count per emulator frame; QueueSamples pads short inputs up to
+// this length so every frame drives backpressure.
+//
+// If the audio device is unavailable, a silent fallback is returned:
+// emulation continues under the same blocking-ring timing model,
+// driven by a timer-based drain rather than the audio hardware clock.
+// The returned player is always usable.
+func NewAudioPlayer(volume float64, nominalFrameSamples int) *AudioPlayer {
+	rb := NewAudioRingBuffer(ringBufferCapacity)
+
 	ctx, err := ensureOtoContext()
 	if err != nil {
-		return nil, fmt.Errorf("oto audio not available: %w", err)
+		return newSilentAudioPlayer(rb, nominalFrameSamples)
 	}
 
-	rb := NewAudioRingBuffer(ringBufferCapacity)
 	player := ctx.NewPlayer(rb)
 	// Reduce mux player buffer from default 96000 bytes (0.5s) to ~19200 bytes
-	// (~50ms). Prevents large internal buffer accumulation at startup that
-	// causes ADT to over-correct.
+	// (~50ms). Prevents large internal buffer accumulation at startup.
 	player.SetBufferSize(19200)
-	// Set volume before Play() to avoid pop when muted
+	// Set volume before Play() to avoid pop when muted.
 	player.SetVolume(volume)
 	player.Play()
 
 	return &AudioPlayer{
-		player:     player,
-		ringBuffer: rb,
-		audioBytes: make([]byte, 0, 4096),
-	}, nil
+		player:              player,
+		ringBuffer:          rb,
+		audioBytes:          make([]byte, 0, 4096),
+		nominalFrameSamples: nominalFrameSamples,
+	}
+}
+
+// newSilentAudioPlayer returns an AudioPlayer whose ring is drained at
+// the audio device's nominal byte rate by a goroutine with a time.Ticker,
+// so that QueueSamples still blocks and paces the emulator. Used when
+// no real audio device is available.
+func newSilentAudioPlayer(rb *AudioRingBuffer, nominalFrameSamples int) *AudioPlayer {
+	ap := &AudioPlayer{
+		ringBuffer:          rb,
+		audioBytes:          make([]byte, 0, 4096),
+		nominalFrameSamples: nominalFrameSamples,
+		silentStop:          make(chan struct{}),
+		silentDone:          make(chan struct{}),
+	}
+	go ap.silentDrain()
+	return ap
+}
+
+// silentDrain pulls bytes out of the ring at the same average rate a
+// real audio device would consume. tickInterval is coarse enough that
+// timer jitter is averaged out and fine enough that ring latency stays
+// within a couple of frames.
+func (a *AudioPlayer) silentDrain() {
+	defer close(a.silentDone)
+
+	const tickInterval = 10 * time.Millisecond
+	const bytesPerSec = audioSampleRate * 4 // stereo int16
+	bytesPerTick := bytesPerSec * int(tickInterval) / int(time.Second)
+	buf := make([]byte, bytesPerTick)
+
+	ticker := time.NewTicker(tickInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-a.silentStop:
+			return
+		case <-ticker.C:
+			avail := a.ringBuffer.Buffered()
+			if avail == 0 {
+				continue
+			}
+			if avail > len(buf) {
+				avail = len(buf)
+			}
+			if _, err := a.ringBuffer.Read(buf[:avail]); err != nil {
+				return
+			}
+		}
+	}
 }
 
 // QueueSamples converts int16 stereo samples to bytes and writes them
-// to the ring buffer for oto to consume.
+// to the ring buffer for oto to consume. Blocks when the ring is full,
+// pacing the caller to the audio device's drain rate.
+//
+// When the input is shorter than nominalFrameSamples, it is padded with
+// trailing zeros up to that length. This guarantees one frame of
+// backpressure per call even when the core returns no samples for a
+// frame - without padding, the ring Write would be a no-op and the
+// emulation loop would free-spin until samples resumed.
 func (a *AudioPlayer) QueueSamples(samples []int16) {
+	samples = padToFrame(samples, &a.padBuf, a.nominalFrameSamples)
 	if len(samples) == 0 {
 		return
 	}
@@ -94,10 +184,26 @@ func (a *AudioPlayer) QueueSamples(samples []int16) {
 	a.ringBuffer.Write(a.audioBytes)
 }
 
-// GetBufferLevel returns the total bytes of audio data currently buffered
-// (ring buffer + oto player internal buffer). Used for ADT pacing.
-func (a *AudioPlayer) GetBufferLevel() int {
-	return a.ringBuffer.Buffered() + a.player.BufferedSize()
+// padToFrame returns samples extended with trailing zeros to nominalLen
+// stereo int16 values. If samples is already at least nominalLen, it is
+// returned unchanged. Otherwise samples is copied into *buf (growing it
+// if needed) and the tail is zeroed; *buf is updated so callers keep the
+// grown backing array across calls. nominalLen == 0 disables padding.
+func padToFrame(samples []int16, buf *[]int16, nominalLen int) []int16 {
+	if nominalLen <= 0 || len(samples) >= nominalLen {
+		return samples
+	}
+	if cap(*buf) < nominalLen {
+		*buf = make([]int16, nominalLen)
+	} else {
+		*buf = (*buf)[:nominalLen]
+	}
+	copy(*buf, samples)
+	tail := (*buf)[len(samples):]
+	for i := range tail {
+		tail[i] = 0
+	}
+	return *buf
 }
 
 // ClearQueue flushes all buffered audio from the ring buffer.
@@ -107,8 +213,11 @@ func (a *AudioPlayer) ClearQueue() {
 }
 
 // SetVolume sets the playback volume (0.0 = silent, 1.0 = normal, 2.0 = max).
-// Values are clamped to [0.0, 2.0].
+// Values are clamped to [0.0, 2.0]. No-op on the silent fallback.
 func (a *AudioPlayer) SetVolume(vol float64) {
+	if a.player == nil {
+		return
+	}
 	if vol < 0 {
 		vol = 0
 	} else if vol > 2.0 {
@@ -119,8 +228,17 @@ func (a *AudioPlayer) SetVolume(vol float64) {
 
 // Close cleans up audio resources.
 func (a *AudioPlayer) Close() {
-	if a.ringBuffer != nil {
-		a.ringBuffer.Close()
+	// Close the ring buffer first. Its broadcast wakes any Read that is
+	// parked on an empty buffer (oto's reader or the silent-drain
+	// goroutine's Read after a concurrent Clear), letting them observe
+	// EOF and return. Without this, stopping the silent-drain goroutine
+	// could deadlock if its Read happens to be parked.
+	a.ringBuffer.Close()
+
+	if a.silentStop != nil {
+		close(a.silentStop)
+		<-a.silentDone
+		a.silentStop = nil
 	}
 	if a.player != nil {
 		a.player.Close()

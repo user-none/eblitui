@@ -11,26 +11,20 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/user-none/eblitui/coreif"
-	"github.com/user-none/eblitui/romloader"
 	"github.com/user-none/eblitui/desktop/achievements"
 	"github.com/user-none/eblitui/desktop/metadata"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
-)
-
-// ADT (audio-driven timing) buffer thresholds in bytes.
-// At 48kHz stereo 16-bit: 3200 bytes/frame at 60fps.
-const (
-	adtMinBuffer = 9600  // ~3 frames — speed up below this
-	adtMaxBuffer = 19200 // ~6 frames — slow down above this
+	"github.com/user-none/eblitui/romloader"
 )
 
 // GameplayManager handles all gameplay-related state and logic.
 // This includes emulator control, input handling, save states,
 // play time tracking, and the pause menu.
 //
-// The emulator runs on a dedicated goroutine with audio-driven timing (ADT).
-// The Ebiten thread handles UI, input polling, and reads the shared framebuffer.
+// The emulator runs on a dedicated goroutine paced by the audio ring
+// buffer's blocking Write. The Ebiten thread handles UI, input polling,
+// and reads the shared framebuffer.
 type GameplayManager struct {
 	// Core factory and system info
 	factory      coreif.CoreFactory
@@ -45,7 +39,7 @@ type GameplayManager struct {
 	audioPlayer  *AudioPlayer
 	currentGame  *storage.GameEntry
 
-	// ADT goroutine control
+	// Emulation goroutine control
 	emuControl        *EmuControl
 	sharedInput       *SharedInput
 	sharedFramebuffer *SharedFramebuffer
@@ -294,7 +288,7 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 	gm.saveStater, _ = emu.(coreif.SaveStater)
 	gm.batterySaver, _ = emu.(coreif.BatterySaver)
 
-	// Create renderer and shared structures for ADT
+	// Create renderer and shared structures for the emulation goroutine
 	gm.renderer = NewFramebufferRenderer(gm.systemInfo.ScreenWidth, gm.systemInfo.PixelAspectRatio)
 	gm.renderer.SetAspectRatioMode(gm.config.Video.AspectRatio)
 	gm.sharedInput = &SharedInput{}
@@ -302,19 +296,20 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 	gm.emuControl = NewEmuControl()
 	gm.emuDone = make(chan struct{})
 
-	// Always create audio player for ADT timing.
-	// When muted, volume is set to 0 so the player still drains
-	// the buffer (driving timing) but produces no audible output.
+	// Audio-backpressure paces the emulation loop. When muted, volume
+	// is set to 0 so the player still drains the ring (driving timing)
+	// but produces no audible output. If no audio device is available,
+	// NewAudioPlayer returns a silent fallback that still paces the
+	// loop via a timer-driven drain.
 	volume := gm.config.Audio.Volume
 	if gm.config.Audio.Muted {
 		volume = 0
 	}
-	player, err := NewAudioPlayer(volume)
-	if err != nil {
-		log.Printf("Failed to init audio: %v", err)
-	} else {
-		gm.audioPlayer = player
-	}
+	// 2 * audioSampleRate / FPS stereo int16 values per frame (1600 at
+	// 60Hz, 1920 at 50Hz). The player pads short frames to this length
+	// so every RunFrame drives one frame of ring backpressure.
+	nominalFrameSamples := 2 * audioSampleRate / emu.GetTiming().FPS
+	gm.audioPlayer = NewAudioPlayer(volume, nominalFrameSamples)
 
 	// Load SRAM if exists
 	if gm.batterySaver != nil {
@@ -339,7 +334,7 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 		gm.rewindBuffer = NewRewindBuffer(gm.config.Rewind.BufferSizeMB, gm.config.Rewind.FrameStep, gm.systemInfo.SerializeSize)
 	}
 
-	// Set TPS to 60 for all regions — emu goroutine handles its own timing via ADT
+	// Set TPS to 60 for all regions; emu goroutine handles its own timing
 	ebiten.SetTPS(60)
 
 	// Start play time tracking
@@ -407,15 +402,15 @@ func (gm *GameplayManager) runEmulatorFrame() {
 	}
 }
 
-// emulationLoop runs on a dedicated goroutine. It executes emulator frames,
-// queues audio, updates the shared framebuffer, and paces itself using
-// audio-driven timing (ADT).
+// emulationLoop runs on a dedicated goroutine. It executes emulator
+// frames, queues audio, and updates the shared framebuffer. Pacing comes
+// from the audio player's ring buffer blocking on a full ring. The
+// player pads short inputs up to one frame of samples, so every
+// iteration drives one frame of backpressure regardless of whether the
+// core produced samples, a turbo-averaged mix, or nothing at all.
 func (gm *GameplayManager) emulationLoop() {
 	defer close(gm.emuDone)
 
-	timing := gm.emulator.GetTiming()
-	frameTime := time.Duration(float64(time.Second) / float64(timing.FPS))
-	lastFrameTime := time.Now()
 	autoSaveTimer := time.Now().Add(time.Second) // First serialize after 1 second
 
 	for {
@@ -434,11 +429,14 @@ func (gm *GameplayManager) emulationLoop() {
 		multiplier := gm.turboState.Read()
 		fastForwardMute := gm.config.Audio.FastForwardMute
 
-		// Run extra turbo frames (advance emulation, optionally collect audio)
+		// Run extra turbo frames. Always drain GetAudioSamples (even
+		// when muted) so the core's internal audio buffer doesn't
+		// accumulate across RunFrames.
 		for i := 1; i < multiplier; i++ {
 			gm.runEmulatorFrame()
+			samples := gm.emulator.GetAudioSamples()
 			if !fastForwardMute {
-				gm.turboAudioBuf = append(gm.turboAudioBuf, gm.emulator.GetAudioSamples()...)
+				gm.turboAudioBuf = append(gm.turboAudioBuf, samples...)
 			}
 		}
 
@@ -455,17 +453,23 @@ func (gm *GameplayManager) emulationLoop() {
 			}
 		}
 
-		// Queue audio samples
-		if gm.audioPlayer != nil {
-			switch {
-			case multiplier == 1:
-				gm.audioPlayer.QueueSamples(gm.emulator.GetAudioSamples())
-			case !fastForwardMute:
-				gm.turboAudioBuf = append(gm.turboAudioBuf, gm.emulator.GetAudioSamples()...)
-				averaged := averageAudio(gm.turboAudioBuf, multiplier)
-				gm.audioPlayer.QueueSamples(averaged)
-				gm.turboAudioBuf = gm.turboAudioBuf[:0]
-			}
+		// Queue one frame of audio. The ring buffer's blocking Write
+		// paces the loop to the audio drain rate; the player pads short
+		// or empty inputs up to one frame's worth of samples.
+		switch {
+		case multiplier == 1:
+			gm.audioPlayer.QueueSamples(gm.emulator.GetAudioSamples())
+		case !fastForwardMute:
+			gm.turboAudioBuf = append(gm.turboAudioBuf, gm.emulator.GetAudioSamples()...)
+			averaged := averageAudio(gm.turboAudioBuf, multiplier)
+			gm.audioPlayer.QueueSamples(averaged)
+			gm.turboAudioBuf = gm.turboAudioBuf[:0]
+		default:
+			// Muted fast-forward: drain the core's samples to keep its
+			// internal audio buffer from accumulating, then queue a
+			// nil slice so the player emits one frame of silence.
+			_ = gm.emulator.GetAudioSamples()
+			gm.audioPlayer.QueueSamples(nil)
 		}
 
 		// Update shared framebuffer for Draw thread
@@ -492,25 +496,6 @@ func (gm *GameplayManager) emulationLoop() {
 			}
 			autoSaveTimer = now.Add(gm.autoSaveInterval)
 		}
-
-		// ADT sleep: wall-clock baseline ± adjustment from audio buffer level
-		elapsed := time.Since(lastFrameTime)
-		sleepTime := frameTime - elapsed
-
-		if gm.audioPlayer != nil {
-			bufferLevel := gm.audioPlayer.GetBufferLevel()
-			if bufferLevel < adtMinBuffer {
-				sleepTime = time.Duration(float64(sleepTime) * 0.9)
-			} else if bufferLevel > adtMaxBuffer {
-				sleepTime = time.Duration(float64(sleepTime) * 1.1)
-			}
-		}
-
-		if sleepTime > time.Millisecond {
-			time.Sleep(sleepTime)
-		}
-
-		lastFrameTime = time.Now()
 	}
 }
 
@@ -600,9 +585,7 @@ func (gm *GameplayManager) Update() (pauseMenuOpened bool, err error) {
 					// Pause goroutine for rewind — we access emulator directly
 					gm.emuControl.RequestPause()
 					gm.rewindBuffer.SetRewinding(true)
-					if gm.audioPlayer != nil {
-						gm.audioPlayer.ClearQueue()
-					}
+					gm.audioPlayer.ClearQueue()
 				}
 				gm.rewindBuffer.Rewind(gm.emulator, gm.saveStater, items)
 				// Update shared framebuffer after rewind step
@@ -706,9 +689,15 @@ func (gm *GameplayManager) Exit(saveResume bool) {
 		return
 	}
 
-	// Stop emulation goroutine and wait for it to exit
+	// Stop emulation goroutine and wait for it to exit. The audio player
+	// is closed before waiting because a writer parked inside
+	// QueueSamples -> ring.Write cond.Wait needs the ring buffer's
+	// Close-broadcast to wake; otherwise the emulation goroutine cannot
+	// reach its next CheckPause check and Exit would deadlock.
 	if gm.emuControl != nil {
 		gm.emuControl.Stop()
+		gm.audioPlayer.Close()
+		gm.audioPlayer = nil
 		<-gm.emuDone
 	}
 
@@ -751,12 +740,6 @@ func (gm *GameplayManager) Exit(saveResume bool) {
 	gm.autoSaveState = nil
 	gm.autoSaveReady = false
 	gm.turboAudioBuf = nil
-
-	// Close audio player
-	if gm.audioPlayer != nil {
-		gm.audioPlayer.Close()
-		gm.audioPlayer = nil
-	}
 
 	// Reset achievement overlay and unload achievements
 	gm.achievementOverlay.Reset()
@@ -862,9 +845,7 @@ func (gm *GameplayManager) handleSaveStateKeys() {
 				gm.emulator.GetFramebufferStride(),
 				gm.emulator.GetActiveHeight(),
 			)
-			if gm.audioPlayer != nil {
-				gm.audioPlayer.ClearQueue()
-			}
+			gm.audioPlayer.ClearQueue()
 		}
 		gm.emuControl.RequestResume()
 	}

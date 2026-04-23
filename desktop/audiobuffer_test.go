@@ -4,6 +4,7 @@ import (
 	"io"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestAudioRingBuffer_BasicWriteRead(t *testing.T) {
@@ -31,37 +32,12 @@ func TestAudioRingBuffer_BasicWriteRead(t *testing.T) {
 	}
 }
 
-func TestAudioRingBuffer_Overflow(t *testing.T) {
-	rb := NewAudioRingBuffer(8)
-
-	// Write 6 bytes
-	rb.Write([]byte{1, 2, 3, 4, 5, 6})
-
-	// Write 5 more (overflows by 3, drops oldest 3)
-	rb.Write([]byte{7, 8, 9, 10, 11})
-
-	if rb.Buffered() != 8 {
-		t.Fatalf("expected 8 buffered bytes, got %d", rb.Buffered())
-	}
-
-	out := make([]byte, 8)
-	n, _ := rb.Read(out)
-	if n != 8 {
-		t.Fatalf("expected 8 bytes, got %d", n)
-	}
-	// Should have: 4, 5, 6, 7, 8, 9, 10, 11
-	expected := []byte{4, 5, 6, 7, 8, 9, 10, 11}
-	for i, b := range out {
-		if b != expected[i] {
-			t.Fatalf("byte %d: expected %d, got %d", i, expected[i], b)
-		}
-	}
-}
-
-func TestAudioRingBuffer_OverflowLargerThanCapacity(t *testing.T) {
+func TestAudioRingBuffer_WriteLargerThanCapacityKeepsTail(t *testing.T) {
 	rb := NewAudioRingBuffer(4)
 
-	// Write more data than capacity
+	// Write more data than capacity: only the last capacity bytes are
+	// kept; the oldest portion is discarded before the blocking path
+	// would ever see it.
 	rb.Write([]byte{1, 2, 3, 4, 5, 6, 7, 8})
 
 	if rb.Buffered() != 4 {
@@ -73,7 +49,6 @@ func TestAudioRingBuffer_OverflowLargerThanCapacity(t *testing.T) {
 	if n != 4 {
 		t.Fatalf("expected 4 bytes, got %d", n)
 	}
-	// Should have the last 4 bytes
 	expected := []byte{5, 6, 7, 8}
 	for i, b := range out {
 		if b != expected[i] {
@@ -88,6 +63,26 @@ func TestAudioRingBuffer_Clear(t *testing.T) {
 	rb.Clear()
 	if rb.Buffered() != 0 {
 		t.Fatalf("expected 0 buffered after clear, got %d", rb.Buffered())
+	}
+}
+
+func TestAudioRingBuffer_ClearUnblocksWriter(t *testing.T) {
+	rb := NewAudioRingBuffer(4)
+	rb.Write([]byte{1, 2, 3, 4})
+
+	writeDone := make(chan struct{})
+	go func() {
+		rb.Write([]byte{5, 6})
+		close(writeDone)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	rb.Clear()
+
+	select {
+	case <-writeDone:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Clear did not unblock a blocked Write")
 	}
 }
 
@@ -134,7 +129,9 @@ func TestAudioRingBuffer_CloseUnblocksReader(t *testing.T) {
 
 func TestAudioRingBuffer_ConcurrentReadWrite(t *testing.T) {
 	rb := NewAudioRingBuffer(1024)
-	totalBytes := 10000
+	const iterations = 100
+	const chunk = 100
+	totalBytes := iterations * chunk
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -142,8 +139,8 @@ func TestAudioRingBuffer_ConcurrentReadWrite(t *testing.T) {
 	// Writer goroutine
 	go func() {
 		defer wg.Done()
-		data := make([]byte, 100)
-		for i := 0; i < 100; i++ {
+		data := make([]byte, chunk)
+		for i := 0; i < iterations; i++ {
 			for j := range data {
 				data[j] = byte(i)
 			}
@@ -168,12 +165,8 @@ func TestAudioRingBuffer_ConcurrentReadWrite(t *testing.T) {
 
 	wg.Wait()
 
-	// With overflow, we may receive fewer bytes than written
-	if received == 0 {
-		t.Fatal("received 0 bytes")
-	}
-	if received > totalBytes {
-		t.Fatalf("received more bytes (%d) than written (%d)", received, totalBytes)
+	if received != totalBytes {
+		t.Fatalf("expected %d bytes with blocking write, got %d", totalBytes, received)
 	}
 }
 
@@ -235,5 +228,107 @@ func TestAudioRingBuffer_WriteAfterClose(t *testing.T) {
 
 	if rb.Buffered() != 0 {
 		t.Fatalf("expected 0 buffered after write to closed buffer, got %d", rb.Buffered())
+	}
+}
+
+func TestAudioRingBuffer_WriteBlocksWhenFull(t *testing.T) {
+	rb := NewAudioRingBuffer(4)
+	rb.Write([]byte{1, 2, 3, 4})
+
+	writeDone := make(chan struct{})
+	go func() {
+		rb.Write([]byte{5, 6})
+		close(writeDone)
+	}()
+
+	select {
+	case <-writeDone:
+		t.Fatal("Write should have blocked on full buffer")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	buf := make([]byte, 2)
+	if n, err := rb.Read(buf); n != 2 || err != nil {
+		t.Fatalf("Read returned n=%d err=%v", n, err)
+	}
+
+	select {
+	case <-writeDone:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Write did not unblock after Read drained space")
+	}
+
+	if got := rb.Buffered(); got != 4 {
+		t.Fatalf("expected 4 bytes buffered, got %d", got)
+	}
+}
+
+func TestAudioRingBuffer_CloseUnblocksWriter(t *testing.T) {
+	rb := NewAudioRingBuffer(4)
+	rb.Write([]byte{1, 2, 3, 4})
+
+	writeDone := make(chan struct{})
+	go func() {
+		rb.Write([]byte{5, 6})
+		close(writeDone)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	rb.Close()
+
+	select {
+	case <-writeDone:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Close did not unblock a blocked Write")
+	}
+}
+
+func TestAudioRingBuffer_WriteChunksAcrossBlock(t *testing.T) {
+	rb := NewAudioRingBuffer(4)
+	rb.Write([]byte{1, 2, 3, 4})
+
+	writeDone := make(chan struct{})
+	go func() {
+		rb.Write([]byte{5, 6, 7, 8})
+		close(writeDone)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-writeDone:
+		t.Fatal("Write should be blocked on full buffer")
+	default:
+	}
+
+	drain := make([]byte, 2)
+	if _, err := rb.Read(drain); err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-writeDone:
+		t.Fatal("Write should still be blocked after draining only half the needed space")
+	default:
+	}
+
+	if _, err := rb.Read(drain); err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+
+	select {
+	case <-writeDone:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Write did not complete after reader drained enough space")
+	}
+
+	out := make([]byte, 4)
+	if _, err := rb.Read(out); err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	for i, v := range []byte{5, 6, 7, 8} {
+		if out[i] != v {
+			t.Fatalf("mismatch at %d: got %d want %d", i, out[i], v)
+		}
 	}
 }

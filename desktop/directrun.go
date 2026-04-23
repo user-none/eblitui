@@ -2,14 +2,12 @@ package desktop
 
 import (
 	"fmt"
-	"log"
-	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/user-none/eblitui/coreif"
-	"github.com/user-none/eblitui/romloader"
 	"github.com/user-none/eblitui/desktop/display"
+	"github.com/user-none/eblitui/romloader"
 )
 
 // directRunner implements ebiten.Game for minimal direct ROM execution.
@@ -66,10 +64,11 @@ func RunDirect(factory coreif.CoreFactory, romPath string, options map[string]st
 	ebiten.SetWindowSize(windowW, windowH)
 	ebiten.SetWindowSizeLimits(minW, minH, -1, -1)
 
-	audioPlayer, err := NewAudioPlayer(1.0)
-	if err != nil {
-		log.Printf("Warning: audio initialization failed: %v", err)
-	}
+	// 2 * audioSampleRate / FPS stereo int16 values per frame (1600 at
+	// 60Hz, 1920 at 50Hz). Used by the player to pad short frames so
+	// every RunFrame drives one frame of ring backpressure.
+	nominalFrameSamples := 2 * audioSampleRate / emulator.GetTiming().FPS
+	audioPlayer := NewAudioPlayer(1.0, nominalFrameSamples)
 
 	dr := &directRunner{
 		emulator:     emulator,
@@ -92,13 +91,11 @@ func RunDirect(factory coreif.CoreFactory, romPath string, options map[string]st
 	return err
 }
 
-// emulationLoop runs on a dedicated goroutine with audio-driven timing.
+// emulationLoop runs on a dedicated goroutine. Pacing comes from the
+// audio player's ring buffer blocking on a full ring; the audio device's
+// drain rate is the loop's clock.
 func (dr *directRunner) emulationLoop() {
 	defer close(dr.emuDone)
-
-	timing := dr.emulator.GetTiming()
-	frameTime := time.Duration(float64(time.Second) / float64(timing.FPS))
-	lastFrameTime := time.Now()
 
 	for {
 		if !dr.emuControl.CheckPause() {
@@ -111,34 +108,13 @@ func (dr *directRunner) emulationLoop() {
 		}
 
 		dr.emulator.RunFrame()
-
-		if dr.audioPlayer != nil {
-			dr.audioPlayer.QueueSamples(dr.emulator.GetAudioSamples())
-		}
+		dr.audioPlayer.QueueSamples(dr.emulator.GetAudioSamples())
 
 		dr.sharedFB.Update(
 			dr.emulator.GetFramebuffer(),
 			dr.emulator.GetFramebufferStride(),
 			dr.emulator.GetActiveHeight(),
 		)
-
-		elapsed := time.Since(lastFrameTime)
-		sleepTime := frameTime - elapsed
-
-		if dr.audioPlayer != nil {
-			bufferLevel := dr.audioPlayer.GetBufferLevel()
-			if bufferLevel < adtMinBuffer {
-				sleepTime = time.Duration(float64(sleepTime) * 0.9)
-			} else if bufferLevel > adtMaxBuffer {
-				sleepTime = time.Duration(float64(sleepTime) * 1.1)
-			}
-		}
-
-		if sleepTime > time.Millisecond {
-			time.Sleep(sleepTime)
-		}
-
-		lastFrameTime = time.Now()
 	}
 }
 
@@ -192,10 +168,13 @@ func (dr *directRunner) pollInputToShared() {
 // Close cleans up resources.
 func (dr *directRunner) Close() {
 	dr.emuControl.Stop()
-	<-dr.emuDone
 
-	if dr.audioPlayer != nil {
-		dr.audioPlayer.Close()
-	}
+	// Close the audio player before waiting on emuDone. A writer parked
+	// inside QueueSamples -> ring.Write cond.Wait needs the ring buffer's
+	// Close-broadcast to wake; otherwise the emulation goroutine cannot
+	// reach its next CheckPause check and Close would deadlock.
+	dr.audioPlayer.Close()
+
+	<-dr.emuDone
 	dr.emulator.Close()
 }
