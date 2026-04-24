@@ -32,14 +32,6 @@ type AudioPlayer struct {
 	ringBuffer *AudioRingBuffer
 	audioBytes []byte // Pre-allocated buffer for int16-to-byte conversion
 
-	// nominalFrameSamples is the expected number of stereo int16 values
-	// per emulator frame (2 * audioSampleRate / FPS). QueueSamples pads
-	// short inputs up to this length with zeros so every frame drives
-	// ring-buffer backpressure even when the core returns no samples.
-	// Zero disables padding.
-	nominalFrameSamples int
-	padBuf              []int16 // Reusable scratch for pad-up zero-fill
-
 	// Silent-fallback drain goroutine state. Both channels are nil when
 	// a real oto.Player is driving the ring.
 	silentStop chan struct{}
@@ -74,20 +66,18 @@ func ensureOtoContext() (*oto.Context, error) {
 
 // NewAudioPlayer creates and initializes audio playback. The volume
 // parameter sets the initial volume before playback starts, preventing
-// audio pops when muted. nominalFrameSamples is the expected stereo
-// int16 count per emulator frame; QueueSamples pads short inputs up to
-// this length so every frame drives backpressure.
+// audio pops when muted.
 //
 // If the audio device is unavailable, a silent fallback is returned:
 // emulation continues under the same blocking-ring timing model,
 // driven by a timer-based drain rather than the audio hardware clock.
 // The returned player is always usable.
-func NewAudioPlayer(volume float64, nominalFrameSamples int) *AudioPlayer {
+func NewAudioPlayer(volume float64) *AudioPlayer {
 	rb := NewAudioRingBuffer(ringBufferCapacity)
 
 	ctx, err := ensureOtoContext()
 	if err != nil {
-		return newSilentAudioPlayer(rb, nominalFrameSamples)
+		return newSilentAudioPlayer(rb)
 	}
 
 	player := ctx.NewPlayer(rb)
@@ -99,10 +89,9 @@ func NewAudioPlayer(volume float64, nominalFrameSamples int) *AudioPlayer {
 	player.Play()
 
 	return &AudioPlayer{
-		player:              player,
-		ringBuffer:          rb,
-		audioBytes:          make([]byte, 0, 4096),
-		nominalFrameSamples: nominalFrameSamples,
+		player:     player,
+		ringBuffer: rb,
+		audioBytes: make([]byte, 0, 4096),
 	}
 }
 
@@ -110,13 +99,12 @@ func NewAudioPlayer(volume float64, nominalFrameSamples int) *AudioPlayer {
 // the audio device's nominal byte rate by a goroutine with a time.Ticker,
 // so that QueueSamples still blocks and paces the emulator. Used when
 // no real audio device is available.
-func newSilentAudioPlayer(rb *AudioRingBuffer, nominalFrameSamples int) *AudioPlayer {
+func newSilentAudioPlayer(rb *AudioRingBuffer) *AudioPlayer {
 	ap := &AudioPlayer{
-		ringBuffer:          rb,
-		audioBytes:          make([]byte, 0, 4096),
-		nominalFrameSamples: nominalFrameSamples,
-		silentStop:          make(chan struct{}),
-		silentDone:          make(chan struct{}),
+		ringBuffer: rb,
+		audioBytes: make([]byte, 0, 4096),
+		silentStop: make(chan struct{}),
+		silentDone: make(chan struct{}),
 	}
 	go ap.silentDrain()
 	return ap
@@ -159,14 +147,7 @@ func (a *AudioPlayer) silentDrain() {
 // QueueSamples converts int16 stereo samples to bytes and writes them
 // to the ring buffer for oto to consume. Blocks when the ring is full,
 // pacing the caller to the audio device's drain rate.
-//
-// When the input is shorter than nominalFrameSamples, it is padded with
-// trailing zeros up to that length. This guarantees one frame of
-// backpressure per call even when the core returns no samples for a
-// frame - without padding, the ring Write would be a no-op and the
-// emulation loop would free-spin until samples resumed.
 func (a *AudioPlayer) QueueSamples(samples []int16) {
-	samples = padToFrame(samples, &a.padBuf, a.nominalFrameSamples)
 	if len(samples) == 0 {
 		return
 	}
@@ -182,28 +163,6 @@ func (a *AudioPlayer) QueueSamples(samples []int16) {
 	}
 
 	a.ringBuffer.Write(a.audioBytes)
-}
-
-// padToFrame returns samples extended with trailing zeros to nominalLen
-// stereo int16 values. If samples is already at least nominalLen, it is
-// returned unchanged. Otherwise samples is copied into *buf (growing it
-// if needed) and the tail is zeroed; *buf is updated so callers keep the
-// grown backing array across calls. nominalLen == 0 disables padding.
-func padToFrame(samples []int16, buf *[]int16, nominalLen int) []int16 {
-	if nominalLen <= 0 || len(samples) >= nominalLen {
-		return samples
-	}
-	if cap(*buf) < nominalLen {
-		*buf = make([]int16, nominalLen)
-	} else {
-		*buf = (*buf)[:nominalLen]
-	}
-	copy(*buf, samples)
-	tail := (*buf)[len(samples):]
-	for i := range tail {
-		tail[i] = 0
-	}
-	return *buf
 }
 
 // ClearQueue flushes all buffered audio from the ring buffer.

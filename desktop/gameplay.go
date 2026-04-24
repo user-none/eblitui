@@ -305,11 +305,7 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 	if gm.config.Audio.Muted {
 		volume = 0
 	}
-	// 2 * audioSampleRate / FPS stereo int16 values per frame (1600 at
-	// 60Hz, 1920 at 50Hz). The player pads short frames to this length
-	// so every RunFrame drives one frame of ring backpressure.
-	nominalFrameSamples := 2 * audioSampleRate / emu.GetTiming().FPS
-	gm.audioPlayer = NewAudioPlayer(volume, nominalFrameSamples)
+	gm.audioPlayer = NewAudioPlayer(volume)
 
 	// Load SRAM if exists
 	if gm.batterySaver != nil {
@@ -454,8 +450,7 @@ func (gm *GameplayManager) emulationLoop() {
 		}
 
 		// Queue one frame of audio. The ring buffer's blocking Write
-		// paces the loop to the audio drain rate; the player pads short
-		// or empty inputs up to one frame's worth of samples.
+		// paces the loop to the audio drain rate.
 		switch {
 		case multiplier == 1:
 			gm.audioPlayer.QueueSamples(gm.emulator.GetAudioSamples())
@@ -466,10 +461,14 @@ func (gm *GameplayManager) emulationLoop() {
 			gm.turboAudioBuf = gm.turboAudioBuf[:0]
 		default:
 			// Muted fast-forward: drain the core's samples to keep its
-			// internal audio buffer from accumulating, then queue a
-			// nil slice so the player emits one frame of silence.
-			_ = gm.emulator.GetAudioSamples()
-			gm.audioPlayer.QueueSamples(nil)
+			// internal audio buffer from accumulating, then queue an
+			// equal-length run of zeros. Matching the core's per-frame
+			// sample count keeps ring pacing aligned with real time;
+			// zero data plays silently regardless of volume.
+			samples := gm.emulator.GetAudioSamples()
+			if len(samples) > 0 {
+				gm.audioPlayer.QueueSamples(make([]int16, len(samples)))
+			}
 		}
 
 		// Update shared framebuffer for Draw thread

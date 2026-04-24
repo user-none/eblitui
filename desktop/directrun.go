@@ -64,11 +64,7 @@ func RunDirect(factory coreif.CoreFactory, romPath string, options map[string]st
 	ebiten.SetWindowSize(windowW, windowH)
 	ebiten.SetWindowSizeLimits(minW, minH, -1, -1)
 
-	// 2 * audioSampleRate / FPS stereo int16 values per frame (1600 at
-	// 60Hz, 1920 at 50Hz). Used by the player to pad short frames so
-	// every RunFrame drives one frame of ring backpressure.
-	nominalFrameSamples := 2 * audioSampleRate / emulator.GetTiming().FPS
-	audioPlayer := NewAudioPlayer(1.0, nominalFrameSamples)
+	audioPlayer := NewAudioPlayer(1.0)
 
 	dr := &directRunner{
 		emulator:     emulator,
