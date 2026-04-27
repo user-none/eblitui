@@ -283,6 +283,67 @@ func TestAudioRingBuffer_CloseUnblocksWriter(t *testing.T) {
 	}
 }
 
+func TestAudioRingBuffer_DrainCallbackInvoked(t *testing.T) {
+	rb := NewAudioRingBuffer(16)
+
+	var got int
+	rb.SetOnDrain(func(n int) {
+		got = n
+	})
+
+	rb.Write([]byte{1, 2, 3, 4, 5, 6, 7, 8})
+
+	out := make([]byte, 5)
+	if _, err := rb.Read(out); err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+
+	if got != 5 {
+		t.Fatalf("expected drain callback to receive 5 bytes, got %d", got)
+	}
+}
+
+func TestAudioRingBuffer_DrainCallbackNilSafe(t *testing.T) {
+	rb := NewAudioRingBuffer(16)
+
+	rb.Write([]byte{1, 2, 3, 4})
+
+	out := make([]byte, 4)
+	if _, err := rb.Read(out); err != nil {
+		t.Fatalf("Read with nil callback returned error: %v", err)
+	}
+}
+
+func TestAudioRingBuffer_DrainCallbackOutsideLock(t *testing.T) {
+	rb := NewAudioRingBuffer(16)
+
+	// A callback that calls back into the buffer would deadlock if the
+	// callback fired while rb.mu was still held.
+	var observed int
+	rb.SetOnDrain(func(n int) {
+		observed = rb.Buffered()
+	})
+
+	rb.Write([]byte{1, 2, 3, 4, 5, 6, 7, 8})
+
+	out := make([]byte, 5)
+	done := make(chan struct{})
+	go func() {
+		rb.Read(out)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Read deadlocked when callback re-entered ring buffer")
+	}
+
+	if observed != 3 {
+		t.Fatalf("expected callback to observe 3 bytes still buffered, got %d", observed)
+	}
+}
+
 func TestAudioRingBuffer_WriteChunksAcrossBlock(t *testing.T) {
 	rb := NewAudioRingBuffer(4)
 	rb.Write([]byte{1, 2, 3, 4})

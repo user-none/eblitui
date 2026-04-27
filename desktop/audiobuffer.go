@@ -19,6 +19,9 @@ type AudioRingBuffer struct {
 	mu       sync.Mutex
 	cond     *sync.Cond
 	closed   bool
+	// onDrain is invoked from Read after the buffer lock is released, so
+	// callbacks that take their own lock cannot deadlock against rb.mu.
+	onDrain func(n int)
 }
 
 // NewAudioRingBuffer creates a ring buffer with the given capacity in bytes.
@@ -98,10 +101,10 @@ func (rb *AudioRingBuffer) Write(p []byte) {
 // is closed. Returns io.EOF when closed and empty.
 func (rb *AudioRingBuffer) Read(p []byte) (int, error) {
 	rb.mu.Lock()
-	defer rb.mu.Unlock()
 
 	for rb.count == 0 {
 		if rb.closed {
+			rb.mu.Unlock()
 			return 0, io.EOF
 		}
 		rb.cond.Wait()
@@ -132,7 +135,24 @@ func (rb *AudioRingBuffer) Read(p []byte) (int, error) {
 		rb.cond.Signal()
 	}
 
+	cb := rb.onDrain
+	rb.mu.Unlock()
+
+	if cb != nil {
+		cb(n)
+	}
+
 	return n, nil
+}
+
+// SetOnDrain installs a callback invoked after each Read completes,
+// outside the buffer lock, with the number of bytes read. Used by the
+// pacing layer to convert real-time consumer drain into producer wake
+// signals. Pass nil to clear.
+func (rb *AudioRingBuffer) SetOnDrain(fn func(n int)) {
+	rb.mu.Lock()
+	rb.onDrain = fn
+	rb.mu.Unlock()
 }
 
 // Buffered returns the number of bytes currently in the buffer.

@@ -22,9 +22,11 @@ import (
 // This includes emulator control, input handling, save states,
 // play time tracking, and the pause menu.
 //
-// The emulator runs on a dedicated goroutine paced by the audio ring
-// buffer's blocking Write. The Ebiten thread handles UI, input polling,
-// and reads the shared framebuffer.
+// The emulator runs on a dedicated goroutine paced by the audio
+// player's WaitForDemand: each iteration parks until the audio device
+// has drained enough bytes to request another frame's worth of work.
+// The Ebiten thread handles UI, input polling, and reads the shared
+// framebuffer.
 type GameplayManager struct {
 	// Core factory and system info
 	factory      coreif.CoreFactory
@@ -296,16 +298,16 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 	gm.emuControl = NewEmuControl()
 	gm.emuDone = make(chan struct{})
 
-	// Audio-backpressure paces the emulation loop. When muted, volume
-	// is set to 0 so the player still drains the ring (driving timing)
-	// but produces no audible output. If no audio device is available,
-	// NewAudioPlayer returns a silent fallback that still paces the
-	// loop via a timer-driven drain.
+	// The audio device's drain rate paces the emulation loop via
+	// WaitForDemand. When muted, volume is set to 0 so the player still
+	// drains the ring (driving timing) but produces no audible output.
+	// If no audio device is available, NewAudioPlayer returns a silent
+	// fallback that still paces the loop via a timer-driven drain.
 	volume := gm.config.Audio.Volume
 	if gm.config.Audio.Muted {
 		volume = 0
 	}
-	gm.audioPlayer = NewAudioPlayer(volume)
+	gm.audioPlayer = NewAudioPlayer(volume, emu.GetTiming().FPS)
 
 	// Load SRAM if exists
 	if gm.batterySaver != nil {
@@ -399,11 +401,12 @@ func (gm *GameplayManager) runEmulatorFrame() {
 }
 
 // emulationLoop runs on a dedicated goroutine. It executes emulator
-// frames, queues audio, and updates the shared framebuffer. Pacing comes
-// from the audio player's ring buffer blocking on a full ring. The
-// player pads short inputs up to one frame of samples, so every
-// iteration drives one frame of backpressure regardless of whether the
-// core produced samples, a turbo-averaged mix, or nothing at all.
+// frames, queues audio, and updates the shared framebuffer. Pacing
+// comes from the audio player's WaitForDemand: each iteration waits
+// until the audio device has drained enough bytes to request another
+// frame's worth of work. Empty audio frames are padded to one frame of
+// silence inside QueueSamples so the demand signal keeps firing even
+// when the core produces no samples.
 func (gm *GameplayManager) emulationLoop() {
 	defer close(gm.emuDone)
 
@@ -412,6 +415,9 @@ func (gm *GameplayManager) emulationLoop() {
 	for {
 		// Check pause/stop
 		if !gm.emuControl.CheckPause() {
+			return
+		}
+		if !gm.audioPlayer.WaitForDemand() {
 			return
 		}
 
@@ -449,8 +455,9 @@ func (gm *GameplayManager) emulationLoop() {
 			}
 		}
 
-		// Queue one frame of audio. The ring buffer's blocking Write
-		// paces the loop to the audio drain rate.
+		// Queue one frame of audio. QueueSamples auto-pads empty input
+		// to one frame of silence, so every branch drives the demand
+		// signal even when the core produces no samples.
 		switch {
 		case multiplier == 1:
 			gm.audioPlayer.QueueSamples(gm.emulator.GetAudioSamples())
@@ -462,13 +469,11 @@ func (gm *GameplayManager) emulationLoop() {
 		default:
 			// Muted fast-forward: drain the core's samples to keep its
 			// internal audio buffer from accumulating, then queue an
-			// equal-length run of zeros. Matching the core's per-frame
-			// sample count keeps ring pacing aligned with real time;
-			// zero data plays silently regardless of volume.
+			// equal-length run of zeros (or the auto-padded silent
+			// frame when the core produced nothing). Zero data plays
+			// silently regardless of volume.
 			samples := gm.emulator.GetAudioSamples()
-			if len(samples) > 0 {
-				gm.audioPlayer.QueueSamples(make([]int16, len(samples)))
-			}
+			gm.audioPlayer.QueueSamples(make([]int16, len(samples)))
 		}
 
 		// Update shared framebuffer for Draw thread
@@ -689,10 +694,9 @@ func (gm *GameplayManager) Exit(saveResume bool) {
 	}
 
 	// Stop emulation goroutine and wait for it to exit. The audio player
-	// is closed before waiting because a writer parked inside
-	// QueueSamples -> ring.Write cond.Wait needs the ring buffer's
-	// Close-broadcast to wake; otherwise the emulation goroutine cannot
-	// reach its next CheckPause check and Exit would deadlock.
+	// is closed before waiting because the goroutine may be parked inside
+	// WaitForDemand or ring.Write; AudioPlayer.Close wakes both paths so
+	// the goroutine can reach its next CheckPause check and exit.
 	if gm.emuControl != nil {
 		gm.emuControl.Stop()
 		gm.audioPlayer.Close()

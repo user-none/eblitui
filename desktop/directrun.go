@@ -64,7 +64,7 @@ func RunDirect(factory coreif.CoreFactory, romPath string, options map[string]st
 	ebiten.SetWindowSize(windowW, windowH)
 	ebiten.SetWindowSizeLimits(minW, minH, -1, -1)
 
-	audioPlayer := NewAudioPlayer(1.0)
+	audioPlayer := NewAudioPlayer(1.0, emulator.GetTiming().FPS)
 
 	dr := &directRunner{
 		emulator:     emulator,
@@ -88,13 +88,17 @@ func RunDirect(factory coreif.CoreFactory, romPath string, options map[string]st
 }
 
 // emulationLoop runs on a dedicated goroutine. Pacing comes from the
-// audio player's ring buffer blocking on a full ring; the audio device's
+// audio player's WaitForDemand: each frame waits until the audio device
+// has drained enough bytes to request another frame. The audio device's
 // drain rate is the loop's clock.
 func (dr *directRunner) emulationLoop() {
 	defer close(dr.emuDone)
 
 	for {
 		if !dr.emuControl.CheckPause() {
+			return
+		}
+		if !dr.audioPlayer.WaitForDemand() {
 			return
 		}
 
