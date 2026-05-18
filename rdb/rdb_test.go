@@ -83,12 +83,13 @@ func TestRDBLookups(t *testing.T) {
 	// Build an RDB manually to test lookup methods
 	rdb := &RDB{
 		games: []Game{
-			{Name: "Sonic", CRC32: 0x12345678, MD5: "abcdef0123456789"},
-			{Name: "Alex Kidd", CRC32: 0xAABBCCDD, MD5: "1234567890abcdef"},
-			{Name: "No Hash", CRC32: 0, MD5: ""},
+			{Name: "Sonic", CRC32: 0x12345678, MD5: "abcdef0123456789", Serial: "G-1234"},
+			{Name: "Alex Kidd", CRC32: 0xAABBCCDD, MD5: "1234567890abcdef", Serial: "MK-27000"},
+			{Name: "No Hash", CRC32: 0, MD5: "", Serial: ""},
 		},
-		byCRC32: make(map[uint32]*Game),
-		byMD5:   make(map[string]*Game),
+		byCRC32:  make(map[uint32]*Game),
+		byMD5:    make(map[string]*Game),
+		bySerial: make(map[string]*Game),
 	}
 	// Build indexes like Parse does
 	for i := range rdb.games {
@@ -97,6 +98,9 @@ func TestRDBLookups(t *testing.T) {
 		}
 		if rdb.games[i].MD5 != "" {
 			rdb.byMD5[rdb.games[i].MD5] = &rdb.games[i]
+		}
+		if rdb.games[i].Serial != "" {
+			rdb.bySerial[rdb.games[i].Serial] = &rdb.games[i]
 		}
 	}
 
@@ -134,6 +138,23 @@ func TestRDBLookups(t *testing.T) {
 		}
 	})
 
+	t.Run("FindBySerial found", func(t *testing.T) {
+		g := rdb.FindBySerial("MK-27000")
+		if g == nil {
+			t.Fatal("expected to find game")
+		}
+		if g.Name != "Alex Kidd" {
+			t.Errorf("expected Alex Kidd, got %s", g.Name)
+		}
+	})
+
+	t.Run("FindBySerial not found", func(t *testing.T) {
+		g := rdb.FindBySerial("nonexistent")
+		if g != nil {
+			t.Errorf("expected nil, got %+v", g)
+		}
+	})
+
 	t.Run("GetMD5ByCRC32 found", func(t *testing.T) {
 		md5 := rdb.GetMD5ByCRC32(0x12345678)
 		if md5 != "abcdef0123456789" {
@@ -157,9 +178,10 @@ func TestRDBLookups(t *testing.T) {
 
 func TestEmptyRDB(t *testing.T) {
 	rdb := &RDB{
-		games:   nil,
-		byCRC32: make(map[uint32]*Game),
-		byMD5:   make(map[string]*Game),
+		games:    nil,
+		byCRC32:  make(map[uint32]*Game),
+		byMD5:    make(map[string]*Game),
+		bySerial: make(map[string]*Game),
 	}
 
 	if rdb.GameCount() != 0 {
@@ -169,6 +191,9 @@ func TestEmptyRDB(t *testing.T) {
 		t.Errorf("expected nil, got %+v", g)
 	}
 	if g := rdb.FindByMD5("test"); g != nil {
+		t.Errorf("expected nil, got %+v", g)
+	}
+	if g := rdb.FindBySerial("test"); g != nil {
 		t.Errorf("expected nil, got %+v", g)
 	}
 	if md5 := rdb.GetMD5ByCRC32(0x12345678); md5 != "" {

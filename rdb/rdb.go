@@ -33,9 +33,10 @@ type Game struct {
 
 // RDB contains all game entries from a parsed RDB file
 type RDB struct {
-	games   []Game
-	byCRC32 map[uint32]*Game // Index for fast CRC32 lookups
-	byMD5   map[string]*Game // Index for fast MD5 lookups
+	games    []Game
+	byCRC32  map[uint32]*Game // Index for fast CRC32 lookups
+	byMD5    map[string]*Game // Index for fast MD5 lookups
+	bySerial map[string]*Game // Index for fast disc-serial lookups
 }
 
 // MessagePack format constants
@@ -72,18 +73,22 @@ func Parse(data []byte) *RDB {
 	games := parseGames(data)
 
 	rdb := &RDB{
-		games:   games,
-		byCRC32: make(map[uint32]*Game, len(games)),
-		byMD5:   make(map[string]*Game, len(games)),
+		games:    games,
+		byCRC32:  make(map[uint32]*Game, len(games)),
+		byMD5:    make(map[string]*Game, len(games)),
+		bySerial: make(map[string]*Game, len(games)),
 	}
 
-	// Build CRC32 and MD5 indexes
+	// Build CRC32, MD5, and serial indexes
 	for i := range rdb.games {
 		if rdb.games[i].CRC32 != 0 {
 			rdb.byCRC32[rdb.games[i].CRC32] = &rdb.games[i]
 		}
 		if rdb.games[i].MD5 != "" {
 			rdb.byMD5[rdb.games[i].MD5] = &rdb.games[i]
+		}
+		if rdb.games[i].Serial != "" {
+			rdb.bySerial[rdb.games[i].Serial] = &rdb.games[i]
 		}
 	}
 
@@ -98,6 +103,11 @@ func (rdb *RDB) FindByCRC32(crc32 uint32) *Game {
 // FindByMD5 looks up a game by its MD5 hash
 func (rdb *RDB) FindByMD5(md5 string) *Game {
 	return rdb.byMD5[md5]
+}
+
+// FindBySerial looks up a game by its disc serial
+func (rdb *RDB) FindBySerial(serial string) *Game {
+	return rdb.bySerial[serial]
 }
 
 // GetMD5ByCRC32 returns the MD5 hash for a game found by CRC32
