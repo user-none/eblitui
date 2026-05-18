@@ -34,12 +34,14 @@ type GameplayManager struct {
 	inputMapping InputMapping
 
 	// Emulation state
-	emulator     coreif.Emulator
-	saveStater   coreif.SaveStater   // Detected at launch (may be nil)
-	batterySaver coreif.BatterySaver // Detected at launch (may be nil)
-	renderer     *FramebufferRenderer
-	audioPlayer  *AudioPlayer
-	currentGame  *storage.GameEntry
+	emulator       coreif.Emulator
+	saveStater     coreif.SaveStater     // Detected at launch (may be nil)
+	batterySaver   coreif.BatterySaver   // Detected at launch (may be nil)
+	aspectProvider coreif.AspectProvider // Detected at launch (may be nil)
+	renderer       *FramebufferRenderer
+	audioPlayer    *AudioPlayer
+	currentGame    *storage.GameEntry
+	disc           *romloader.Disc // open streaming disc (disc-based systems)
 
 	// Emulation goroutine control
 	emuControl        *EmuControl
@@ -188,8 +190,10 @@ func (gm *GameplayManager) CurrentGameCRC() string {
 	return ""
 }
 
-// Launch starts the emulator with the specified game
-func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
+// Launch starts the emulator with the specified game. discIndex selects
+// which disc of a multi-disc game to launch; -1 uses the entry's
+// remembered SelectedDisc. Ignored for single-disc and cartridge games.
+func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bool {
 	// Rebuild input mapping from current config (settings may have changed)
 	gm.inputMapping = BuildMappingFromConfig(
 		gm.systemInfo.Buttons,
@@ -203,24 +207,71 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 		return false
 	}
 
-	// Load ROM
-	romData, _, err := romloader.Load(game.File, gm.systemInfo.Extensions)
-	if err != nil {
-		game.Missing = true
-		storage.SaveLibrary(gm.library)
-		gm.notification.ShowDefault("Failed to load ROM")
-		return false
-	}
-
 	// Create emulator
-	emu, err := gm.factory.CreateEmulator(romData)
-	if err != nil {
-		gm.notification.ShowDefault("Failed to create emulator")
-		return false
-	}
+	emu := gm.factory.CreateEmulator()
 	gm.emulator = emu
 	gm.currentGame = game
 	gm.saveStateManager.SetGame(gameCRC)
+
+	// Any failure path below must release the emulator (and the disc
+	// handle for disc-based systems). The success path sets launched.
+	launched := false
+	defer func() {
+		if launched {
+			return
+		}
+		if gm.disc != nil {
+			gm.disc.Close()
+			gm.disc = nil
+		}
+		emu.Close()
+		gm.emulator = nil
+	}()
+
+	// Provide content: disc-based systems stream from disk via SetDisc;
+	// cartridge systems load the ROM bytes via SetRom.
+	var romData []byte
+	if gm.systemInfo.Disc {
+		// Resolve which disc to load. Disc games carry a Discs list and
+		// SelectedDisc is the slice index into it; discIndex == -1 means
+		// use the remembered SelectedDisc.
+		if len(game.Discs) == 0 {
+			game.Missing = true
+			storage.SaveLibrary(gm.library)
+			gm.notification.ShowDefault("Failed to load disc")
+			return false
+		}
+		idx := discIndex
+		if idx < 0 {
+			idx = game.SelectedDisc
+		}
+		if idx < 0 || idx >= len(game.Discs) {
+			idx = 0
+		}
+		disc, derr := romloader.OpenDisc(game.Discs[idx].File)
+		if derr != nil {
+			game.Missing = true
+			storage.SaveLibrary(gm.library)
+			gm.notification.ShowDefault("Failed to load disc")
+			return false
+		}
+		gm.disc = disc
+		emu.SetDisc(disc)
+		// Persist the chosen disc so it is remembered next launch.
+		if game.SelectedDisc != idx {
+			game.SelectedDisc = idx
+		}
+	} else {
+		data, _, lerr := romloader.Load(game.File, gm.systemInfo.Extensions)
+		if lerr != nil {
+			game.Missing = true
+			storage.SaveLibrary(gm.library)
+			gm.notification.ShowDefault("Failed to load ROM")
+			return false
+		}
+		romData = data
+		emu.SetRom(romData)
+	}
 
 	// Apply core options: use config value if set, otherwise declared default
 	for _, opt := range gm.systemInfo.CoreOptions {
@@ -281,7 +332,13 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 			}
 			continue
 		}
-		emu.SetBIOS(opt.Key, data)
+		if err := emu.SetBIOS(opt.Key, data); err != nil {
+			if opt.Required {
+				gm.notification.ShowDefault("BIOS rejected: " + opt.Label)
+				return false
+			}
+			continue
+		}
 	}
 
 	emu.Start()
@@ -289,6 +346,7 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 	// Detect optional interfaces
 	gm.saveStater, _ = emu.(coreif.SaveStater)
 	gm.batterySaver, _ = emu.(coreif.BatterySaver)
+	gm.aspectProvider, _ = emu.(coreif.AspectProvider)
 
 	// Create renderer and shared structures for the emulation goroutine
 	gm.renderer = NewFramebufferRenderer(gm.systemInfo.ScreenWidth, gm.systemInfo.PixelAspectRatio)
@@ -386,9 +444,20 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool) bool {
 	}
 
 	// Start the emulation goroutine
+	launched = true
 	go gm.emulationLoop()
 
 	return true
+}
+
+// currentPAR returns the pixel aspect ratio to deliver with the frame:
+// the core's cached per-frame value when it implements AspectProvider,
+// otherwise the static SystemInfo value.
+func (gm *GameplayManager) currentPAR() float64 {
+	if gm.aspectProvider != nil {
+		return gm.aspectProvider.PixelAspectRatio()
+	}
+	return gm.systemInfo.PixelAspectRatio
 }
 
 // runEmulatorFrame advances the emulator by one frame and processes achievements.
@@ -481,6 +550,7 @@ func (gm *GameplayManager) emulationLoop() {
 			gm.emulator.GetFramebuffer(),
 			gm.emulator.GetFramebufferStride(),
 			gm.emulator.GetActiveHeight(),
+			gm.currentPAR(),
 		)
 
 		// Capture rewind state (only when not rewinding)
@@ -597,6 +667,7 @@ func (gm *GameplayManager) Update() (pauseMenuOpened bool, err error) {
 					gm.emulator.GetFramebuffer(),
 					gm.emulator.GetFramebufferStride(),
 					gm.emulator.GetActiveHeight(),
+					gm.currentPAR(),
 				)
 				return false, nil
 			}
@@ -632,10 +703,11 @@ func (gm *GameplayManager) Draw(screen *ebiten.Image) {
 		return
 	}
 
-	pixels, stride, height := gm.sharedFramebuffer.Read()
+	pixels, stride, height, par := gm.sharedFramebuffer.Read()
 	if height == 0 {
 		return
 	}
+	gm.renderer.SetPAR(par)
 	gm.renderer.DrawFramebuffer(screen, pixels, stride, height)
 
 	// Check for pending achievement screenshot
@@ -657,7 +729,7 @@ func (gm *GameplayManager) DrawFramebuffer() *ebiten.Image {
 	if gm.emulator == nil || gm.sharedFramebuffer == nil || gm.renderer == nil {
 		return nil
 	}
-	pixels, stride, height := gm.sharedFramebuffer.Read()
+	pixels, stride, height, _ := gm.sharedFramebuffer.Read()
 	if height == 0 {
 		return nil
 	}
@@ -752,6 +824,10 @@ func (gm *GameplayManager) Exit(saveResume bool) {
 
 	// Close emulator
 	gm.emulator.Close()
+	if gm.disc != nil {
+		gm.disc.Close()
+		gm.disc = nil
+	}
 
 	// Clear emulator and optional interfaces
 	gm.emulator = nil
@@ -847,6 +923,7 @@ func (gm *GameplayManager) handleSaveStateKeys() {
 				gm.emulator.GetFramebuffer(),
 				gm.emulator.GetFramebufferStride(),
 				gm.emulator.GetActiveHeight(),
+				gm.currentPAR(),
 			)
 			gm.audioPlayer.ClearQueue()
 		}

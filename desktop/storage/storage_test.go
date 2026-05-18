@@ -1,10 +1,73 @@
 package storage
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestGameEntryDiscsRoundTrip(t *testing.T) {
+	in := &GameEntry{
+		CRC32:       "MK-81307",
+		Name:        "Panzer Dragoon Saga",
+		DisplayName: "Panzer Dragoon Saga",
+		Discs: []GameDisc{
+			{Index: 0, File: "/roms/pds1.chd", Name: "Panzer Dragoon Saga (USA) (Disc 1)"},
+			{Index: 1, File: "/roms/pds2.chd", Name: "Panzer Dragoon Saga (USA) (Disc 2)"},
+		},
+		SelectedDisc: 1,
+	}
+	b, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var out GameEntry
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if len(out.Discs) != 2 || out.Discs[1].File != "/roms/pds2.chd" || out.Discs[1].Index != 1 {
+		t.Errorf("Discs round-trip failed: %+v", out.Discs)
+	}
+	if out.SelectedDisc != 1 {
+		t.Errorf("SelectedDisc = %d, want 1", out.SelectedDisc)
+	}
+}
+
+func TestGameEntryBackCompatNoDiscs(t *testing.T) {
+	// Old library.json entries have neither discs nor selectedDisc.
+	old := `{"crc32":"abc","file":"/roms/sonic.chd","name":"Sonic","displayName":"Sonic"}`
+	var e GameEntry
+	if err := json.Unmarshal([]byte(old), &e); err != nil {
+		t.Fatalf("Unmarshal old format: %v", err)
+	}
+	if e.Discs != nil {
+		t.Errorf("Discs = %v, want nil for old format", e.Discs)
+	}
+	if e.SelectedDisc != 0 {
+		t.Errorf("SelectedDisc = %d, want 0 for old format", e.SelectedDisc)
+	}
+	// Single-disc/cartridge entries must omit the new fields entirely.
+	b, err := json.Marshal(&GameEntry{CRC32: "abc", File: "/roms/sonic.chd"})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	s := string(b)
+	for _, sub := range []string{"\"discs\"", "\"selectedDisc\""} {
+		if containsSub(s, sub) {
+			t.Errorf("marshaled single-disc entry contains %s: %s", sub, s)
+		}
+	}
+}
+
+func containsSub(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
 
 func TestValidFontSize(t *testing.T) {
 	tests := []struct {

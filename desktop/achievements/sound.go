@@ -2,9 +2,10 @@ package achievements
 
 import "math"
 
-// generateUnlockSound creates a gentle achievement chime (48kHz stereo S16LE)
-func generateUnlockSound() []byte {
-	sampleRate := 48000
+// generateUnlockSound creates a gentle achievement chime (stereo S16LE)
+// synthesized at the given sample rate so it matches the process-wide
+// oto context rate.
+func generateUnlockSound(sampleRate int) []byte {
 	duration := 0.8
 	numSamples := int(float64(sampleRate) * duration)
 

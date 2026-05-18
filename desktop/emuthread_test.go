@@ -49,15 +49,18 @@ func TestSharedFramebuffer_UpdateAndRead(t *testing.T) {
 		pixels[i] = byte(i % 256)
 	}
 
-	sf.Update(pixels, stride, height)
+	sf.Update(pixels, stride, height, 1.25)
 
-	readPixels, readStride, readHeight := sf.Read()
+	readPixels, readStride, readHeight, readPAR := sf.Read()
 
 	if readStride != stride {
 		t.Fatalf("stride mismatch: expected %d, got %d", stride, readStride)
 	}
 	if readHeight != height {
 		t.Fatalf("height mismatch: expected %d, got %d", height, readHeight)
+	}
+	if readPAR != 1.25 {
+		t.Fatalf("par mismatch: expected 1.25, got %v", readPAR)
 	}
 
 	// Verify pixel data (readPixels is a copy, safe to use)

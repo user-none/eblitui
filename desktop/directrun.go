@@ -14,15 +14,16 @@ import (
 // It skips the full UI (library, settings, save states, achievements, etc.)
 // and runs the emulator with just input, audio, and rendering.
 type directRunner struct {
-	emulator     coreif.Emulator
-	systemInfo   coreif.SystemInfo
-	inputMapping InputMapping
-	renderer     *FramebufferRenderer
-	audioPlayer  *AudioPlayer
-	emuControl   *EmuControl
-	sharedInput  *SharedInput
-	sharedFB     *SharedFramebuffer
-	emuDone      chan struct{}
+	emulator       coreif.Emulator
+	aspectProvider coreif.AspectProvider // nil unless the core implements it
+	systemInfo     coreif.SystemInfo
+	inputMapping   InputMapping
+	renderer       *FramebufferRenderer
+	audioPlayer    *AudioPlayer
+	emuControl     *EmuControl
+	sharedInput    *SharedInput
+	sharedFB       *SharedFramebuffer
+	emuDone        chan struct{}
 }
 
 // RunDirect loads a ROM and runs it directly without the full UI.
@@ -31,14 +32,32 @@ type directRunner struct {
 func RunDirect(factory coreif.CoreFactory, romPath string, options map[string]string, bios map[string][]byte) error {
 	systemInfo := factory.SystemInfo()
 
-	romData, _, err := romloader.Load(romPath, systemInfo.Extensions)
-	if err != nil {
-		return fmt.Errorf("failed to load ROM: %w", err)
+	// oto allows a single context rate per process. Use the core's rate
+	// so emulator audio plays at the correct pitch and the audio-demand
+	// pacing stays in lockstep. Must be set before any audio/oto use.
+	if systemInfo.SampleRate > 0 {
+		audioSampleRate = systemInfo.SampleRate
 	}
 
-	emulator, err := factory.CreateEmulator(romData)
-	if err != nil {
-		return fmt.Errorf("failed to create emulator: %w", err)
+	emulator := factory.CreateEmulator()
+
+	// Disc-based systems stream from disk via SetDisc; cartridge systems
+	// load the ROM bytes via SetRom.
+	if systemInfo.Disc {
+		disc, derr := romloader.OpenDisc(romPath)
+		if derr != nil {
+			emulator.Close()
+			return fmt.Errorf("failed to load disc: %w", derr)
+		}
+		defer disc.Close()
+		emulator.SetDisc(disc)
+	} else {
+		romData, _, lerr := romloader.Load(romPath, systemInfo.Extensions)
+		if lerr != nil {
+			emulator.Close()
+			return fmt.Errorf("failed to load ROM: %w", lerr)
+		}
+		emulator.SetRom(romData)
 	}
 
 	for key, value := range options {
@@ -46,7 +65,10 @@ func RunDirect(factory coreif.CoreFactory, romPath string, options map[string]st
 	}
 
 	for key, data := range bios {
-		emulator.SetBIOS(key, data)
+		if err := emulator.SetBIOS(key, data); err != nil {
+			emulator.Close()
+			return fmt.Errorf("failed to set BIOS %q: %w", key, err)
+		}
 	}
 
 	emulator.Start()
@@ -57,30 +79,55 @@ func RunDirect(factory coreif.CoreFactory, romPath string, options map[string]st
 
 	// Use 4:3 (standard CRT) for initial window size; the renderer
 	// computes the correct DAR per-frame from actual dimensions.
+	// ScreenWidth is a core's maximum framebuffer width (e.g. the
+	// Saturn's 704 hi-res mode), so ScreenWidth*3 can exceed the
+	// monitor. Clamp to the monitor work area, preserving 4:3.
 	windowW := systemInfo.ScreenWidth * 3
 	windowH := windowW * 3 / 4
+	if m := ebiten.Monitor(); m != nil {
+		mw, mh := m.Size()
+		// Leave a margin so the title bar and taskbar stay on screen.
+		maxW := mw * 9 / 10
+		maxH := mh * 9 / 10
+		if maxW > 0 && maxH > 0 && (windowW > maxW || windowH > maxH) {
+			if windowW*maxH > maxW*windowH {
+				windowW = maxW
+				windowH = windowW * 3 / 4
+			} else {
+				windowH = maxH
+				windowW = windowH * 4 / 3
+			}
+		}
+	}
 	minW := systemInfo.ScreenWidth * 2
 	minH := minW * 3 / 4
+	if minW > windowW || minH > windowH {
+		minW = windowW
+		minH = windowH
+	}
 	ebiten.SetWindowSize(windowW, windowH)
 	ebiten.SetWindowSizeLimits(minW, minH, -1, -1)
 
 	audioPlayer := NewAudioPlayer(1.0, emulator.GetTiming().FPS)
 
+	aspectProvider, _ := emulator.(coreif.AspectProvider)
+
 	dr := &directRunner{
-		emulator:     emulator,
-		systemInfo:   systemInfo,
-		inputMapping: BuildDefaultMapping(systemInfo.Buttons),
-		renderer:     NewFramebufferRenderer(systemInfo.ScreenWidth, systemInfo.PixelAspectRatio),
-		audioPlayer:  audioPlayer,
-		emuControl:   NewEmuControl(),
-		sharedInput:  &SharedInput{},
-		sharedFB:     NewSharedFramebuffer(systemInfo.ScreenWidth, systemInfo.MaxScreenHeight),
-		emuDone:      make(chan struct{}),
+		emulator:       emulator,
+		aspectProvider: aspectProvider,
+		systemInfo:     systemInfo,
+		inputMapping:   BuildDefaultMapping(systemInfo.Buttons),
+		renderer:       NewFramebufferRenderer(systemInfo.ScreenWidth, systemInfo.PixelAspectRatio),
+		audioPlayer:    audioPlayer,
+		emuControl:     NewEmuControl(),
+		sharedInput:    &SharedInput{},
+		sharedFB:       NewSharedFramebuffer(systemInfo.ScreenWidth, systemInfo.MaxScreenHeight),
+		emuDone:        make(chan struct{}),
 	}
 
 	go dr.emulationLoop()
 
-	err = ebiten.RunGame(dr)
+	err := ebiten.RunGame(dr)
 
 	dr.Close()
 
@@ -114,8 +161,18 @@ func (dr *directRunner) emulationLoop() {
 			dr.emulator.GetFramebuffer(),
 			dr.emulator.GetFramebufferStride(),
 			dr.emulator.GetActiveHeight(),
+			dr.currentPAR(),
 		)
 	}
+}
+
+// currentPAR returns the core's per-frame pixel aspect ratio when it
+// implements AspectProvider, otherwise the static SystemInfo value.
+func (dr *directRunner) currentPAR() float64 {
+	if dr.aspectProvider != nil {
+		return dr.aspectProvider.PixelAspectRatio()
+	}
+	return dr.systemInfo.PixelAspectRatio
 }
 
 // Update implements ebiten.Game.
@@ -131,10 +188,11 @@ func (dr *directRunner) Update() error {
 
 // Draw implements ebiten.Game.
 func (dr *directRunner) Draw(screen *ebiten.Image) {
-	pixels, stride, activeHeight := dr.sharedFB.Read()
+	pixels, stride, activeHeight, par := dr.sharedFB.Read()
 	if activeHeight == 0 {
 		return
 	}
+	dr.renderer.SetPAR(par)
 	dr.renderer.DrawFramebuffer(screen, pixels, stride, activeHeight)
 }
 

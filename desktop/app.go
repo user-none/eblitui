@@ -105,10 +105,25 @@ type App struct {
 	lastFullscreenState bool
 }
 
+// discIdentifier returns the factory's DiscIdentifier if it implements one,
+// or nil. Used so the scanner can resolve disc-based metadata by serial.
+func discIdentifier(f coreif.CoreFactory) coreif.DiscIdentifier {
+	d, _ := f.(coreif.DiscIdentifier)
+	return d
+}
+
 // Run is the public entry point for the standalone UI. It initializes storage,
 // configures the window, creates the app, and starts the Ebiten game loop.
 func Run(factory coreif.CoreFactory) error {
 	info := factory.SystemInfo()
+
+	// oto allows a single context rate per process. Use the core's rate
+	// so emulator audio plays at the correct pitch and the audio-demand
+	// pacing stays in lockstep; synthesized UI sounds are generated at
+	// this same rate. Must be set before any audio/oto use.
+	if info.SampleRate > 0 {
+		audioSampleRate = info.SampleRate
+	}
 
 	// Initialize storage with core-specific data directory
 	storage.Init(info.DataDirName)
@@ -214,7 +229,7 @@ func newApp(factory coreif.CoreFactory, info coreif.SystemInfo) (*App, error) {
 		app.errorPath = configPath
 		app.configLoadFailed = true // Don't overwrite the file on exit
 		app.config = storage.DefaultConfig()
-		app.achievementManager = achievements.NewManager(app.notification, app.config, app.systemInfo.Name, Version, uint32(app.systemInfo.ConsoleID))
+		app.achievementManager = achievements.NewManager(app.notification, app.config, app.systemInfo.Name, Version, uint32(app.systemInfo.ConsoleID), audioSampleRate)
 		app.library = storage.DefaultLibrary()
 		app.preloadConfiguredShaders()
 		app.initScreens()
@@ -233,7 +248,7 @@ func newApp(factory coreif.CoreFactory, info coreif.SystemInfo) (*App, error) {
 		app.errorPath = configPath
 		app.configLoadFailed = true
 		// Use default theme/font for the error screen display
-		app.achievementManager = achievements.NewManager(app.notification, app.config, app.systemInfo.Name, Version, uint32(app.systemInfo.ConsoleID))
+		app.achievementManager = achievements.NewManager(app.notification, app.config, app.systemInfo.Name, Version, uint32(app.systemInfo.ConsoleID), audioSampleRate)
 		app.library = storage.DefaultLibrary()
 		app.preloadConfiguredShaders()
 		app.initScreens()
@@ -243,7 +258,7 @@ func newApp(factory coreif.CoreFactory, info coreif.SystemInfo) (*App, error) {
 	}
 
 	// Create achievement manager with config
-	app.achievementManager = achievements.NewManager(app.notification, app.config, app.systemInfo.Name, Version, uint32(app.systemInfo.ConsoleID))
+	app.achievementManager = achievements.NewManager(app.notification, app.config, app.systemInfo.Name, Version, uint32(app.systemInfo.ConsoleID), audioSampleRate)
 
 	// Apply theme and font size
 	style.ApplyThemeByName(app.config.Theme)
@@ -335,6 +350,8 @@ func newApp(factory coreif.CoreFactory, info coreif.SystemInfo) (*App, error) {
 		app.systemInfo.Extensions,
 		app.metadata,
 		app.systemInfo.ConsoleID,
+		app.systemInfo.Disc,
+		discIdentifier(app.factory),
 		func() { app.rebuildCurrentScreen() }, // onProgress
 		func(msg string) { // onComplete
 			app.libraryScreen.ClearArtworkCache()
@@ -780,6 +797,9 @@ func (a *App) Draw(screen *ebiten.Image) {
 
 		switch a.state {
 		case StatePlaying:
+			// Keep the xBR/shader aspect scaling in sync with the core's
+			// current pixel aspect (variable horizontal resolution).
+			a.shaderManager.SetPAR(a.gameplay.currentPAR())
 			if hasXBR {
 				// xBR path: pass native framebuffer to preprocessing
 				preprocessInput = a.gameplay.DrawFramebuffer()
@@ -899,13 +919,15 @@ func (a *App) SwitchToScanProgress(rescanAll bool) {
 	a.rebuildCurrentScreen()
 }
 
-// LaunchGame starts the emulator with the specified game
-func (a *App) LaunchGame(gameCRC string, resume bool) {
+// LaunchGame starts the emulator with the specified game. discIndex
+// selects the disc of a multi-disc game; -1 uses the remembered
+// SelectedDisc. Ignored for single-disc and cartridge games.
+func (a *App) LaunchGame(gameCRC string, resume bool, discIndex int) {
 	// Reset shader buffers to avoid stale data from previous game
 	a.shaderManager.ResetBuffers()
 	a.shaderManager.SetAspectRatioMode(a.config.Video.AspectRatio)
 
-	if a.gameplay.Launch(gameCRC, resume) {
+	if a.gameplay.Launch(gameCRC, resume, discIndex) {
 		a.previousState = a.state
 		a.state = StatePlaying
 	}
@@ -1036,6 +1058,8 @@ func (a *App) handleDeleteAndContinue() {
 			a.systemInfo.Extensions,
 			a.metadata,
 			a.systemInfo.ConsoleID,
+			a.systemInfo.Disc,
+			discIdentifier(a.factory),
 			func() { a.rebuildCurrentScreen() },
 			func(msg string) {
 				a.state = StateSettings
@@ -1131,6 +1155,8 @@ func (a *App) handleResetAndContinue() {
 			a.systemInfo.Extensions,
 			a.metadata,
 			a.systemInfo.ConsoleID,
+			a.systemInfo.Disc,
+			discIdentifier(a.factory),
 			func() { a.rebuildCurrentScreen() },
 			func(msg string) {
 				a.state = StateSettings
@@ -1195,6 +1221,8 @@ func (a *App) handleLibraryResetAndContinue() {
 			a.systemInfo.Extensions,
 			a.metadata,
 			a.systemInfo.ConsoleID,
+			a.systemInfo.Disc,
+			discIdentifier(a.factory),
 			func() { a.rebuildCurrentScreen() },
 			func(msg string) {
 				a.state = StateSettings

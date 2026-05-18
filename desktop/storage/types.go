@@ -122,10 +122,11 @@ type ScanDirectory struct {
 // GameEntry represents a single game in the library
 type GameEntry struct {
 	CRC32           string       `json:"crc32"`
-	File            string       `json:"file"`        // Path to ROM file or archive on disk
-	Name            string       `json:"name"`        // Full No-Intro name from RDB
-	DisplayName     string       `json:"displayName"` // Cleaned name for display (region info removed)
-	Region          string       `json:"region"`      // "us", "eu", "jp" (from RDB)
+	File            string       `json:"file,omitempty"`   // Cartridge ROM/archive path; disc games leave this empty and use Discs
+	Name            string       `json:"name"`             // Full No-Intro name from RDB
+	DisplayName     string       `json:"displayName"`      // Cleaned name for display (region info removed)
+	Region          string       `json:"region"`           // "us", "eu", "jp" (from RDB)
+	Serial          string       `json:"serial,omitempty"` // Disc/product serial (game ID), when known
 	Developer       string       `json:"developer,omitempty"`
 	Publisher       string       `json:"publisher,omitempty"`
 	Genre           string       `json:"genre,omitempty"`
@@ -140,6 +141,22 @@ type GameEntry struct {
 	LastPlayed      int64        `json:"lastPlayed"`            // Unix timestamp
 	Added           int64        `json:"added"`                 // Unix timestamp when added to library
 	Settings        GameSettings `json:"settings"`              // Per-game settings
+
+	// Discs lists the discs of a disc-based game (one entry even for a
+	// single-disc game), ordered by Index. Empty for cartridge games,
+	// which use File.
+	Discs []GameDisc `json:"discs,omitempty"`
+	// SelectedDisc is the 0-based slice index into Discs to launch.
+	// Persisted so the chosen disc is remembered. Ignored when Discs is
+	// empty.
+	SelectedDisc int `json:"selectedDisc,omitempty"`
+}
+
+// GameDisc is one disc of a multi-disc disc-based game.
+type GameDisc struct {
+	Index int    `json:"index"` // 0-based disc index (DiscNumber-1)
+	File  string `json:"file"`  // Path to this disc's image on disk
+	Name  string `json:"name"`  // Per-disc display name
 }
 
 // GameSettings contains per-game configuration overrides

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	goimage "image"
 	"image/draw"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -136,6 +137,78 @@ func truncateRunes(s string, n int) string {
 		i += size
 	}
 	return s[:i]
+}
+
+// WrapToBox lays s out as word-wrapped lines that fit within maxWidth
+// pixels, keeping only as many lines as fit in maxHeight and ending the
+// last visible line with an ellipsis when text is dropped. A single
+// word wider than maxWidth is itself truncated with an ellipsis. The
+// returned newline-joined string never exceeds the maxWidth x maxHeight
+// box, so a fixed-size container holding it does not grow to fit.
+func WrapToBox(s string, face text.Face, maxWidth, maxHeight float64) string {
+	if s == "" || maxWidth <= 0 {
+		return s
+	}
+	_, lineHeight := text.Measure(" ", face, 0)
+	maxLines := 1
+	if lineHeight > 0 {
+		maxLines = int(maxHeight / lineHeight)
+		if maxLines < 1 {
+			maxLines = 1
+		}
+	}
+
+	fits := func(str string) bool {
+		w, _ := text.Measure(str, face, 0)
+		return w <= maxWidth
+	}
+
+	var lines []string
+	cur := ""
+	for _, word := range strings.Fields(s) {
+		if !fits(word) {
+			// A single word wider than the box: flush the current
+			// line, then add the word truncated to the box width.
+			if cur != "" {
+				lines = append(lines, cur)
+				cur = ""
+			}
+			tw, _ := TruncateToWidth(word, face, maxWidth)
+			lines = append(lines, tw)
+			continue
+		}
+		candidate := word
+		if cur != "" {
+			candidate = cur + " " + word
+		}
+		if fits(candidate) {
+			cur = candidate
+		} else {
+			lines = append(lines, cur)
+			cur = word
+		}
+	}
+	if cur != "" {
+		lines = append(lines, cur)
+	}
+
+	if len(lines) <= maxLines {
+		return strings.Join(lines, "\n")
+	}
+
+	// Too tall: keep the first maxLines lines and mark the last visible
+	// line as truncated.
+	lines = lines[:maxLines]
+	last := lines[maxLines-1]
+	if !strings.HasSuffix(last, "...") {
+		if withEllipsis := last + "..."; fits(withEllipsis) {
+			last = withEllipsis
+		} else {
+			last, _ = TruncateToWidth(last, face, maxWidth)
+		}
+	}
+	lines[maxLines-1] = last
+	return strings.Join(lines, "\n")
 }
 
 // FormatPlayTime formats a duration in seconds into a human-readable string.

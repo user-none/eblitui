@@ -8,15 +8,21 @@ import (
 	"github.com/ebitengine/oto/v3"
 )
 
-const audioSampleRate = 48000
+// audioSampleRate is the process-wide oto context rate. oto permits only
+// one context rate per process, so all audio - emulator output and the
+// synthesized UI/achievement sounds - must share it. It defaults to
+// 48000 and is overridden once at startup from the core's
+// SystemInfo.SampleRate (see Run); the demand-pacing math derives
+// bytesPerFrame from it, so it must match what the core actually
+// produces or the producer/consumer pacing deadlocks.
+var audioSampleRate = 48000
 
-// ringBufferCapacity is 6400 bytes, exactly two frames at 48kHz stereo
-// 16-bit at 60Hz. Pacing is driven by the demand signal, not by ring
-// fullness; the ring is a smoothing buffer between the producer's
-// per-frame writes and oto's bursty reads. Two frames is large enough
-// to absorb a single slow RunFrame without audio underrun while keeping
-// added latency low. oto's player buffer plus its context buffer
-// provide additional downstream headroom.
+// ringBufferCapacity is a smoothing buffer between the producer's
+// per-frame writes and oto's bursty reads (roughly two frames of stereo
+// 16-bit audio at 60Hz). Pacing is driven by the demand signal, not by
+// ring fullness. Large enough to absorb a single slow RunFrame without
+// audio underrun while keeping added latency low. oto's player buffer
+// plus its context buffer provide additional downstream headroom.
 const ringBufferCapacity = 6400
 
 // otoPlayerBufferBytes sizes the mux player buffer (~50ms at 48kHz
@@ -155,7 +161,7 @@ func (a *AudioPlayer) silentDrain() {
 	defer close(a.silentDone)
 
 	const tickInterval = 10 * time.Millisecond
-	const bytesPerSec = audioSampleRate * 4 // stereo int16
+	bytesPerSec := audioSampleRate * 4 // stereo int16
 	bytesPerTick := bytesPerSec * int(tickInterval) / int(time.Second)
 	buf := make([]byte, bytesPerTick)
 

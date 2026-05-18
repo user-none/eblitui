@@ -10,11 +10,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/user-none/eblitui/rdb"
-	"github.com/user-none/eblitui/romloader"
+	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/desktop/metadata"
 	"github.com/user-none/eblitui/desktop/netutil"
 	"github.com/user-none/eblitui/desktop/storage"
+	"github.com/user-none/eblitui/rdb"
+	"github.com/user-none/eblitui/romloader"
 )
 
 // ScanPhase represents the current scanning phase
@@ -68,6 +69,12 @@ type Scanner struct {
 	rescanAll     bool
 	extensions    []string // Supported ROM file extensions
 
+	// Disc-based systems identify and group games by the on-disc
+	// product number instead of a whole-file CRC32. discID
+	// reads the disc info from an opened disc.
+	disc   bool
+	discID coreif.DiscIdentifier
+
 	// Metadata
 	metadata         *metadata.MetadataManager
 	defaultConsoleID int
@@ -101,7 +108,7 @@ type resolvedJob struct {
 }
 
 // NewScanner creates a new scanner instance
-func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[string]*storage.GameEntry, rescanAll bool, extensions []string, md *metadata.MetadataManager, defaultConsoleID int) *Scanner {
+func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[string]*storage.GameEntry, rescanAll bool, extensions []string, md *metadata.MetadataManager, defaultConsoleID int, disc bool, discID coreif.DiscIdentifier) *Scanner {
 	excludedMap := make(map[string]bool)
 	for _, p := range excluded {
 		excludedMap[p] = true
@@ -113,6 +120,8 @@ func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[st
 		existingGames:    existing, // Keep full map to preserve user data
 		rescanAll:        rescanAll,
 		extensions:       extensions,
+		disc:             disc,
+		discID:           discID,
 		metadata:         md,
 		defaultConsoleID: defaultConsoleID,
 		progress:         make(chan ScanProgress, 10),
@@ -287,18 +296,28 @@ func (s *Scanner) scanDirectory(dir storage.ScanDirectory) ([]string, error) {
 	return files, nil
 }
 
-// processROM loads and processes a single ROM file
+// processROM loads and processes a single ROM file. Disc-based systems
+// and cartridge systems take different identity/grouping paths.
 func (s *Scanner) processROM(path string) {
-	// Load ROM using romloader (handles archives)
-	romData, filename, err := romloader.Load(path, s.extensions)
+	if s.disc {
+		s.processDisc(path)
+		return
+	}
+	s.processCartridge(path)
+}
+
+// processCartridge handles a cartridge ROM: load via romloader (handles
+// archives), key by whole-file CRC32, and resolve metadata by CRC32.
+func (s *Scanner) processCartridge(path string) {
+	romData, fn, err := romloader.Load(path, s.extensions)
 	if err != nil {
 		// Skip unsupported formats silently
 		return
 	}
-
-	// Calculate CRC32
 	crcValue := crc32.ChecksumIEEE(romData)
 	crcHex := fmt.Sprintf("%08x", crcValue)
+	filename := fn
+	game, variantIdx := s.metadata.LookupByCRC32(crcValue)
 
 	// Check if game already exists in library
 	existingEntry := s.existingGames[crcHex]
@@ -336,6 +355,7 @@ func (s *Scanner) processROM(path string) {
 			ESRBRating:  existingEntry.ESRBRating,
 			ReleaseDate: existingEntry.ReleaseDate,
 			System:      existingEntry.System,
+			Serial:      existingEntry.Serial,
 		}
 	} else {
 		// Create new entry - Name/DisplayName left empty so RDB lookup can fill them
@@ -347,8 +367,227 @@ func (s *Scanner) processROM(path string) {
 		}
 	}
 
-	// Look up in RDB for metadata - only fill in empty fields
-	game, variantIdx := s.metadata.LookupByCRC32(crcValue)
+	// Game ID: for cartridges use the RDB serial when a match was found.
+	if entry.Serial == "" && game != nil {
+		entry.Serial = game.Serial
+	}
+
+	s.applyMetadata(entry, game, variantIdx, crcHex, filename)
+
+	s.mu.Lock()
+	s.games[crcHex] = entry
+	s.mu.Unlock()
+}
+
+// processDisc handles a disc-based game. Identity and grouping use the
+// on-disc product number (identical across every disc of a game); the
+// disc number/total come from the IP device-info field. RDB metadata is
+// resolved via scanner-derived serial candidates that compensate for the
+// libretro Saturn-RDB publisher-prefix defect. All discs of a game merge
+// into one library entry keyed by the product number.
+func (s *Scanner) processDisc(path string) {
+	if s.discID == nil {
+		return
+	}
+	d, derr := romloader.OpenDisc(path)
+	if derr != nil {
+		return
+	}
+	di, ok := s.discID.DiscInfo(d)
+	d.Close()
+	if !ok || di.ProductNumber == "" {
+		return
+	}
+
+	productNumber := di.ProductNumber
+	filename := filepath.Base(path)
+	idx0 := di.DiscNumber - 1
+	if idx0 < 0 {
+		idx0 = 0
+	}
+
+	game, variantIdx := s.lookupDiscMetadata(di)
+
+	// Per-disc name: the filename's trailing metadata (everything from
+	// the first " (" - region, disc, and variant tags), else the full
+	// extension-stripped filename when it carries no metadata. The game
+	// title is shown from RDB metadata on the detail screen; this label
+	// only has to keep each disc - including a same-serial variant such
+	// as a translation - distinguishable in the disc list.
+	perDiscName := discLabelFromFilename(filename)
+
+	// Find-or-merge keyed by product number: an in-progress entry from another
+	// disc this scan takes precedence over the library entry.
+	s.mu.Lock()
+	entry := s.games[productNumber]
+	s.mu.Unlock()
+
+	existingEntry := s.existingGames[productNumber]
+
+	if entry == nil {
+		if existingEntry != nil {
+			entry = &storage.GameEntry{
+				CRC32:           productNumber,
+				Favorite:        existingEntry.Favorite,
+				PlayTimeSeconds: existingEntry.PlayTimeSeconds,
+				LastPlayed:      existingEntry.LastPlayed,
+				Added:           existingEntry.Added,
+				Settings:        existingEntry.Settings,
+				Missing:         false,
+				Name:            existingEntry.Name,
+				DisplayName:     existingEntry.DisplayName,
+				Region:          existingEntry.Region,
+				Developer:       existingEntry.Developer,
+				Publisher:       existingEntry.Publisher,
+				Genre:           existingEntry.Genre,
+				Franchise:       existingEntry.Franchise,
+				ESRBRating:      existingEntry.ESRBRating,
+				ReleaseDate:     existingEntry.ReleaseDate,
+				System:          existingEntry.System,
+				Serial:          existingEntry.Serial,
+				Discs:           append([]storage.GameDisc(nil), existingEntry.Discs...),
+				SelectedDisc:    existingEntry.SelectedDisc,
+			}
+		} else {
+			entry = &storage.GameEntry{
+				CRC32:   productNumber,
+				Added:   time.Now().Unix(),
+				Missing: false,
+			}
+		}
+	}
+
+	entry.Discs = upsertDisc(entry.Discs, storage.GameDisc{Index: idx0, File: path, Name: perDiscName})
+	if entry.SelectedDisc < 0 || entry.SelectedDisc >= len(entry.Discs) {
+		entry.SelectedDisc = 0
+	}
+
+	// Game ID for disc systems is the on-disc product number.
+	entry.Serial = productNumber
+
+	// Entry-level name = matched RDB name with "(Disc N)" (and region)
+	// stripped, else on-disc title, else cleaned filename. Seed before
+	// applyMetadata so its empty-only fill does not use the full
+	// per-disc RDB name.
+	if entry.Name == "" {
+		if game != nil && game.Name != "" {
+			entry.Name = rdb.GetDisplayName(game.Name)
+		} else if di.Title != "" {
+			entry.Name = di.Title
+		}
+	}
+	if entry.DisplayName == "" {
+		if game != nil && game.Name != "" {
+			entry.DisplayName = rdb.GetDisplayName(game.Name)
+		} else if di.Title != "" {
+			entry.DisplayName = di.Title
+		}
+	}
+
+	s.applyMetadata(entry, game, variantIdx, productNumber, filename)
+
+	s.mu.Lock()
+	s.games[productNumber] = entry
+	s.mu.Unlock()
+}
+
+// lookupDiscMetadata resolves the RDB row for one disc. The libretro
+// Saturn RDB inconsistently drops the publisher prefix and appends a
+// 0-based disc suffix for multi-disc titles; some entries keep the full
+// serial. This derives ordered candidates from the on-disc product
+// number and disc number and returns the first match. Used only to
+// populate library metadata - never for identity or grouping.
+func (s *Scanner) lookupDiscMetadata(di coreif.DiscInfo) (*rdb.Game, int) {
+	for _, c := range discSerialCandidates(di) {
+		if g, idx := s.metadata.LookupBySerial(c); g != nil {
+			return g, idx
+		}
+	}
+	return nil, -1
+}
+
+// discSerialCandidates builds the ordered RDB serial candidate list for
+// a disc, most-specific first so a bare core serial cannot collide with
+// another game's full serial. core = product number with a leading
+// "<prefix>-" segment removed (else the product number);
+// idx0 = DiscNumber-1.
+func discSerialCandidates(di coreif.DiscInfo) []string {
+	productNumber := di.ProductNumber
+	core := productNumber
+	if i := strings.IndexByte(productNumber, '-'); i >= 0 && i+1 < len(productNumber) {
+		core = productNumber[i+1:]
+	}
+	idx0 := di.DiscNumber - 1
+	if idx0 < 0 {
+		idx0 = 0
+	}
+	var out []string
+	if di.DiscTotal > 1 {
+		out = append(out,
+			fmt.Sprintf("%s-%d", core, idx0),
+			fmt.Sprintf("%s-%d", productNumber, idx0),
+			core,
+			productNumber,
+		)
+	} else {
+		out = append(out, productNumber, core)
+	}
+	// De-duplicate while preserving order (core may equal the product number).
+	seen := make(map[string]bool, len(out))
+	uniq := out[:0]
+	for _, c := range out {
+		if c == "" || seen[c] {
+			continue
+		}
+		seen[c] = true
+		uniq = append(uniq, c)
+	}
+	return uniq
+}
+
+// upsertDisc inserts the disc keyed by filename basename, keeping the
+// slice sorted ascending by Index. A rescan of the same filename -
+// including the same file found in another directory - updates its
+// entry in place. A different filename sharing the game's product
+// number (another disc, or a same-serial variant such as a translation
+// that reports the same disc number) is appended as its own entry
+// rather than replacing the existing one. Equal-Index entries keep
+// insertion order, so a variant sorts directly after the disc it
+// shadows.
+func upsertDisc(discs []storage.GameDisc, d storage.GameDisc) []storage.GameDisc {
+	for i := range discs {
+		if filepath.Base(discs[i].File) == filepath.Base(d.File) {
+			discs[i] = d
+			return discs
+		}
+	}
+	discs = append(discs, d)
+	for i := len(discs) - 1; i > 0 && discs[i-1].Index > discs[i].Index; i-- {
+		discs[i-1], discs[i] = discs[i], discs[i-1]
+	}
+	return discs
+}
+
+// discLabelFromFilename derives a disc's list label from its filename:
+// the trailing metadata starting at the first " (" (region, disc, and
+// variant tags such as "(En. Trans)"), or the full extension-stripped
+// name when the filename carries no metadata. Two files sharing a
+// product number and disc number - an original and a variant - stay
+// distinguishable by their tags.
+func discLabelFromFilename(filename string) string {
+	stem := strings.TrimSuffix(filename, filepath.Ext(filename))
+	if i := strings.Index(stem, " ("); i >= 0 {
+		return strings.TrimSpace(stem[i+1:])
+	}
+	return stem
+}
+
+// applyMetadata fills empty entry fields from an RDB match (when any),
+// queues artwork/rumble downloads, resolves the achievements console ID,
+// and falls back to the filename for Name/DisplayName. Only empty fields
+// are filled so user data and caller-seeded values are preserved.
+func (s *Scanner) applyMetadata(entry *storage.GameEntry, game *rdb.Game, variantIdx int, crcHex, filename string) {
+	// Fill in metadata from the RDB match (if any) - only empty fields
 	if game != nil {
 		if entry.Name == "" {
 			entry.Name = game.Name
@@ -446,10 +685,6 @@ func (s *Scanner) processROM(path string) {
 	if entry.DisplayName == "" {
 		entry.DisplayName = s.cleanDisplayName(filename)
 	}
-
-	s.mu.Lock()
-	s.games[crcHex] = entry
-	s.mu.Unlock()
 }
 
 // cleanDisplayName removes file extension and parenthesized metadata

@@ -12,10 +12,10 @@ import (
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/user-none/eblitui/romloader"
 	"github.com/user-none/eblitui/desktop/achievements"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
+	"github.com/user-none/eblitui/romloader"
 	"github.com/user-none/go-rcheevos"
 )
 
@@ -202,7 +202,7 @@ func (s *DetailScreen) Build() *widget.Container {
 
 	if !s.game.Missing {
 		playButton := style.PrimaryTextButton("Play", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
-			s.callback.LaunchGame(s.game.CRC32, false)
+			s.callback.LaunchGame(s.game.CRC32, false, -1)
 		})
 		s.RegisterFocusButton("play", playButton)
 		buttonContainer.AddChild(playButton)
@@ -218,7 +218,7 @@ func (s *DetailScreen) Build() *widget.Container {
 			widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingMedium)),
 			widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
 				if hasResume {
-					s.callback.LaunchGame(s.game.CRC32, true)
+					s.callback.LaunchGame(s.game.CRC32, true, -1)
 				}
 			}),
 		)
@@ -296,9 +296,16 @@ func (s *DetailScreen) Build() *widget.Container {
 		)
 		artContainer.AddChild(artGraphic)
 	} else {
-		// Show placeholder text if no artwork
+		// Show placeholder text if no artwork. Wrap and truncate the
+		// title so it fits inside the fixed box instead of stretching
+		// it. Inset by a small padding so text does not touch edges.
+		pad := style.SmallSpacing
+		placeholderText := style.WrapToBox(
+			s.game.DisplayName, *style.FontFace(),
+			float64(artWidth-pad*2), float64(artHeight-pad*2),
+		)
 		artPlaceholder := widget.NewText(
-			widget.TextOpts.Text(s.game.DisplayName, style.FontFace(), style.TextSecondary),
+			widget.TextOpts.Text(placeholderText, style.FontFace(), style.TextSecondary),
 			widget.TextOpts.Position(widget.TextPositionCenter, widget.TextPositionCenter),
 			widget.TextOpts.WidgetOpts(widget.WidgetOpts.LayoutData(widget.AnchorLayoutData{
 				HorizontalPosition: widget.AnchorLayoutPositionCenter,
@@ -364,6 +371,9 @@ func (s *DetailScreen) Build() *widget.Container {
 	if s.game.Name != "" && s.game.Name != s.game.DisplayName {
 		metadataContainer.AddChild(s.buildMetadataRow("Name", s.game.Name, valueWidth))
 	}
+	if s.game.Serial != "" {
+		metadataContainer.AddChild(s.buildMetadataRow("Game ID", s.game.Serial, valueWidth))
+	}
 	region := strings.ToUpper(s.game.Region)
 	if region == "" {
 		region = "Unknown"
@@ -372,6 +382,42 @@ func (s *DetailScreen) Build() *widget.Container {
 
 	if s.game.System != "" {
 		metadataContainer.AddChild(s.buildMetadataRow("System", s.game.System, valueWidth))
+	}
+
+	// Discs section (multi-disc disc-based games only). Each disc is a
+	// focusable selection button; activating it only marks that disc as
+	// the selected disc (persisted) - it does not launch. The toolbar
+	// Play button launches the selected disc. With no prior selection the
+	// first disc is selected by default.
+	if len(s.game.Discs) > 1 && !s.game.Missing {
+		metadataContainer.AddChild(s.buildSectionHeader("Discs"))
+		sel := s.game.SelectedDisc
+		if sel < 0 || sel >= len(s.game.Discs) {
+			sel = 0
+		}
+		for i, d := range s.game.Discs {
+			i, d := i, d
+			label := d.Name
+			if label == "" {
+				label = fmt.Sprintf("Disc %d", d.Index+1)
+			}
+			if i == sel {
+				label = "> " + label
+			}
+			handler := func(args *widget.ButtonClickedEventArgs) {
+				s.game.SelectedDisc = i
+				storage.SaveLibrary(s.library)
+				s.callback.RequestRebuild()
+			}
+			var btn *widget.Button
+			if i == sel {
+				btn = style.PrimaryTextButton(label, style.ButtonPaddingMedium, handler)
+			} else {
+				btn = style.TextButton(label, style.ButtonPaddingMedium, handler)
+			}
+			s.RegisterFocusButton(fmt.Sprintf("disc-%d", i), btn)
+			metadataContainer.AddChild(btn)
+		}
 	}
 
 	// Production section

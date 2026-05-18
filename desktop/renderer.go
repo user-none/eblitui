@@ -22,6 +22,15 @@ func (r *FramebufferRenderer) SetAspectRatioMode(mode string) {
 	r.aspectRatioMode = mode
 }
 
+// SetPAR updates the pixel aspect ratio used for "dar" scaling. Called
+// per frame with the value delivered alongside the framebuffer so cores
+// whose PAR changes with video mode render correctly.
+func (r *FramebufferRenderer) SetPAR(par float64) {
+	if par > 0 {
+		r.par = par
+	}
+}
+
 // NewFramebufferRenderer creates a renderer for the given native screen width
 // and pixel aspect ratio.
 func NewFramebufferRenderer(screenWidth int, par float64) *FramebufferRenderer {

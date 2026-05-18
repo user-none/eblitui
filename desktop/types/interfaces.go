@@ -35,7 +35,10 @@ type ScreenCallback interface {
 	SwitchToDetail(gameCRC string)
 	SwitchToSettings()
 	SwitchToScanProgress(rescanAll bool)
-	LaunchGame(gameCRC string, resume bool)
+	// LaunchGame starts a game. discIndex selects which disc of a
+	// multi-disc game to launch; -1 uses the entry's remembered
+	// SelectedDisc. Ignored for single-disc and cartridge games.
+	LaunchGame(gameCRC string, resume bool, discIndex int)
 	Exit()
 	GetWindowWidth() int               // For responsive layout calculations
 	RequestRebuild()                   // Request UI rebuild after state changes

@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 
 	"github.com/user-none/eblitui/coreif"
-	"github.com/user-none/eblitui/rdb"
 	"github.com/user-none/eblitui/desktop/netutil"
 	"github.com/user-none/eblitui/desktop/storage"
+	"github.com/user-none/eblitui/rdb"
 )
 
 const (
@@ -146,6 +146,21 @@ func (m *MetadataManager) LookupByCRC32(crc32 uint32) (*rdb.Game, int) {
 			continue
 		}
 		if game := v.rdb.FindByCRC32(crc32); game != nil {
+			return game, i
+		}
+	}
+	return nil, -1
+}
+
+// LookupBySerial looks up a game by disc serial across all loaded RDBs.
+// Returns the game and the variant index where it was found.
+// Returns nil, -1 if not found or no RDB is loaded.
+func (m *MetadataManager) LookupBySerial(serial string) (*rdb.Game, int) {
+	for i, v := range m.variants {
+		if v.rdb == nil {
+			continue
+		}
+		if game := v.rdb.FindBySerial(serial); game != nil {
 			return game, i
 		}
 	}

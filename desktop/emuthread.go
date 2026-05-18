@@ -41,6 +41,7 @@ type SharedFramebuffer struct {
 	readPixels   []byte // Snapshot copied on Read for safe external use
 	stride       int
 	activeHeight int
+	par          float64 // Pixel aspect ratio for the current frame
 }
 
 // NewSharedFramebuffer creates a pre-allocated framebuffer sized for the
@@ -54,7 +55,7 @@ func NewSharedFramebuffer(width, height int) *SharedFramebuffer {
 }
 
 // Update copies framebuffer data from the emulation goroutine.
-func (sf *SharedFramebuffer) Update(pixels []byte, stride, activeHeight int) {
+func (sf *SharedFramebuffer) Update(pixels []byte, stride, activeHeight int, par float64) {
 	sf.mu.Lock()
 	n := stride * activeHeight
 	if n > len(sf.writePixels) {
@@ -66,16 +67,18 @@ func (sf *SharedFramebuffer) Update(pixels []byte, stride, activeHeight int) {
 	copy(sf.writePixels[:n], pixels[:n])
 	sf.stride = stride
 	sf.activeHeight = activeHeight
+	sf.par = par
 	sf.mu.Unlock()
 }
 
 // Read returns a snapshot of the current framebuffer state.
 // Copies the write buffer into the read buffer under the lock,
 // then returns the read buffer which is safe to use without holding the lock.
-func (sf *SharedFramebuffer) Read() (pixels []byte, stride, activeHeight int) {
+func (sf *SharedFramebuffer) Read() (pixels []byte, stride, activeHeight int, par float64) {
 	sf.mu.Lock()
 	stride = sf.stride
 	activeHeight = sf.activeHeight
+	par = sf.par
 	n := stride * activeHeight
 	if n > len(sf.writePixels) {
 		n = len(sf.writePixels)

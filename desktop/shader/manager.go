@@ -122,6 +122,12 @@ func (m *Manager) SetAspectRatioMode(mode string) {
 	m.xbrScaler.SetAspectRatioMode(mode)
 }
 
+// SetPAR passes the current pixel aspect ratio to the xBR scaler. Called
+// per frame so variable-resolution cores scale correctly under "dar".
+func (m *Manager) SetPAR(par float64) {
+	m.xbrScaler.SetPAR(par)
+}
+
 // ResetBuffers clears all effect buffers. Call when switching games.
 func (m *Manager) ResetBuffers() {
 	if m.ghostingBuffer != nil {

@@ -1,6 +1,7 @@
 package style
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
@@ -466,4 +467,95 @@ func TestSetDPIScaleClampsBelowOne(t *testing.T) {
 	if DPIScale() != 1.0 {
 		t.Errorf("DPIScale() after setting 0.5 = %f, want 1.0", DPIScale())
 	}
+}
+
+func TestWrapToBox(t *testing.T) {
+	face := FontFace()
+	if face == nil || *face == nil {
+		t.Fatal("FontFace() returned nil")
+	}
+	_, lineHeight := text.Measure(" ", *face, 0)
+	if lineHeight <= 0 {
+		t.Fatalf("unexpected line height %.2f", lineHeight)
+	}
+
+	const longTitle = "SHINING FORCE 3 SCENARIO 1 TRANSLATION VERSION 23 SF3TRANS.SHININGFORCECENTRAL.COM"
+
+	maxLineWidth := func(s string) float64 {
+		var max float64
+		for _, ln := range strings.Split(s, "\n") {
+			if w, _ := text.Measure(ln, *face, 0); w > max {
+				max = w
+			}
+		}
+		return max
+	}
+
+	// Widest single word, measured at the test font size, so widths are
+	// derived rather than hard-coded and the tests stay font-agnostic.
+	var widestWord float64
+	for _, w := range strings.Fields(longTitle) {
+		if ww, _ := text.Measure(w, *face, 0); ww > widestWord {
+			widestWord = ww
+		}
+	}
+
+	t.Run("empty string returns empty", func(t *testing.T) {
+		if got := WrapToBox("", *face, 100, 100); got != "" {
+			t.Errorf("expected empty, got %q", got)
+		}
+	})
+
+	t.Run("short text in a large box is unchanged", func(t *testing.T) {
+		got := WrapToBox("Sonic Jam", *face, 1000, 1000)
+		if got != "Sonic Jam" {
+			t.Errorf("expected unchanged, got %q", got)
+		}
+	})
+
+	t.Run("long text wraps to multiple lines within width", func(t *testing.T) {
+		// Wide enough for any single word, so nothing is truncated, but
+		// far narrower than the full single-line title, forcing wrap.
+		maxW := widestWord + 10
+		got := WrapToBox(longTitle, *face, maxW, lineHeight*20)
+		lines := strings.Split(got, "\n")
+		if len(lines) < 2 {
+			t.Fatalf("expected wrapping into multiple lines, got %q", got)
+		}
+		if w := maxLineWidth(got); w > maxW {
+			t.Errorf("a wrapped line width %.1f exceeds maxWidth %.1f", w, maxW)
+		}
+		if strings.Contains(got, "...") {
+			t.Errorf("nothing should be dropped when no word exceeds width and height is ample: %q", got)
+		}
+	})
+
+	t.Run("over-tall text is truncated to fit height with ellipsis", func(t *testing.T) {
+		maxW := widestWord + 10
+		got := WrapToBox(longTitle, *face, maxW, lineHeight*1.5) // maxLines == 1
+		if strings.Contains(got, "\n") {
+			t.Fatalf("expected a single line, got %q", got)
+		}
+		if !strings.HasSuffix(got, "...") {
+			t.Errorf("expected ellipsis suffix, got %q", got)
+		}
+		if w, _ := text.Measure(got, *face, 0); w > maxW {
+			t.Errorf("truncated line width %.1f exceeds maxWidth %.1f", w, maxW)
+		}
+	})
+
+	t.Run("single word wider than the box is truncated", func(t *testing.T) {
+		// Half the widest word's width guarantees it cannot fit.
+		maxW := widestWord / 2
+		got := WrapToBox("SF3TRANS.SHININGFORCECENTRAL.COM", *face, maxW, lineHeight*20)
+		if strings.Contains(got, " ") {
+			t.Errorf("single word should stay one token, got %q", got)
+		}
+		if !strings.HasSuffix(got, "...") {
+			t.Errorf("expected ellipsis suffix, got %q", got)
+		}
+		if w := maxLineWidth(got); w > maxW {
+			t.Errorf("line width %.1f exceeds maxWidth %.1f", w, maxW)
+		}
+	})
 }

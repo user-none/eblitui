@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,16 +11,18 @@ import (
 	"github.com/user-none/eblitui/desktop/netutil"
 )
 
-func TestFetchContentsListing(t *testing.T) {
-	entries := []contentsEntry{
-		{Name: "Sonic The Hedgehog (USA, Europe).png", Type: "file"},
-		{Name: "Alex Kidd in Miracle World (USA, Europe).png", Type: "file"},
-		{Name: "subdir", Type: "dir"},
+func TestFetchTree(t *testing.T) {
+	tr := treeResponse{
+		Tree: []treeEntry{
+			{Path: "Named_Boxarts", Type: "tree", SHA: "abc"},
+			{Path: "README.md", Type: "blob", SHA: "def"},
+		},
+		Truncated: false,
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(entries)
+		json.NewEncoder(w).Encode(tr)
 	}))
 	defer server.Close()
 
@@ -27,26 +30,16 @@ func TestFetchContentsListing(t *testing.T) {
 	netutil.HTTPClient = server.Client()
 	defer func() { netutil.HTTPClient = origClient }()
 
-	result, err := fetchContentsListing(server.URL + "/contents/Named_Boxarts")
+	result, err := fetchTree(server.URL + "/git/trees/master")
 	if err != nil {
-		t.Fatalf("fetchContentsListing failed: %v", err)
+		t.Fatalf("fetchTree failed: %v", err)
 	}
-	if len(result) != 3 {
-		t.Errorf("entries = %d, want 3", len(result))
-	}
-
-	fileCount := 0
-	for _, e := range result {
-		if e.Type == "file" {
-			fileCount++
-		}
-	}
-	if fileCount != 2 {
-		t.Errorf("file entries = %d, want 2", fileCount)
+	if len(result.Tree) != 2 {
+		t.Errorf("tree entries = %d, want 2", len(result.Tree))
 	}
 }
 
-func TestFetchContentsListing404(t *testing.T) {
+func TestFetchTree404(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
@@ -56,13 +49,12 @@ func TestFetchContentsListing404(t *testing.T) {
 	netutil.HTTPClient = server.Client()
 	defer func() { netutil.HTTPClient = origClient }()
 
-	_, err := fetchContentsListing(server.URL + "/contents/Named_Boxarts")
-	if err == nil {
+	if _, err := fetchTree(server.URL + "/git/trees/master"); err == nil {
 		t.Error("expected error for 404")
 	}
 }
 
-func TestFetchContentsListingInvalidJSON(t *testing.T) {
+func TestFetchTreeInvalidJSON(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte("not json"))
@@ -73,13 +65,12 @@ func TestFetchContentsListingInvalidJSON(t *testing.T) {
 	netutil.HTTPClient = server.Client()
 	defer func() { netutil.HTTPClient = origClient }()
 
-	_, err := fetchContentsListing(server.URL + "/contents/Named_Boxarts")
-	if err == nil {
+	if _, err := fetchTree(server.URL + "/git/trees/master"); err == nil {
 		t.Error("expected error for invalid JSON")
 	}
 }
 
-func TestFetchContentsListingServerError(t *testing.T) {
+func TestFetchTreeServerError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -89,54 +80,84 @@ func TestFetchContentsListingServerError(t *testing.T) {
 	netutil.HTTPClient = server.Client()
 	defer func() { netutil.HTTPClient = origClient }()
 
-	_, err := fetchContentsListing(server.URL + "/contents/Named_Boxarts")
-	if err == nil {
+	if _, err := fetchTree(server.URL + "/git/trees/master"); err == nil {
 		t.Error("expected error for 500 response")
 	}
 }
 
-func TestFetchArtworkTypeListing(t *testing.T) {
-	boxarts := []contentsEntry{
-		{Name: "Sonic The Hedgehog (USA, Europe).png", Type: "file"},
-		{Name: "Alex Kidd in Miracle World (USA, Europe).png", Type: "file"},
-		{Name: "subdir", Type: "dir"},
+// TestFetchArtworkTypeListingTwoStep verifies the root-tree -> subtree
+// resolution and that only blobs (stripped of .png) become entries. The
+// server returns a large subtree to confirm there is no 1000-entry cap.
+func TestFetchArtworkTypeListingTwoStep(t *testing.T) {
+	const dirSHA = "boxartsha"
+	const subtreeCount = 1500 // exceeds the old Contents API 1000 cap
+
+	root := treeResponse{Tree: []treeEntry{
+		{Path: "Named_Boxarts", Type: "tree", SHA: dirSHA},
+		{Path: "Named_Titles", Type: "tree", SHA: "othersha"},
+	}}
+
+	sub := treeResponse{}
+	for i := 0; i < subtreeCount; i++ {
+		sub.Tree = append(sub.Tree, treeEntry{
+			Path: fmt.Sprintf("Game %04d.png", i),
+			Type: "blob",
+		})
 	}
+	sub.Tree = append(sub.Tree, treeEntry{Path: "nested", Type: "tree"})
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path := r.URL.Path
-		if strings.Contains(path, "/contents/Named_Boxarts") {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(boxarts)
-			return
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/git/trees/master"):
+			json.NewEncoder(w).Encode(root)
+		case strings.HasSuffix(r.URL.Path, "/git/trees/"+dirSHA):
+			json.NewEncoder(w).Encode(sub)
+		default:
+			http.NotFound(w, r)
 		}
-		http.NotFound(w, r)
 	}))
 	defer server.Close()
 
-	// fetchArtworkTypeListing uses a hardcoded GitHub URL, so test the
-	// listing construction directly using addEntry
+	origClient := netutil.HTTPClient
+	netutil.HTTPClient = server.Client()
+	defer func() { netutil.HTTPClient = origClient }()
+
+	// fetchArtworkTypeListing builds a hardcoded api.github.com URL, so
+	// drive the two-step resolution directly against the mock here.
+	rootResp, err := fetchTree(server.URL + "/git/trees/master")
+	if err != nil {
+		t.Fatalf("root fetch failed: %v", err)
+	}
+	var gotSHA string
+	for _, e := range rootResp.Tree {
+		if e.Type == "tree" && e.Path == "Named_Boxarts" {
+			gotSHA = e.SHA
+		}
+	}
+	if gotSHA != dirSHA {
+		t.Fatalf("dir SHA = %q, want %q", gotSHA, dirSHA)
+	}
+
+	subResp, err := fetchTree(server.URL + "/git/trees/" + gotSHA)
+	if err != nil {
+		t.Fatalf("subtree fetch failed: %v", err)
+	}
+
 	listing := newThumbnailListing()
-	for _, e := range boxarts {
-		if e.Type != "file" {
+	for _, e := range subResp.Tree {
+		if e.Type != "blob" {
 			continue
 		}
-		name := e.Name
+		name := e.Path
 		if strings.HasSuffix(strings.ToLower(name), ".png") {
 			name = name[:len(name)-4]
 		}
 		listing.addEntry("Named_Boxarts", name)
 	}
 
-	// Verify boxarts entries (directories excluded)
-	if listing.Exact["Named_Boxarts"] == nil {
-		t.Fatal("expected Named_Boxarts entries")
-	}
-	if len(listing.Exact["Named_Boxarts"]) != 2 {
-		t.Errorf("boxarts entries = %d, want 2", len(listing.Exact["Named_Boxarts"]))
-	}
-
-	// Named_Titles should not exist (never added)
-	if listing.Exact["Named_Titles"] != nil {
-		t.Error("Named_Titles should not exist for single-type listing")
+	got := len(listing.Exact["Named_Boxarts"])
+	if got != subtreeCount {
+		t.Errorf("boxart entries = %d, want %d (no 1000-entry cap)", got, subtreeCount)
 	}
 }

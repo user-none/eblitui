@@ -3,11 +3,101 @@ package scanner
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
+	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/desktop/metadata"
 	"github.com/user-none/eblitui/desktop/storage"
 )
+
+func TestDiscSerialCandidates(t *testing.T) {
+	tests := []struct {
+		name string
+		di   coreif.DiscInfo
+		want []string
+	}{
+		{
+			"multi-disc with publisher prefix",
+			coreif.DiscInfo{ProductNumber: "MK-81307", DiscNumber: 1, DiscTotal: 4},
+			[]string{"81307-0", "MK-81307-0", "81307", "MK-81307"},
+		},
+		{
+			"multi-disc disc 3",
+			coreif.DiscInfo{ProductNumber: "MK-81307", DiscNumber: 3, DiscTotal: 4},
+			[]string{"81307-2", "MK-81307-2", "81307", "MK-81307"},
+		},
+		{
+			"single-disc with prefix",
+			coreif.DiscInfo{ProductNumber: "T-31202G", DiscNumber: 1, DiscTotal: 1},
+			[]string{"T-31202G", "31202G"},
+		},
+		{
+			"single-disc no prefix (no dash)",
+			coreif.DiscInfo{ProductNumber: "610600", DiscNumber: 1, DiscTotal: 1},
+			[]string{"610600"},
+		},
+		{
+			"multi-disc no prefix (core==group)",
+			coreif.DiscInfo{ProductNumber: "610600", DiscNumber: 2, DiscTotal: 2},
+			[]string{"610600-1", "610600"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := discSerialCandidates(tc.di)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("discSerialCandidates(%+v) = %v, want %v", tc.di, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestUpsertDisc(t *testing.T) {
+	var discs []storage.GameDisc
+	discs = upsertDisc(discs, storage.GameDisc{Index: 2, File: "/x/c.chd", Name: "C"})
+	discs = upsertDisc(discs, storage.GameDisc{Index: 0, File: "/x/a.chd", Name: "A"})
+	discs = upsertDisc(discs, storage.GameDisc{Index: 1, File: "/x/b.chd", Name: "B"})
+	if len(discs) != 3 || discs[0].Index != 0 || discs[1].Index != 1 || discs[2].Index != 2 {
+		t.Fatalf("not sorted by index: %+v", discs)
+	}
+
+	// Same basename rescanned from a different directory: update in
+	// place, no growth, stored path refreshed.
+	discs = upsertDisc(discs, storage.GameDisc{Index: 1, File: "/y/b.chd", Name: "B"})
+	if len(discs) != 3 || discs[1].File != "/y/b.chd" {
+		t.Fatalf("same-basename rescan should update in place: %+v", discs)
+	}
+
+	// A variant (same product number and disc number, different
+	// filename) is appended, not replaced, and sorts directly after the
+	// disc it shares an Index with.
+	discs = upsertDisc(discs, storage.GameDisc{Index: 0, File: "/x/a (En. Trans).chd", Name: "(En. Trans)"})
+	if len(discs) != 4 {
+		t.Fatalf("variant should be appended: %+v", discs)
+	}
+	if discs[0].File != "/x/a.chd" || discs[1].File != "/x/a (En. Trans).chd" {
+		t.Fatalf("variant should sort adjacent to its same-index sibling: %+v", discs)
+	}
+	if discs[2].Index != 1 || discs[3].Index != 2 {
+		t.Fatalf("remaining discs should stay ordered: %+v", discs)
+	}
+}
+
+func TestDiscLabelFromFilename(t *testing.T) {
+	cases := map[string]string{
+		"Panzer Dragoon Saga (USA) (Disc 1).chd": "(USA) (Disc 1)",
+		"Bulk Slash (Japan).chd":                 "(Japan)",
+		"Bulk Slash (En. Trans).chd":             "(En. Trans)",
+		"Sonic Jam.chd":                          "Sonic Jam",
+		"NoExtNoMeta":                            "NoExtNoMeta",
+	}
+	for in, want := range cases {
+		if got := discLabelFromFilename(in); got != want {
+			t.Errorf("discLabelFromFilename(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
 
 func TestIsSupportedExtension(t *testing.T) {
 	s := &Scanner{extensions: []string{".sms"}}
@@ -141,7 +231,7 @@ func TestNewScanner(t *testing.T) {
 	}
 
 	md := metadata.NewMetadataManager(nil)
-	s := NewScanner(dirs, excluded, existing, false, []string{".sms"}, md, 0)
+	s := NewScanner(dirs, excluded, existing, false, []string{".sms"}, md, 0, false, nil)
 
 	if len(s.directories) != 2 {
 		t.Errorf("expected 2 directories, got %d", len(s.directories))
@@ -259,7 +349,7 @@ func TestScanDirectoryWithExclusions(t *testing.T) {
 
 func TestScannerCancellation(t *testing.T) {
 	md := metadata.NewMetadataManager(nil)
-	s := NewScanner(nil, nil, nil, false, nil, md, 0)
+	s := NewScanner(nil, nil, nil, false, nil, md, 0, false, nil)
 
 	if s.isCancelled() {
 		t.Error("new scanner should not be cancelled")
@@ -276,7 +366,7 @@ func TestScannerCancellation(t *testing.T) {
 
 func TestScannerGamesCount(t *testing.T) {
 	md := metadata.NewMetadataManager(nil)
-	s := NewScanner(nil, nil, nil, false, nil, md, 0)
+	s := NewScanner(nil, nil, nil, false, nil, md, 0, false, nil)
 
 	if s.gamesCount() != 0 {
 		t.Errorf("expected 0 games, got %d", s.gamesCount())
@@ -290,7 +380,7 @@ func TestScannerGamesCount(t *testing.T) {
 
 func TestNewScannerDefaultConsoleID(t *testing.T) {
 	md := metadata.NewMetadataManager(nil)
-	s := NewScanner(nil, nil, nil, false, nil, md, 42)
+	s := NewScanner(nil, nil, nil, false, nil, md, 42, false, nil)
 	if s.defaultConsoleID != 42 {
 		t.Errorf("expected defaultConsoleID 42, got %d", s.defaultConsoleID)
 	}

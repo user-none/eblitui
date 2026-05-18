@@ -29,6 +29,15 @@ func (x *XBRScaler) SetAspectRatioMode(mode string) {
 	x.aspectRatioMode = mode
 }
 
+// SetPAR updates the pixel aspect ratio used for "dar" scaling. Called
+// per frame so cores whose PAR changes with video mode (variable
+// horizontal resolution) scale correctly.
+func (x *XBRScaler) SetPAR(par float64) {
+	if par > 0 {
+		x.par = par
+	}
+}
+
 // NewXBRScaler creates a new xBR scaler instance with the given
 // pixel aspect ratio.
 func NewXBRScaler(par float64) *XBRScaler {

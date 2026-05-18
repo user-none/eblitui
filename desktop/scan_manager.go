@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/desktop/metadata"
 	"github.com/user-none/eblitui/desktop/scanner"
 	"github.com/user-none/eblitui/desktop/screens"
@@ -23,6 +24,8 @@ type ScanManager struct {
 	extensions       []string                  // Supported ROM file extensions
 	metadata         *metadata.MetadataManager // Metadata for RDB/thumbnail lookups
 	defaultConsoleID int
+	disc             bool                  // disc-based system (group-key identity)
+	discID           coreif.DiscIdentifier // reads disc info (may be nil)
 
 	// Callbacks to App
 	onProgress func() // Called when progress updates (triggers UI rebuild)
@@ -36,6 +39,8 @@ func NewScanManager(
 	extensions []string,
 	md *metadata.MetadataManager,
 	defaultConsoleID int,
+	disc bool,
+	discID coreif.DiscIdentifier,
 	onProgress func(),
 	onComplete func(msg string),
 ) *ScanManager {
@@ -45,6 +50,8 @@ func NewScanManager(
 		extensions:       extensions,
 		metadata:         md,
 		defaultConsoleID: defaultConsoleID,
+		disc:             disc,
+		discID:           discID,
 		onProgress:       onProgress,
 		onComplete:       onComplete,
 	}
@@ -76,6 +83,8 @@ func (sm *ScanManager) Start(rescanAll bool) {
 		sm.extensions,
 		sm.metadata,
 		sm.defaultConsoleID,
+		sm.disc,
+		sm.discID,
 	)
 
 	// Configure scan screen

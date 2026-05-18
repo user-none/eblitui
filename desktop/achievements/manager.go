@@ -71,7 +71,7 @@ type Manager struct {
 }
 
 // NewManager creates a new achievement manager
-func NewManager(notification Notification, config *storage.Config, appName, appVersion string, consoleID uint32) *Manager {
+func NewManager(notification Notification, config *storage.Config, appName, appVersion string, consoleID uint32, sampleRate int) *Manager {
 	m := &Manager{
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
@@ -79,7 +79,7 @@ func NewManager(notification Notification, config *storage.Config, appName, appV
 		notification:    notification,
 		config:          config,
 		consoleID:       consoleID,
-		unlockSoundData: generateUnlockSound(),
+		unlockSoundData: generateUnlockSound(sampleRate),
 		badgeCache:      make(map[uint64]*ebiten.Image),
 		gameImageCache:  make(map[uint32]*ebiten.Image),
 	}

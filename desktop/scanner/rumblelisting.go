@@ -1,9 +1,14 @@
 package scanner
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/user-none/eblitui/desktop/netutil"
 )
 
 const (
@@ -75,6 +80,46 @@ func resolveRumbleName(listing *RumbleListing, gameName string) (string, bool) {
 	}
 
 	return "", false
+}
+
+// contentsEntry is a single entry from the GitHub Contents API. The
+// Contents API caps a directory at 1000 entries, which is acceptable
+// here: a per-system cht directory holds far fewer files.
+type contentsEntry struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+// fetchContentsListing fetches a directory listing from the GitHub
+// Contents API. Returns an error on any failure including 404.
+func fetchContentsListing(contentsURL string) ([]contentsEntry, error) {
+	req, err := http.NewRequest(http.MethodGet, contentsURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := netutil.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub API returned %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var entries []contentsEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return nil, fmt.Errorf("failed to parse contents response: %w", err)
+	}
+
+	return entries, nil
 }
 
 // fetchRumbleListing fetches the rumble CHT file listing for a variant

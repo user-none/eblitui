@@ -6,7 +6,7 @@ import (
 )
 
 func TestGenerateUnlockSound(t *testing.T) {
-	data := generateUnlockSound()
+	data := generateUnlockSound(48000)
 
 	if data == nil {
 		t.Fatal("should not return nil")
@@ -17,7 +17,7 @@ func TestGenerateUnlockSound(t *testing.T) {
 }
 
 func TestGenerateUnlockSoundLength(t *testing.T) {
-	data := generateUnlockSound()
+	data := generateUnlockSound(48000)
 
 	// 48000 Hz * 0.8 seconds * 4 bytes per sample (stereo S16LE)
 	expected := int(48000 * 0.8 * 4)
@@ -27,7 +27,7 @@ func TestGenerateUnlockSoundLength(t *testing.T) {
 }
 
 func TestGenerateUnlockSoundNotSilent(t *testing.T) {
-	data := generateUnlockSound()
+	data := generateUnlockSound(48000)
 
 	allZero := true
 	for i := 0; i < len(data)-1; i += 2 {
@@ -44,7 +44,7 @@ func TestGenerateUnlockSoundNotSilent(t *testing.T) {
 }
 
 func TestGenerateUnlockSoundClipping(t *testing.T) {
-	data := generateUnlockSound()
+	data := generateUnlockSound(48000)
 
 	// Check all S16LE samples are within valid range
 	// The function clamps to [-1.0, 1.0] then multiplies by 12000,
@@ -59,7 +59,7 @@ func TestGenerateUnlockSoundClipping(t *testing.T) {
 }
 
 func TestGenerateUnlockSoundStereo(t *testing.T) {
-	data := generateUnlockSound()
+	data := generateUnlockSound(48000)
 
 	// Stereo S16LE: left and right channels should be identical
 	// (the code writes the same value to both channels)
