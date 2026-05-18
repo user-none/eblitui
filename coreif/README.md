@@ -27,8 +27,9 @@ instances.
 
 - `SystemInfo() SystemInfo` - Returns system metadata used by the UI to
   configure screens, input mapping, settings menus, and data paths.
-- `CreateEmulator(rom []byte) (Emulator, error)` - Creates a new emulator
-  instance from ROM data. Video standard detection is handled internally
+- `CreateEmulator() Emulator` - Creates a new emulator instance.
+  Content is provided afterwards via `Emulator.SetRom` (cartridge) or
+  `Emulator.SetDisc` (disc). Video standard detection is handled internally
   by the core.
 
 ### Emulator (required)
@@ -47,6 +48,19 @@ manage region and timing.
 | `SetInput(player int, buttons uint32)` | Set controller state as a button bitmask |
 | `GetTiming() Timing` | FPS and scanline count for the current region |
 | `SetOption(key string, value string)` | Apply a core option change by key |
+| `SetRom(data []byte)` | Provide cartridge ROM data (disc cores ignore) |
+| `SetDisc(disc DiscReader)` | Provide a streaming disc reader (cartridge cores ignore) |
+| `SetBIOS(key string, data []byte) error` | Provide BIOS data; returns an error if invalid for the key |
+
+### AspectProvider (optional)
+
+Lets a core supply its pixel aspect ratio per frame when it depends on
+the video mode (e.g. consoles that switch horizontal resolution). When
+implemented, the UI uses this instead of the static
+`SystemInfo.PixelAspectRatio`. Must be cheap (cached; recomputed only on
+a mode change).
+
+- `PixelAspectRatio() float64` - The current pixel aspect ratio.
 
 ### SaveStater (optional)
 
@@ -88,6 +102,37 @@ Region type constants:
 |---|---|
 | `MemorySaveRAM` | Battery-backed save RAM (RETRO\_MEMORY\_SAVE\_RAM) |
 | `MemorySystemRAM` | Main system RAM (RETRO\_MEMORY\_SYSTEM\_RAM) |
+
+### DiscReader
+
+A streaming reader over a CD/disc image, passed to `Emulator.SetDisc` for
+disc-based cores. Every signature uses only stdlib types, so a concrete
+reader satisfies it structurally without importing this package.
+
+- `ReadSector(lba int) ([]byte, error)` - Raw 2352-byte sector at the LBA.
+- `NumTracks() int` - Number of tracks on the disc.
+- `Track(i int) (number int, typ string, frames int, pregap int, startLBA int, control uint8)`
+  - TOC fields for track index i in [0, NumTracks).
+- `Close() error` - Release the underlying resources.
+
+### DiscIdentifier (optional)
+
+An optional interface a `CoreFactory` may implement so the UI can derive a
+disc's identifying information without instantiating an emulator. Used to
+group multi-disc games and resolve metadata for disc-based systems.
+
+- `DiscInfo(disc DiscReader) (info DiscInfo, ok bool)` - The disc's derived
+  information and true when it can be read.
+
+`DiscInfo` carries only disc-derived facts; it has no knowledge of any
+external catalog serial conventions.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ProductNumber` | `string` | The disc's product number; identical across a game's discs, so also used as the library/grouping key. |
+| `DiscNumber` | `int` | 1-based position of this disc within the game. |
+| `DiscTotal` | `int` | Total number of discs the game spans. |
+| `Title` | `string` | On-disc game title, used as a display-name fallback. |
 
 ## Types
 
@@ -157,6 +202,7 @@ RetroAchievements integration.
 | `ConsoleID` | `int` | Console identifier for RetroAchievements |
 | `CoreName` | `string` | Core implementation name |
 | `CoreVersion` | `string` | Core version string |
+| `Disc` | `bool` | True if content is a disc image (provided via `SetDisc`) |
 
 ## Implementing a Core
 

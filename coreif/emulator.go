@@ -26,9 +26,19 @@ type Emulator interface {
 	// SetOption applies a core option change identified by key.
 	SetOption(key string, value string)
 
+	// SetRom provides cartridge ROM data. Called after CreateEmulator and
+	// before Start(). Disc-based cores ignore this and receive content via
+	// SetDisc instead.
+	SetRom(data []byte)
+
+	// SetDisc provides a streaming disc reader for disc-based cores. Called
+	// after CreateEmulator and before Start(). Cartridge cores ignore this.
+	SetDisc(disc DiscReader)
+
 	// SetBIOS provides BIOS data for the given key. Called after
 	// CreateEmulator and before Start(). Cores without BIOS ignore this.
-	SetBIOS(key string, data []byte)
+	// Returns an error if the data is invalid for the given key.
+	SetBIOS(key string, data []byte) error
 
 	// Start finalizes emulator state after all options are applied.
 	// Must be called after SetOption and before the first RunFrame.
@@ -36,6 +46,17 @@ type Emulator interface {
 
 	// Close releases any resources held by the emulator.
 	Close()
+}
+
+// AspectProvider is an optional interface a core may implement when its
+// pixel aspect ratio depends on the video mode (e.g. consoles that
+// switch horizontal resolution). When implemented, the UI uses this
+// per-frame value instead of the static SystemInfo.PixelAspectRatio.
+// Implementations must be cheap to call: the value should be cached and
+// recomputed only on a mode change, not derived per call.
+type AspectProvider interface {
+	// PixelAspectRatio returns the current pixel aspect ratio.
+	PixelAspectRatio() float64
 }
 
 // SaveStater enables save states, rewind, and auto-save.

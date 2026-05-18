@@ -106,6 +106,7 @@ type SystemInfo struct {
 	CoreVersion      string
 	SerializeSize    int
 	BigEndianMemory  bool // true for big-endian CPUs (e.g. 68K)
+	Disc             bool // true if content is a disc image (use SetDisc)
 	BIOSOptions      []BIOSOption
 }
 
@@ -120,6 +121,7 @@ type CoreFactory interface {
 	// SystemInfo returns system metadata for UI configuration.
 	SystemInfo() SystemInfo
 
-	// CreateEmulator creates a new emulator instance with the given ROM.
-	CreateEmulator(rom []byte) (Emulator, error)
+	// CreateEmulator creates a new emulator instance. Content is provided
+	// afterwards via Emulator.SetRom (cartridge) or Emulator.SetDisc (disc).
+	CreateEmulator() Emulator
 }
