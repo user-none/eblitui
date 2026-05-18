@@ -188,10 +188,8 @@ func retro_reset() {
 		return
 	}
 
-	emu, err := factory.CreateEmulator(romData)
-	if err != nil {
-		return
-	}
+	emu := factory.CreateEmulator()
+	emu.SetRom(romData)
 	setEmulator(emu)
 	applyCoreOptions()
 	applyBIOS()
@@ -347,10 +345,8 @@ func retro_load_game(game *C.struct_retro_game_info) C.bool {
 	romData = C.GoBytes(game.data, C.int(game.size))
 
 	// Create emulator
-	emu, err := factory.CreateEmulator(romData)
-	if err != nil {
-		return C.bool(false)
-	}
+	emu := factory.CreateEmulator()
+	emu.SetRom(romData)
 	setEmulator(emu)
 	applyCoreOptions()
 	loadBIOSFromSystemDir()
