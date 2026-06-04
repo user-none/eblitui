@@ -11,6 +11,7 @@ import (
 const (
 	metaTagCHTR = 0x43485452 // "CHTR"
 	metaTagCHT2 = 0x43485432 // "CHT2"
+	metaTagCHGD = 0x43484744 // "CHGD" - GD-ROM track info (same text format + PAD)
 )
 
 func (rd *Reader) parseMetadata(metaOffset uint64) error {
@@ -32,14 +33,14 @@ func (rd *Reader) parseMetadata(metaOffset uint64) error {
 		payloadLen := flagsAndLen & 0x00FFFFFF
 		nextOffset := binary.BigEndian.Uint64(node[8:16])
 
-		if (tag == metaTagCHTR || tag == metaTagCHT2) && payloadLen > 0 {
+		if (tag == metaTagCHTR || tag == metaTagCHT2 || tag == metaTagCHGD) && payloadLen > 0 {
 			payload := make([]byte, payloadLen)
 			if _, err := rd.r.ReadAt(payload, int64(offset)+16); err != nil {
-				return fmt.Errorf("reading CHTR payload: %w", err)
+				return fmt.Errorf("reading track metadata payload: %w", err)
 			}
 			t, err := parseTrackLine(payload)
 			if err != nil {
-				return fmt.Errorf("parsing CHTR: %w", err)
+				return fmt.Errorf("parsing track metadata: %w", err)
 			}
 			rawTracks = append(rawTracks, t)
 		}
