@@ -21,11 +21,21 @@ func decodeLZMA(src []byte, dstSize int, props byte, dictSize uint32) ([]byte, e
 	posStates := 1 << pb
 	litStates := (1 << lp) * (1 << lc)
 
+	// The dictionary ring only needs to span the bytes that can be
+	// back-referenced, which is at most the output produced by this decode.
+	// When the caller knows the output size, cap the ring at it rather than
+	// allocating the encoder's declared dictionary (which can be hundreds of
+	// MB while a single CHD hunk decodes only ~18 KB).
+	effDictSize := int(dictSize)
+	if dstSize > 0 && dstSize < effDictSize {
+		effDictSize = dstSize
+	}
+
 	d := &lzmaDecoder{
 		lc:        lc,
 		lp:        lp,
 		posStates: posStates,
-		dictSize:  int(dictSize),
+		dictSize:  effDictSize,
 		dstSize:   dstSize,
 	}
 
