@@ -113,12 +113,13 @@ func decompressCD(codec uint32, compressed []byte, framesPerHunk int, hunkBytes 
 		copy(output[outPos:], base[basePos:basePos+cdSectorSize])
 
 		byteIdx := i / 8
-		bitIdx := uint(7 - (i % 8))
+		bitIdx := uint(i % 8)
 		eccSet := (eccFlags[byteIdx]>>bitIdx)&1 != 0
 		if eccSet {
-			// Restore sync header
+			// Restore sync header, then regenerate the EDC and P/Q parity
+			// the encoder stripped so the sector is byte-faithful.
 			copy(output[outPos:], syncPattern[:])
-			// ECC regeneration would go here but we skip it
+			eccGenerate(output[outPos : outPos+cdSectorSize])
 		}
 
 		basePos += cdSectorSize
