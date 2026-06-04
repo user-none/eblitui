@@ -201,11 +201,12 @@ func (rd *Reader) getHunk(idx int) ([]byte, error) {
 		copy(cp, data)
 		data = cp
 	case compNone:
-		// Uncompressed: read directly from file
+		// Uncompressed: read directly from file.
 		data = make([]byte, rd.hunkBytes)
 		if _, err := rd.r.ReadAt(data, int64(entry.offset)); err != nil {
 			return nil, fmt.Errorf("reading uncompressed hunk %d: %w", idx, err)
 		}
+		rd.swapFrames(idx, data, true)
 	case compParent:
 		return nil, fmt.Errorf("parent compression not supported (hunk %d)", idx)
 	default:
@@ -218,7 +219,7 @@ func (rd *Reader) getHunk(idx int) ([]byte, error) {
 			return nil, fmt.Errorf("reading compressed data: %w", err)
 		}
 		codec := rd.codecs[entry.compression]
-		data, err = rd.decompress(codec, compressed)
+		data, err = rd.decompress(idx, codec, compressed)
 		if err != nil {
 			return nil, fmt.Errorf("decompressing hunk %d (codec %08x): %w", idx, codec, err)
 		}
@@ -243,10 +244,19 @@ func (rd *Reader) getHunk(idx int) ([]byte, error) {
 	return data, nil
 }
 
-func (rd *Reader) decompress(codec uint32, compressed []byte) ([]byte, error) {
+func (rd *Reader) decompress(idx int, codec uint32, compressed []byte) ([]byte, error) {
 	switch codec {
 	case codecCDZL, codecCDLZ, codecCDFL, codecCDZS:
-		return decompressCD(codec, compressed, rd.framesPerHunk, rd.hunkBytes, rd.zstdDec)
+		data, err := decompressCD(codec, compressed, rd.framesPerHunk, rd.hunkBytes, rd.zstdDec)
+		if err != nil {
+			return nil, err
+		}
+		// CDFL decodes native little-endian (audio already canonical, data must
+		// be swapped to its true order); the base codecs reconstruct big-endian
+		// frames (data already byte-exact, audio must be swapped). Data hunks can
+		// reach either path - codec is by ratio.
+		rd.swapFrames(idx, data, codec != codecCDFL)
+		return data, nil
 	default:
 		return nil, fmt.Errorf("unsupported codec %08x", codec)
 	}

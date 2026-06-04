@@ -149,12 +149,6 @@ func decompressCDFL(compressed []byte, framesPerHunk int) ([]byte, error) {
 		return nil, fmt.Errorf("decompressing CDFL base: %w", err)
 	}
 
-	// FLAC output is little-endian 16-bit samples but sector data is
-	// raw bytes stored as big-endian. Swap to restore original byte order.
-	for i := 0; i+1 < len(base); i += 2 {
-		base[i], base[i+1] = base[i+1], base[i]
-	}
-
 	// Remaining compressed data is deflate-compressed subcode
 	var subcode []byte
 	if consumed < len(compressed) {
@@ -184,6 +178,46 @@ func decompressCDFL(compressed []byte, framesPerHunk int) ([]byte, error) {
 	}
 
 	return output, nil
+}
+
+// frameTrackControl returns the control byte of the track containing the
+// absolute CHD frame index, and whether the frame falls in any track. Frames in
+// inter-track padding belong to no track (ok=false); they are unaddressable and
+// never read through ReadSector.
+func (rd *Reader) frameTrackControl(absFrame int) (uint8, bool) {
+	for i := range rd.tracks {
+		t := &rd.tracks[i]
+		if absFrame >= t.chdStart && absFrame < t.chdStart+t.Frames {
+			return t.Control, true
+		}
+	}
+	return 0, false
+}
+
+// swapFrames byte-swaps, in place, the 16-bit sample pairs of every sector in a
+// decoded hunk whose track is audio (audio=true) or data (audio=false). It is
+// the single point that maps CHD-native big-endian storage to the canonical
+// representation: little-endian audio, byte-exact data. Base codecs reconstruct
+// frames big-endian, so their audio is swapped to little-endian; the FLAC codec
+// decodes native little-endian, so its data sectors are swapped back to their
+// true (big-endian sample) order while audio is left as-is. A hunk straddling a
+// track boundary swaps only the matching frames.
+func (rd *Reader) swapFrames(idx int, hunk []byte, audio bool) {
+	first := idx * rd.framesPerHunk
+	for i := 0; i < rd.framesPerHunk; i++ {
+		ctrl, ok := rd.frameTrackControl(first + i)
+		if !ok || (ctrl == 0x01) != audio {
+			continue
+		}
+		off := i * cdFrameSize
+		if off+cdSectorSize > len(hunk) {
+			break
+		}
+		sec := hunk[off : off+cdSectorSize]
+		for j := 0; j+1 < len(sec); j += 2 {
+			sec[j], sec[j+1] = sec[j+1], sec[j]
+		}
+	}
 }
 
 func decompressDeflate(data []byte) ([]byte, error) {
