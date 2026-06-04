@@ -62,6 +62,24 @@ For plain gzip files (not tar.gz), the decompressed content is
 returned directly since the file is not a multi-file archive.
 
 
+## dischash tool
+
+`cmd/dischash` identifies disc images and prints a CRC-32 over their track data,
+for matching CHDs against a reference (redump-style) breakdown. It reads discs
+through the CHD reader, recognizes Sega Saturn, Sega Dreamcast, and PlayStation 1
+discs (showing product ID and title where the format provides them), and marks an
+unreadable disc as `ERROR` rather than dropping it.
+
+```
+go run ./cmd/dischash -file game.chd      # one disc: overall CRC-32 + ID/title
+go run ./cmd/dischash -v -file game.chd   # full per-track table
+go run ./cmd/dischash -dir path/to/chds   # scan a folder, discs hashed in parallel
+```
+
+`-file` and `-dir` are mutually exclusive; `-j` sets the `-dir` concurrency
+(default: number of CPUs).
+
+
 ## Dependencies
 
 - `github.com/bodgit/sevenzip` - 7z archive support
