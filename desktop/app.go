@@ -19,6 +19,7 @@ import (
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/desktop/types"
+	"github.com/user-none/eblitui/romloader"
 	rcheevos "github.com/user-none/go-rcheevos"
 )
 
@@ -347,7 +348,7 @@ func newApp(factory coreif.CoreFactory, info coreif.SystemInfo) (*App, error) {
 	app.scanManager = NewScanManager(
 		app.library,
 		app.scanScreen,
-		app.systemInfo.Extensions,
+		contentExtensions(app.systemInfo),
 		app.metadata,
 		app.systemInfo.ConsoleID,
 		app.systemInfo.Disc,
@@ -968,9 +969,21 @@ func (a *App) GetMD5ByCRC32(crc32 uint32) string {
 	return a.metadata.GetMD5ByCRC32(crc32)
 }
 
-// GetExtensions returns the supported ROM file extensions
+// GetExtensions returns the file extensions for the core's content: the disc
+// image formats for a disc core, or the declared ROM extensions otherwise.
 func (a *App) GetExtensions() []string {
-	return a.systemInfo.Extensions
+	return contentExtensions(a.systemInfo)
+}
+
+// contentExtensions returns the file extensions that identify a core's content
+// on disk. A disc core reads its content through a format-agnostic interface and
+// does not declare extensions itself, so the openable disc-image formats come
+// from romloader. A cartridge core uses the ROM extensions it declares.
+func contentExtensions(info coreif.SystemInfo) []string {
+	if info.Disc {
+		return romloader.DiscExtensions()
+	}
+	return info.Extensions
 }
 
 // ShowNotification shows a brief notification message
@@ -1055,7 +1068,7 @@ func (a *App) handleDeleteAndContinue() {
 		a.scanManager = NewScanManager(
 			a.library,
 			a.scanScreen,
-			a.systemInfo.Extensions,
+			contentExtensions(a.systemInfo),
 			a.metadata,
 			a.systemInfo.ConsoleID,
 			a.systemInfo.Disc,
@@ -1152,7 +1165,7 @@ func (a *App) handleResetAndContinue() {
 		a.scanManager = NewScanManager(
 			a.library,
 			a.scanScreen,
-			a.systemInfo.Extensions,
+			contentExtensions(a.systemInfo),
 			a.metadata,
 			a.systemInfo.ConsoleID,
 			a.systemInfo.Disc,
@@ -1218,7 +1231,7 @@ func (a *App) handleLibraryResetAndContinue() {
 		a.scanManager = NewScanManager(
 			a.library,
 			a.scanScreen,
-			a.systemInfo.Extensions,
+			contentExtensions(a.systemInfo),
 			a.metadata,
 			a.systemInfo.ConsoleID,
 			a.systemInfo.Disc,

@@ -45,7 +45,7 @@ type ScreenCallback interface {
 	GetPlaceholderImageData() []byte   // Get raw placeholder image data (loading indicator)
 	GetMissingArtImageData() []byte    // Get raw missing-art image data (no artwork found)
 	GetMD5ByCRC32(crc32 uint32) string // Get MD5 hash from RDB by CRC32
-	GetExtensions() []string           // Get supported ROM file extensions
+	GetExtensions() []string           // Content file extensions (disc formats for disc cores, else ROM extensions)
 	ShowNotification(msg string)       // Show a brief notification message
 }
 
