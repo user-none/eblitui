@@ -3,6 +3,7 @@ package romloader
 import (
 	"errors"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -32,22 +33,42 @@ type Disc struct {
 	backend discBackend
 }
 
+// discOpeners maps a lowercase file extension (with leading dot) to the backend
+// opener for that disc format. It is the single place the set of supported disc
+// image formats is defined: OpenDisc dispatches through it and DiscExtensions
+// reports its keys, so the two cannot drift.
+var discOpeners = map[string]func(path string) (discBackend, error){
+	".chd": openCHD,
+	".cue": openBinCue,
+}
+
+// DiscExtensions returns the lowercase file extensions OpenDisc accepts, each
+// with a leading dot (".chd", ".cue"), sorted ascending. Callers that scan a
+// directory or filter a file list use it to discover which files are disc images
+// without hardcoding the set. Unlike ROM images, where the core declares the
+// extensions it understands, the disc formats are owned by romloader: a core
+// reads a disc through a format-agnostic interface and never sees the file, so
+// romloader is the only component that knows which container formats it can open.
+func DiscExtensions() []string {
+	exts := make([]string, 0, len(discOpeners))
+	for ext := range discOpeners {
+		exts = append(exts, ext)
+	}
+	sort.Strings(exts)
+	return exts
+}
+
 // OpenDisc opens a disc image for streaming, selected by extension: ".chd" is
 // opened as a CHD image, ".cue" as a cue sheet whose referenced bin track files
 // are opened and held for the disc's lifetime. Any other extension returns
 // ErrUnsupportedDisc. File handles are held open for on-demand sector reads
 // until Close is called.
 func OpenDisc(path string) (*Disc, error) {
-	var b discBackend
-	var err error
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".chd":
-		b, err = openCHD(path)
-	case ".cue":
-		b, err = openBinCue(path)
-	default:
+	open, ok := discOpeners[strings.ToLower(filepath.Ext(path))]
+	if !ok {
 		return nil, ErrUnsupportedDisc
 	}
+	b, err := open(path)
 	if err != nil {
 		return nil, err
 	}

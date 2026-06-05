@@ -3,7 +3,7 @@
 
 // Command dischash hashes a disc image's track data to match it against a
 // reference (redump-style) breakdown. It reads the disc through romloader, so
-// it supports every container format romloader handles (currently CHD); it is
+// it supports every container format romloader handles (CHD and cue/bin). It is
 // not tied to a single file type.
 //
 // For each disc it prints an overall CRC-32 taken over the concatenation of
@@ -78,7 +78,7 @@ type discResult struct {
 
 func main() {
 	filePath := flag.String("file", "", "path to a single disc image")
-	dirPath := flag.String("dir", "", "directory to scan for *.chd images")
+	dirPath := flag.String("dir", "", "directory to scan for disc images (.chd, .cue)")
 	verbose := flag.Bool("v", false, "print the full per-track hash table")
 	jobs := flag.Int("j", runtime.NumCPU(), "max discs to hash concurrently (-dir)")
 	flag.Parse()
@@ -94,12 +94,12 @@ func main() {
 	if *filePath != "" {
 		paths = []string{*filePath}
 	} else {
-		found, err := chdsInDir(*dirPath)
+		found, err := discsInDir(*dirPath)
 		if err != nil {
 			log.Fatalf("scan %s: %v", *dirPath, err)
 		}
 		if len(found) == 0 {
-			log.Fatalf("no .chd files in %s", *dirPath)
+			log.Fatalf("no disc images in %s", *dirPath)
 		}
 		paths = found
 	}
@@ -583,19 +583,27 @@ func trackTypeLabel(typ string) string {
 	}
 }
 
-// chdsInDir returns the sorted paths of all *.chd files directly inside dir.
-func chdsInDir(dir string) ([]string, error) {
+// discsInDir returns the sorted paths of every disc image directly inside dir,
+// matching any extension romloader.OpenDisc accepts. The supported set lives in
+// romloader (DiscExtensions), so this tool gains new disc formats without code
+// changes here.
+func discsInDir(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
+	exts := romloader.DiscExtensions()
 	var out []string
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
-		if strings.EqualFold(filepath.Ext(e.Name()), ".chd") {
-			out = append(out, filepath.Join(dir, e.Name()))
+		ext := strings.ToLower(filepath.Ext(e.Name()))
+		for _, want := range exts {
+			if ext == want {
+				out = append(out, filepath.Join(dir, e.Name()))
+				break
+			}
 		}
 	}
 	sort.Strings(out)

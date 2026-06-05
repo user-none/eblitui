@@ -64,7 +64,7 @@ type buildTrack struct {
 // openBinCue parses a cue sheet and builds the backend, opening each referenced
 // bin file once and computing the disc layout. On any failure every opened
 // handle is closed before returning.
-func openBinCue(path string) (*binCueBackend, error) {
+func openBinCue(path string) (discBackend, error) {
 	bc := &binCueBackend{filename: path, fds: make(map[string]*os.File)}
 	closeAll := func() {
 		for _, fd := range bc.fds {

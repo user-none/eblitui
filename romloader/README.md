@@ -89,10 +89,18 @@ num, typ, frames, pregap, startLBA, control := disc.Track(0)
 The reader is streaming: file handles are held open and sectors are decoded on
 demand, so the whole image is never read into memory.
 
+`DiscExtensions` reports the file extensions `OpenDisc` accepts (`.chd`, `.cue`),
+each with a leading dot, sorted. Callers that scan a directory or filter a file
+list use it to find disc images without hardcoding the set. Unlike ROM images,
+where the core declares the extensions it understands, disc formats are owned by
+romloader: a core reads a disc through a format-agnostic interface and never sees
+the file, so romloader is the only component that knows which containers it opens.
+
 ### Disc API
 
 ```go
 func OpenDisc(path string) (*Disc, error)
+func DiscExtensions() []string
 
 func (d *Disc) ReadSector(lba int) ([]byte, error)
 func (d *Disc) NumTracks() int
