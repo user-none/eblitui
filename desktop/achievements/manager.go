@@ -58,6 +58,9 @@ type Manager struct {
 	badgeCache map[uint64]*ebiten.Image
 	// Game image cache (gameID -> image)
 	gameImageCache map[uint32]*ebiten.Image
+	// Shared sentinel cached for badges/images whose fetch failed, so a bad
+	// URL is not requested from the server again for the session.
+	missingImage *ebiten.Image
 
 	// Cached achievements for the current game session (populated on LoadGame)
 	cachedAchievements []*rcheevos.Achievement
@@ -282,6 +285,18 @@ func badgeCacheKey(gameID, achievementID uint32) uint64 {
 	return (uint64(gameID) << 32) | uint64(achievementID)
 }
 
+// getMissingImage returns the shared sentinel image used to mark a badge or
+// game image whose fetch failed. Caching it under the relevant key prevents the
+// failed URL from being requested from the server again. The image is empty
+// (transparent), so a missing badge simply renders blank rather than as a
+// permanent loading placeholder. Must be called while holding m.mu.
+func (m *Manager) getMissingImage() *ebiten.Image {
+	if m.missingImage == nil {
+		m.missingImage = ebiten.NewImage(1, 1)
+	}
+	return m.missingImage
+}
+
 // getBadge returns a cached badge or fetches it on-demand
 func (m *Manager) getBadge(achievementID uint32, url string) *ebiten.Image {
 	if url == "" {
@@ -302,13 +317,15 @@ func (m *Manager) getBadge(achievementID uint32, url string) *ebiten.Image {
 	}
 	m.mu.Unlock()
 
-	// Fetch on-demand
+	// Fetch on-demand. On failure cache the missing-image sentinel so the
+	// failed URL is not requested again.
 	img := m.fetchImage(url)
-	if img != nil {
-		m.mu.Lock()
-		m.badgeCache[cacheKey] = img
-		m.mu.Unlock()
+	m.mu.Lock()
+	if img == nil {
+		img = m.getMissingImage()
 	}
+	m.badgeCache[cacheKey] = img
+	m.mu.Unlock()
 	return img
 }
 
@@ -333,11 +350,12 @@ func (m *Manager) getGameImage() *ebiten.Image {
 	}
 
 	img := m.fetchImage(url)
-	if img != nil {
-		m.mu.Lock()
-		m.gameImageCache[game.ID] = img
-		m.mu.Unlock()
+	m.mu.Lock()
+	if img == nil {
+		img = m.getMissingImage()
 	}
+	m.gameImageCache[game.ID] = img
+	m.mu.Unlock()
 	return img
 }
 
