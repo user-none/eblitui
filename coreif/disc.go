@@ -13,6 +13,17 @@ type DiscReader interface {
 	// Track returns the TOC fields for track index i in [0, NumTracks).
 	Track(i int) (number int, typ string, frames int, pregap int, startLBA int, control uint8)
 
+	// NumTrackIndexes returns the count of index entries (index numbers >= 1)
+	// for track index i in [0, NumTracks). Index 0 (the pregap) is not reported
+	// here; it is implied for any FAD below the first entry.
+	NumTrackIndexes(i int) int
+
+	// TrackIndex returns the nth index entry of track index i. n is a 0-based
+	// ordinal into the exposed list in [0, NumTrackIndexes(i)), not the index
+	// number; entry 0 is the lowest-numbered exposed index (normally INDEX 01).
+	// The returned lba is the absolute disc LBA of the index.
+	TrackIndex(i, n int) (indexNumber int, lba int)
+
 	// Close releases the underlying resources.
 	Close() error
 }

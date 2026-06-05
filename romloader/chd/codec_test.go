@@ -1,6 +1,9 @@
 package chd
 
 import (
+	"bytes"
+	"compress/flate"
+	"encoding/binary"
 	"testing"
 )
 
@@ -148,6 +151,70 @@ func TestSwapFramesSecondHunk(t *testing.T) {
 	rd.swapFrames(1, h1, true)
 	allTrue := []bool{true, true, true, true, true, true, true, true}
 	checkFrames(t, rd, h1, allTrue)
+}
+
+// deflateRaw raw-deflate-compresses data the way decompressDeflate expects.
+func deflateRaw(t *testing.T, data []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	w, err := flate.NewWriter(&buf, flate.DefaultCompression)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// buildCDZLHunk assembles a cdzl (Deflate) CD hunk: ECC flags (none set), a
+// 2-byte base length, then deflate(base) and deflate(subcode). base is the
+// per-frame sector pattern from fillFrames; subcode is 0x5A.
+func buildCDZLHunk(t *testing.T, rd *Reader) []byte {
+	t.Helper()
+	base := make([]byte, rd.framesPerHunk*cdSectorSize)
+	for f := 0; f < rd.framesPerHunk; f++ {
+		off := f * cdSectorSize
+		for j := 0; j < cdSectorSize; j += 2 {
+			base[off+j] = byte(f)
+			base[off+j+1] = byte(f) | 0x80
+		}
+	}
+	sub := make([]byte, rd.framesPerHunk*cdSubcodeSize)
+	for i := range sub {
+		sub[i] = 0x5A
+	}
+
+	compBase := deflateRaw(t, base)
+	compSub := deflateRaw(t, sub)
+
+	hunk := make([]byte, (rd.framesPerHunk+7)/8) // ECC flag bytes, all zero
+	var lenHdr [2]byte
+	binary.BigEndian.PutUint16(lenHdr[:], uint16(len(compBase)))
+	hunk = append(hunk, lenHdr[:]...)
+	hunk = append(hunk, compBase...)
+	hunk = append(hunk, compSub...)
+	return hunk
+}
+
+// TestDecompressCDZLStraddleSwapsAudioOnly decompresses a cdzl hunk straddling a
+// data/audio boundary and checks only the audio frames are swapped to
+// little-endian while the data frames stay byte-exact.
+func TestDecompressCDZLStraddleSwapsAudioOnly(t *testing.T) {
+	rd := twoTrackReader(4, 4, 4) // frames 0-3 data, 4-7 audio
+	rd.hunkBytes = uint32(rd.framesPerHunk * cdFrameSize)
+
+	out, err := rd.decompress(0, codecCDZL, buildCDZLHunk(t, rd))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != rd.framesPerHunk*cdFrameSize {
+		t.Fatalf("output len = %d, want %d", len(out), rd.framesPerHunk*cdFrameSize)
+	}
+	checkFrames(t, rd, out, []bool{false, false, false, false, true, true, true, true})
 }
 
 // TestSwapFramesPaddingUntouched confirms inter-track padding frames are never

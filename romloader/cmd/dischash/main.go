@@ -524,9 +524,9 @@ func findInDir(d discReader, extent, size int, want string) (int, int, bool) {
 }
 
 // parseBootSerial extracts and normalizes the PlayStation serial from a
-// SYSTEM.CNF body. The BOOT line looks like "BOOT = cdrom:\SCUS_947.02;1"
+// SYSTEM.CNF body. The BOOT line looks like "BOOT = cdrom:\SLUS_123.45;1"
 // (whitespace optional); the executable name is the serial, normalized to
-// redump form (uppercase, '_' -> '-', '.' dropped): SCUS_947.02 -> SCUS-94702.
+// redump form (uppercase, '_' -> '-', '.' dropped): SLUS_123.45 -> SLUS-12345.
 // A BOOT2 key (PS2) returns ok=false.
 func parseBootSerial(cnf string) (string, bool) {
 	for _, line := range strings.Split(cnf, "\n") {

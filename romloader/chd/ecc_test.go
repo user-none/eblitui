@@ -120,13 +120,9 @@ func TestShortBufferIgnored(t *testing.T) {
 	eccGenerate(s) // must not panic
 }
 
-// TestMode1Golden locks the exact EDC and P/Q parity bytes for a fixed
-// synthetic Mode 1 sector. The expected values were captured from this
-// implementation after it was verified end-to-end: every sector of a redump
-// disc's data track (Bulk Slash, Japan) decoded byte-identical and the track
-// hashed to its redump CRC-32. This guards against any future regression in the
-// GF tables or vector indexing.
-func TestMode1Golden(t *testing.T) {
+// TestMode1ECCSnapshot checks eccGenerate produces the expected EDC and P/Q
+// parity bytes for a fixed synthetic Mode 1 sector.
+func TestMode1ECCSnapshot(t *testing.T) {
 	s := makeMode1Sector(9)
 	eccGenerate(s)
 
