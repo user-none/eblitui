@@ -343,6 +343,7 @@ func (m *Manager) getGameImage() *ebiten.Image {
 
 // fetchImage downloads an image from a URL and returns an ebiten.Image
 func (m *Manager) fetchImage(url string) *ebiten.Image {
+	fmt.Printf("url = '%s'\n", url)
 	resp, err := m.httpClient.Get(url)
 	if err != nil {
 		log.Printf("[RetroAchievements] Failed to fetch image: %v", err)

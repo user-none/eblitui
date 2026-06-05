@@ -302,6 +302,7 @@ func newApp(factory coreif.CoreFactory, info coreif.SystemInfo) (*App, error) {
 	app.gameplay = NewGameplayManager(
 		app.factory,
 		app.systemInfo,
+		app.inputManager,
 		app.saveStateManager,
 		app.screenshotManager,
 		app.notification,
@@ -1045,6 +1046,7 @@ func (a *App) handleDeleteAndContinue() {
 		a.gameplay = NewGameplayManager(
 			a.factory,
 			a.systemInfo,
+			a.inputManager,
 			a.saveStateManager,
 			a.screenshotManager,
 			a.notification,
@@ -1142,6 +1144,7 @@ func (a *App) handleResetAndContinue() {
 		a.gameplay = NewGameplayManager(
 			a.factory,
 			a.systemInfo,
+			a.inputManager,
 			a.saveStateManager,
 			a.screenshotManager,
 			a.notification,
@@ -1209,6 +1212,7 @@ func (a *App) handleLibraryResetAndContinue() {
 		a.gameplay = NewGameplayManager(
 			a.factory,
 			a.systemInfo,
+			a.inputManager,
 			a.saveStateManager,
 			a.screenshotManager,
 			a.notification,

@@ -3,6 +3,7 @@ package desktop
 import (
 	"testing"
 
+	"github.com/user-none/eblitui/desktop/types"
 	"github.com/user-none/go-rcheevos"
 )
 
@@ -178,5 +179,86 @@ func TestHandleUnlock(t *testing.T) {
 
 	if _, exists := o.grayscaleBadges[42]; exists {
 		t.Error("grayscale badge should be removed after unlock")
+	}
+}
+
+func TestScrollClampsToRange(t *testing.T) {
+	o := NewAchievementOverlay(nil)
+	o.scrollMax = 5
+
+	o.scroll(-1)
+	if o.scrollOffset != 0 {
+		t.Errorf("scroll below 0 should clamp to 0, got %f", o.scrollOffset)
+	}
+
+	o.scroll(100)
+	if o.scrollOffset != 5 {
+		t.Errorf("scroll past max should clamp to scrollMax, got %f", o.scrollOffset)
+	}
+}
+
+func TestApplyNavigationScrollsDown(t *testing.T) {
+	o := NewAchievementOverlay(nil)
+	o.scrollMax = 5
+	o.Show()
+
+	if handled := o.applyNavigation(UINavigation{Direction: types.DirDown}); handled {
+		t.Error("Down navigation should not resolve the overlay")
+	}
+	if o.scrollOffset != 1 {
+		t.Errorf("scrollOffset should be 1 after Down, got %f", o.scrollOffset)
+	}
+}
+
+func TestApplyNavigationScrollsUp(t *testing.T) {
+	o := NewAchievementOverlay(nil)
+	o.scrollMax = 5
+	o.Show()
+	o.scrollOffset = 3
+
+	o.applyNavigation(UINavigation{Direction: types.DirUp})
+	if o.scrollOffset != 2 {
+		t.Errorf("scrollOffset should be 2 after Up, got %f", o.scrollOffset)
+	}
+}
+
+func TestApplyNavigationBackCloses(t *testing.T) {
+	o := NewAchievementOverlay(nil)
+	o.Show()
+
+	if handled := o.applyNavigation(UINavigation{Back: true}); !handled {
+		t.Error("Back should resolve the overlay")
+	}
+	if o.IsVisible() {
+		t.Error("overlay should be hidden after Back")
+	}
+}
+
+func TestApplyNavigationStartCloses(t *testing.T) {
+	o := NewAchievementOverlay(nil)
+	o.Show()
+
+	if handled := o.applyNavigation(UINavigation{OpenSettings: true}); !handled {
+		t.Error("Start should resolve the overlay")
+	}
+	if o.IsVisible() {
+		t.Error("overlay should be hidden after Start")
+	}
+}
+
+func TestApplyNavigationActivateIsNoOp(t *testing.T) {
+	o := NewAchievementOverlay(nil)
+	o.scrollMax = 5
+	o.Show()
+	o.scrollOffset = 2
+
+	if handled := o.applyNavigation(UINavigation{Activate: true}); handled {
+		t.Error("Activate should not resolve the overlay (no per-item action)")
+	}
+	if o.scrollOffset != 2 {
+		t.Errorf("Activate should not change scroll, got %f", o.scrollOffset)
+	}
+	if !o.IsVisible() {
+		t.Error("Activate should not close the overlay")
 	}
 }

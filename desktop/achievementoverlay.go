@@ -9,6 +9,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
 	"github.com/user-none/eblitui/desktop/achievements"
 	"github.com/user-none/eblitui/desktop/style"
+	"github.com/user-none/eblitui/desktop/types"
 	"github.com/user-none/go-rcheevos"
 )
 
@@ -151,31 +152,26 @@ func (o *AchievementOverlay) updateScrollMax() {
 	}
 }
 
-// Update handles input for the overlay
-func (o *AchievementOverlay) Update() {
+// Update handles input for the overlay. Navigation (keyboard arrows, D-pad,
+// left analog stick) and close (ESC/B/Start) come from the shared InputManager
+// via nav. Page/Home/End and the mouse wheel are handled directly since they
+// are not part of UINavigation.
+func (o *AchievementOverlay) Update(nav UINavigation) {
 	if !o.visible {
 		return
 	}
 
-	// ESC closes overlay
-	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
-		o.Hide()
+	// Navigation and close actions from the shared InputManager.
+	if o.applyNavigation(nav) {
 		return
 	}
 
-	// Keyboard navigation
-	scrollAmount := 0.0
-	if ebiten.IsKeyPressed(ebiten.KeyUp) || ebiten.IsKeyPressed(ebiten.KeyW) {
-		scrollAmount = -1
-	}
-	if ebiten.IsKeyPressed(ebiten.KeyDown) || ebiten.IsKeyPressed(ebiten.KeyS) {
-		scrollAmount = 1
-	}
+	// Page / Home / End (not part of UINavigation)
 	if inpututil.IsKeyJustPressed(ebiten.KeyPageUp) {
-		scrollAmount = -float64(o.visibleItems)
+		o.scroll(-float64(o.visibleItems))
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyPageDown) {
-		scrollAmount = float64(o.visibleItems)
+		o.scroll(float64(o.visibleItems))
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyHome) {
 		o.scrollOffset = 0
@@ -187,42 +183,39 @@ func (o *AchievementOverlay) Update() {
 	}
 
 	// Mouse wheel
-	_, wheelY := ebiten.Wheel()
-	if wheelY != 0 {
-		scrollAmount = -wheelY * 2
+	if _, wheelY := ebiten.Wheel(); wheelY != 0 {
+		o.scroll(-wheelY * 2)
+	}
+}
+
+// applyNavigation applies shared InputManager navigation to the overlay. Up/Down
+// scroll one item; Back (ESC/B) and Start close. Returns true when the overlay
+// was resolved (closed), signalling no further input should be processed.
+func (o *AchievementOverlay) applyNavigation(nav UINavigation) bool {
+	switch nav.Direction {
+	case types.DirUp:
+		o.scroll(-1)
+	case types.DirDown:
+		o.scroll(1)
 	}
 
-	// Gamepad support
-	gamepadIDs := ebiten.AppendGamepadIDs(nil)
-	for _, id := range gamepadIDs {
-		// D-pad navigation
-		if inpututil.IsStandardGamepadButtonJustPressed(id, ebiten.StandardGamepadButtonLeftTop) {
-			scrollAmount = -1
-		}
-		if inpututil.IsStandardGamepadButtonJustPressed(id, ebiten.StandardGamepadButtonLeftBottom) {
-			scrollAmount = 1
-		}
-		// B button closes
-		if inpututil.IsStandardGamepadButtonJustPressed(id, ebiten.StandardGamepadButtonRightRight) {
-			o.Hide()
-			return
-		}
-		// Start button closes
-		if inpututil.IsStandardGamepadButtonJustPressed(id, ebiten.StandardGamepadButtonCenterRight) {
-			o.Hide()
-			return
-		}
+	// Back (ESC / B) or Start closes the overlay
+	if nav.Back || nav.OpenSettings {
+		o.Hide()
+		return true
 	}
 
-	// Apply scroll
-	if scrollAmount != 0 {
-		o.scrollOffset += scrollAmount
-		if o.scrollOffset < 0 {
-			o.scrollOffset = 0
-		}
-		if o.scrollOffset > o.scrollMax {
-			o.scrollOffset = o.scrollMax
-		}
+	return false
+}
+
+// scroll adjusts the scroll offset by delta items, clamped to range.
+func (o *AchievementOverlay) scroll(delta float64) {
+	o.scrollOffset += delta
+	if o.scrollOffset < 0 {
+		o.scrollOffset = 0
+	}
+	if o.scrollOffset > o.scrollMax {
+		o.scrollOffset = o.scrollMax
 	}
 }
 

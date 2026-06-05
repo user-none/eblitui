@@ -60,6 +60,11 @@ type GameplayManager struct {
 	// Pause menu
 	pauseMenu *PauseMenu
 
+	// Set when resuming from the pause menu; suppresses all game input until
+	// every held input is released, so nothing from the menu interaction leaks
+	// into the game on the following frames.
+	resumeInputGuard bool
+
 	// Achievement overlay
 	achievementOverlay *AchievementOverlay
 
@@ -86,6 +91,7 @@ type GameplayManager struct {
 	turboAudioBuf []int16 // Pre-allocated buffer for collecting multi-frame audio
 
 	// External dependencies (not owned by GameplayManager)
+	inputManager       *InputManager
 	saveStateManager   *SaveStateManager
 	screenshotManager  *ScreenshotManager
 	notification       *Notification
@@ -110,6 +116,7 @@ type PlayTimeTracker struct {
 func NewGameplayManager(
 	factory coreif.CoreFactory,
 	systemInfo coreif.SystemInfo,
+	inputManager *InputManager,
 	saveStateManager *SaveStateManager,
 	screenshotManager *ScreenshotManager,
 	notification *Notification,
@@ -126,6 +133,7 @@ func NewGameplayManager(
 		inputMapping:       BuildMappingFromConfig(systemInfo.Buttons, config.Input.P1Keyboard, config.Input.P1Controller),
 		autoSaveInterval:   style.AutoSaveInterval,
 		turboState:         &TurboState{multiplier: 1},
+		inputManager:       inputManager,
 		saveStateManager:   saveStateManager,
 		screenshotManager:  screenshotManager,
 		notification:       notification,
@@ -584,10 +592,7 @@ func (gm *GameplayManager) Update() (pauseMenuOpened bool, err error) {
 	// Check for Tab key to toggle achievement overlay
 	if inpututil.IsKeyJustPressed(ebiten.KeyTab) && !gm.pauseMenu.IsVisible() {
 		if gm.achievementOverlay.IsVisible() {
-			gm.achievementOverlay.Hide()
-			gm.emuControl.RequestResume()
-			gm.playTime.trackStart = time.Now().Unix()
-			gm.playTime.tracking = true
+			gm.resumeFromAchievementOverlay()
 		} else if gm.achievementManager != nil && gm.achievementManager.IsGameLoaded() {
 			gm.emuControl.RequestPause()
 			gm.achievementOverlay.Show()
@@ -595,11 +600,16 @@ func (gm *GameplayManager) Update() (pauseMenuOpened bool, err error) {
 		}
 	}
 
-	// Handle achievement overlay if visible
+	// Handle achievement overlay if visible. Navigation comes from the shared
+	// InputManager (keyboard, D-pad, and left analog stick), polled here only
+	// while the overlay is open so gameplay inputs are not consumed as UI input.
 	if gm.achievementOverlay.IsVisible() {
-		gm.achievementOverlay.Update()
-		// Process achievement idle tasks while overlay is shown
-		if gm.achievementManager != nil {
+		gm.achievementOverlay.Update(gm.inputManager.GetUINavigation())
+		if !gm.achievementOverlay.IsVisible() {
+			// Overlay closed itself (back/close input) - resume gameplay.
+			gm.resumeFromAchievementOverlay()
+		} else if gm.achievementManager != nil {
+			// Process achievement idle tasks while the overlay is shown.
 			gm.achievementManager.Idle()
 		}
 		return false, nil
@@ -626,9 +636,11 @@ func (gm *GameplayManager) Update() (pauseMenuOpened bool, err error) {
 		return true, nil
 	}
 
-	// Handle pause menu if visible
+	// Handle pause menu if visible. Navigation comes from the shared
+	// InputManager (keyboard, D-pad, and left analog stick), polled here only
+	// while the menu is open so gameplay inputs are not consumed as UI input.
 	if gm.pauseMenu.IsVisible() {
-		gm.pauseMenu.Update()
+		gm.pauseMenu.Update(gm.inputManager.GetUINavigation())
 		// Process achievement idle tasks while paused
 		if gm.achievementManager != nil {
 			gm.achievementManager.Idle()
@@ -643,8 +655,20 @@ func (gm *GameplayManager) Update() (pauseMenuOpened bool, err error) {
 	gm.pendingRumbleMu.Unlock()
 	FireRumbleEvents(rumbleEvents, gm.config.Input.RumbleLevel)
 
-	// Poll input and write to shared state (emu goroutine reads it)
-	gm.pollInputToShared()
+	// Poll input and write to shared state (emu goroutine reads it). After
+	// resuming from an overlay (pause menu or achievement overlay), hold all
+	// game input neutral until every held input is released, so nothing from
+	// the overlay interaction leaks into the game.
+	if gm.resumeInputGuard {
+		p1, p2, _ := gm.pollButtons()
+		gm.sharedInput.Set(0, 0)
+		gm.sharedInput.Set(1, 0)
+		if p1 == 0 && p2 == 0 {
+			gm.resumeInputGuard = false
+		}
+	} else {
+		gm.pollInputToShared()
+	}
 
 	// Handle turbo key input (F4 cycles speed)
 	gm.handleTurboKey()
@@ -751,12 +775,23 @@ func (gm *GameplayManager) IsPaused() bool {
 	return gm.pauseMenu.IsVisible()
 }
 
-// Resume resumes gameplay after pause menu
+// Resume resumes gameplay after the pause menu.
 func (gm *GameplayManager) Resume() {
 	gm.pauseMenu.Hide()
 	gm.emuControl.RequestResume()
 	gm.playTime.trackStart = time.Now().Unix()
 	gm.playTime.tracking = true
+	gm.resumeInputGuard = true
+}
+
+// resumeFromAchievementOverlay resumes gameplay after the achievement overlay,
+// whether it was closed by the Tab toggle or by its own back/close input.
+func (gm *GameplayManager) resumeFromAchievementOverlay() {
+	gm.achievementOverlay.Hide()
+	gm.emuControl.RequestResume()
+	gm.playTime.trackStart = time.Now().Unix()
+	gm.playTime.tracking = true
+	gm.resumeInputGuard = true
 }
 
 // Exit cleans up when exiting gameplay
@@ -843,9 +878,9 @@ func (gm *GameplayManager) Exit(saveResume bool) {
 	ebiten.SetTPS(60)
 }
 
-// pollInputToShared reads input and writes it to the shared input state
-// for the emulation goroutine to consume.
-func (gm *GameplayManager) pollInputToShared() {
+// pollButtons reads the current button bitmasks for both players.
+// hasP2 reports whether a second gamepad is connected.
+func (gm *GameplayManager) pollButtons() (p1, p2 uint32, hasP2 bool) {
 	gamepadIDs := ebiten.AppendGamepadIDs(nil)
 	hasGamepad := len(gamepadIDs) > 0
 
@@ -856,13 +891,23 @@ func (gm *GameplayManager) pollInputToShared() {
 
 	// Player 1: keyboard + first gamepad
 	disableAnalog := gm.config.Input.DisableAnalogStick
-	buttons := PollButtons(gm.inputMapping, gamepadID, hasGamepad, disableAnalog)
-	gm.sharedInput.Set(0, buttons)
+	p1 = PollButtons(gm.inputMapping, gamepadID, hasGamepad, disableAnalog)
 
 	// Player 2: second gamepad only
 	if len(gamepadIDs) > 1 {
-		p2buttons := PollGamepadButtons(gm.inputMapping, gamepadIDs[1], disableAnalog)
-		gm.sharedInput.Set(1, p2buttons)
+		p2 = PollGamepadButtons(gm.inputMapping, gamepadIDs[1], disableAnalog)
+		hasP2 = true
+	}
+	return p1, p2, hasP2
+}
+
+// pollInputToShared reads input and writes it to the shared input state
+// for the emulation goroutine to consume.
+func (gm *GameplayManager) pollInputToShared() {
+	p1, p2, hasP2 := gm.pollButtons()
+	gm.sharedInput.Set(0, p1)
+	if hasP2 {
+		gm.sharedInput.Set(1, p2)
 	}
 }
 
