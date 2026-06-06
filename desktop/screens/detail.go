@@ -109,22 +109,42 @@ func (s *DetailScreen) loadAchievementProgress() {
 	crc32, _ := strconv.ParseUint(s.game.CRC32, 16, 32)
 	md5Hash := s.callback.GetMD5ByCRC32(uint32(crc32))
 
-	// Fallback: compute hash from ROM if not in RDB
+	// Fallback: compute the hash directly when not in the RDB. Disc games hash
+	// the selected disc (rcheevos reads sectors through it); cartridge games
+	// hash the ROM file.
 	if md5Hash == "" {
-		romData, _, err := romloader.Load(s.game.File, s.callback.GetExtensions())
-		if err != nil {
-			s.achMu.Lock()
-			s.achLoading = false
-			s.achLoadErr = err
-			s.achMu.Unlock()
-			s.callback.RequestRebuild()
-			return
-		}
 		gameConsoleID := uint32(s.defaultConsoleID)
 		if s.game.ConsoleID != 0 {
 			gameConsoleID = uint32(s.game.ConsoleID)
 		}
-		md5Hash = s.achievementManager.ComputeGameHash(romData, gameConsoleID)
+		if len(s.game.Discs) > 0 {
+			idx := s.game.SelectedDisc
+			if idx < 0 || idx >= len(s.game.Discs) {
+				idx = 0
+			}
+			disc, err := romloader.OpenDisc(s.game.Discs[idx].File)
+			if err != nil {
+				s.achMu.Lock()
+				s.achLoading = false
+				s.achLoadErr = err
+				s.achMu.Unlock()
+				s.callback.RequestRebuild()
+				return
+			}
+			md5Hash = s.achievementManager.ComputeGameHashFromDisc(disc, gameConsoleID)
+			disc.Close()
+		} else {
+			romData, _, err := romloader.Load(s.game.File, s.callback.GetExtensions())
+			if err != nil {
+				s.achMu.Lock()
+				s.achLoading = false
+				s.achLoadErr = err
+				s.achMu.Unlock()
+				s.callback.RequestRebuild()
+				return
+			}
+			md5Hash = s.achievementManager.ComputeGameHash(romData, gameConsoleID)
+		}
 	}
 
 	// Look up progress using MD5

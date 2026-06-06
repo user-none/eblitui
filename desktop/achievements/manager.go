@@ -35,6 +35,7 @@ type Manager struct {
 	userAgent    string // Cached User-Agent string
 	config       *storage.Config
 	consoleID    uint32
+	bigEndian    bool // core stores work RAM big-endian; RA memory is little-endian, so reads are byte-swapped
 
 	// State
 	mu         sync.Mutex
@@ -74,7 +75,7 @@ type Manager struct {
 }
 
 // NewManager creates a new achievement manager
-func NewManager(notification Notification, config *storage.Config, appName, appVersion string, consoleID uint32, sampleRate int) *Manager {
+func NewManager(notification Notification, config *storage.Config, appName, appVersion string, consoleID uint32, bigEndian bool, sampleRate int) *Manager {
 	m := &Manager{
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
@@ -82,6 +83,7 @@ func NewManager(notification Notification, config *storage.Config, appName, appV
 		notification:    notification,
 		config:          config,
 		consoleID:       consoleID,
+		bigEndian:       bigEndian,
 		unlockSoundData: generateUnlockSound(sampleRate),
 		badgeCache:      make(map[uint64]*ebiten.Image),
 		gameImageCache:  make(map[uint32]*ebiten.Image),
@@ -227,17 +229,16 @@ func (m *Manager) SetEmulator(emu EmulatorInterface) {
 	m.emulator = emu
 }
 
-// LoadGame identifies and loads a game for achievement tracking.
-// If md5Hash is provided and non-empty, it will be used directly (fast path).
-// Otherwise, the hash will be computed from romData (fallback).
-// consoleID specifies the RetroAchievements console ID for hash computation.
-func (m *Manager) LoadGame(romData []byte, filePath string, md5Hash string, consoleID uint32) error {
+// loadWith applies client settings, runs start (which kicks off an async load
+// using the supplied callback), and waits for completion with a timeout. It is
+// the shared body of the ROM and disc load paths.
+func (m *Manager) loadWith(start func(rcheevos.LoadGameCallbackFunc)) error {
 	m.mu.Lock()
-	if !m.loggedIn {
-		m.mu.Unlock()
+	loggedIn := m.loggedIn
+	m.mu.Unlock()
+	if !loggedIn {
 		return fmt.Errorf("not logged in")
 	}
-	m.mu.Unlock()
 
 	// Apply client settings from config before loading
 	m.client.SetEncoreModeEnabled(m.config.RetroAchievements.EncoreMode)
@@ -248,7 +249,7 @@ func (m *Manager) LoadGame(romData []byte, filePath string, md5Hash string, cons
 	// Use a channel to capture the async result
 	done := make(chan error, 1)
 
-	loadCallback := func(result int, errorMessage string) {
+	start(func(result int, errorMessage string) {
 		if result != rcheevos.OK {
 			done <- fmt.Errorf("failed to load game: %s", errorMessage)
 			return
@@ -262,14 +263,7 @@ func (m *Manager) LoadGame(romData []byte, filePath string, md5Hash string, cons
 		m.cacheAchievements()
 
 		done <- nil
-	}
-
-	// Use hash directly if provided, otherwise identify from ROM
-	if md5Hash != "" {
-		m.client.LoadGame(md5Hash, loadCallback)
-	} else {
-		m.client.IdentifyAndLoadGame(consoleID, filePath, romData, loadCallback)
-	}
+	})
 
 	// Wait for the callback with a timeout
 	select {
@@ -278,6 +272,29 @@ func (m *Manager) LoadGame(romData []byte, filePath string, md5Hash string, cons
 	case <-time.After(30 * time.Second):
 		return fmt.Errorf("game load timed out")
 	}
+}
+
+// LoadGame identifies and loads a ROM (cartridge) game for achievement
+// tracking. If md5Hash is provided and non-empty it is used directly (fast
+// path); otherwise the hash is computed from romData. consoleID specifies the
+// RetroAchievements console ID for hash computation.
+func (m *Manager) LoadGame(romData []byte, filePath string, md5Hash string, consoleID uint32) error {
+	return m.loadWith(func(cb rcheevos.LoadGameCallbackFunc) {
+		if md5Hash != "" {
+			m.client.LoadGame(md5Hash, cb)
+		} else {
+			m.client.IdentifyAndLoadGame(consoleID, filePath, romData, cb)
+		}
+	})
+}
+
+// LoadGameFromDisc identifies and loads a disc-based game for achievement
+// tracking, reading sectors through disc so rcheevos hashes it directly (any
+// image format works). consoleID specifies the RetroAchievements console ID.
+func (m *Manager) LoadGameFromDisc(disc rcheevos.CDReader, consoleID uint32) error {
+	return m.loadWith(func(cb rcheevos.LoadGameCallbackFunc) {
+		m.client.IdentifyAndLoadGameFromDisc(consoleID, disc, cb)
+	})
 }
 
 // badgeCacheKey creates a composite cache key from game ID and achievement ID
@@ -444,14 +461,31 @@ func (m *Manager) Destroy() {
 	m.client.Destroy()
 }
 
-// readMemory is the memory callback for rcheevos.
-// Delegates to the core adapter's ReadMemory which handles mapping
-// flat addresses to internal memory regions.
+// readMemory is the memory callback for rcheevos. It delegates to the core
+// adapter's ReadMemory, which maps flat addresses to internal memory regions.
+//
+// RetroAchievements memory is always little-endian (the reference environment
+// normalizes big-endian cores to host order before sets are authored). A core
+// that stores work RAM big-endian therefore needs each byte presented from
+// address^1, giving rcheevos the 16-bit byte-swapped (little-endian) view its
+// operators expect. Little-endian cores pass through unchanged.
 func (m *Manager) readMemory(address uint32, buffer []byte) uint32 {
 	if m.emulator == nil {
 		return 0
 	}
-	return m.emulator.ReadMemory(address, buffer)
+	if !m.bigEndian {
+		return m.emulator.ReadMemory(address, buffer)
+	}
+	var one [1]byte
+	var n uint32
+	for i := range buffer {
+		if m.emulator.ReadMemory((address+uint32(i))^1, one[:]) != 1 {
+			return n
+		}
+		buffer[i] = one[0]
+		n++
+	}
+	return n
 }
 
 // serverCall handles HTTP requests to the RetroAchievements API
@@ -884,4 +918,11 @@ func (m *Manager) LookupGameProgress(md5Hash string) (found bool, progress *rche
 // consoleID specifies the RetroAchievements console ID for hash computation.
 func (m *Manager) ComputeGameHash(romData []byte, consoleID uint32) string {
 	return rcheevos.HashFromBuffer(consoleID, romData)
+}
+
+// ComputeGameHashFromDisc generates the MD5 hash for a disc-based game by
+// reading sectors through disc (rcheevos applies the console-specific hashing).
+// Use this as the disc-system fallback when the MD5 is not in the RDB.
+func (m *Manager) ComputeGameHashFromDisc(disc rcheevos.CDReader, consoleID uint32) string {
+	return rcheevos.HashFromDisc(consoleID, disc)
 }

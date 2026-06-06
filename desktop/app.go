@@ -230,7 +230,7 @@ func newApp(factory coreif.CoreFactory, info coreif.SystemInfo) (*App, error) {
 		app.errorPath = configPath
 		app.configLoadFailed = true // Don't overwrite the file on exit
 		app.config = storage.DefaultConfig()
-		app.achievementManager = achievements.NewManager(app.notification, app.config, app.systemInfo.Name, Version, uint32(app.systemInfo.ConsoleID), audioSampleRate)
+		app.achievementManager = achievements.NewManager(app.notification, app.config, app.systemInfo.Name, Version, uint32(app.systemInfo.ConsoleID), app.systemInfo.BigEndianMemory, audioSampleRate)
 		app.library = storage.DefaultLibrary()
 		app.preloadConfiguredShaders()
 		app.initScreens()
@@ -249,7 +249,7 @@ func newApp(factory coreif.CoreFactory, info coreif.SystemInfo) (*App, error) {
 		app.errorPath = configPath
 		app.configLoadFailed = true
 		// Use default theme/font for the error screen display
-		app.achievementManager = achievements.NewManager(app.notification, app.config, app.systemInfo.Name, Version, uint32(app.systemInfo.ConsoleID), audioSampleRate)
+		app.achievementManager = achievements.NewManager(app.notification, app.config, app.systemInfo.Name, Version, uint32(app.systemInfo.ConsoleID), app.systemInfo.BigEndianMemory, audioSampleRate)
 		app.library = storage.DefaultLibrary()
 		app.preloadConfiguredShaders()
 		app.initScreens()
@@ -259,7 +259,7 @@ func newApp(factory coreif.CoreFactory, info coreif.SystemInfo) (*App, error) {
 	}
 
 	// Create achievement manager with config
-	app.achievementManager = achievements.NewManager(app.notification, app.config, app.systemInfo.Name, Version, uint32(app.systemInfo.ConsoleID), audioSampleRate)
+	app.achievementManager = achievements.NewManager(app.notification, app.config, app.systemInfo.Name, Version, uint32(app.systemInfo.ConsoleID), app.systemInfo.BigEndianMemory, audioSampleRate)
 
 	// Apply theme and font size
 	style.ApplyThemeByName(app.config.Theme)

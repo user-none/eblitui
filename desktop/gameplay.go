@@ -426,11 +426,19 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bo
 		if game.ConsoleID != 0 {
 			gameConsoleID = uint32(game.ConsoleID)
 		}
-		// Look up MD5 from RDB for fast path (avoids re-hashing ROM)
-		crc32, _ := strconv.ParseUint(game.CRC32, 16, 32)
-		md5Hash := gm.metadata.GetMD5ByCRC32(uint32(crc32))
-		if err := gm.achievementManager.LoadGame(romData, game.File, md5Hash, gameConsoleID); err != nil {
-			log.Printf("Failed to load achievements: %v", err)
+		// Disc cores hash by reading sectors through the open disc (rcheevos
+		// handles the system-specific hashing); cartridge cores use the RDB
+		// MD5 fast path keyed by CRC32, falling back to re-hashing romData.
+		var loadErr error
+		if gm.systemInfo.Disc {
+			loadErr = gm.achievementManager.LoadGameFromDisc(gm.disc, gameConsoleID)
+		} else {
+			crc32, _ := strconv.ParseUint(game.CRC32, 16, 32)
+			md5Hash := gm.metadata.GetMD5ByCRC32(uint32(crc32))
+			loadErr = gm.achievementManager.LoadGame(romData, game.File, md5Hash, gameConsoleID)
+		}
+		if loadErr != nil {
+			log.Printf("Failed to load achievements: %v", loadErr)
 		} else {
 			// Initialize overlay with achievement data for this game
 			gm.achievementOverlay.InitForGame()
