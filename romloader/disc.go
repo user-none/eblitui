@@ -2,6 +2,7 @@ package romloader
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -78,6 +79,59 @@ func OpenDisc(path string) (*Disc, error) {
 // ReadSector returns the raw 2352-byte sector at the given LBA.
 func (d *Disc) ReadSector(lba int) ([]byte, error) {
 	return d.backend.ReadSector(lba)
+}
+
+// Sector geometry used to cook a raw 2352-byte sector into user data. A Mode 1
+// sector carries 2048 user bytes after a 16-byte header (12 sync + 4 header); a
+// Mode 2 (Form 1) sector after a 24-byte header (the extra 8 bytes are the
+// subheader); an audio sector has no header and is data throughout.
+const (
+	cookedUserDataSize = 2048
+	mode1HeaderSize    = 16
+	mode2HeaderSize    = 24
+)
+
+// ReadSectorData returns the cooked user data of the sector at the given
+// absolute LBA: the 2048-byte user-data region of a Mode 1 or Mode 2 (Form 1)
+// data sector with the sync/header (and Mode 2 subheader) stripped. Audio
+// sectors have no header and are returned whole (the full 2352 bytes). Use it
+// when a consumer identifies a disc by its volume/boot headers rather than raw
+// sector bytes; ReadSector remains the raw view.
+func (d *Disc) ReadSectorData(lba int) ([]byte, error) {
+	raw, err := d.ReadSector(lba)
+	if err != nil {
+		return nil, err
+	}
+	header, audio := d.sectorHeader(lba)
+	if audio {
+		return raw, nil
+	}
+	if len(raw) < header+cookedUserDataSize {
+		return nil, fmt.Errorf("romloader: LBA %d: sector too small for user data", lba)
+	}
+	return raw[header : header+cookedUserDataSize], nil
+}
+
+// sectorHeader returns the header byte count to strip for the track that
+// contains the absolute lba, and whether that track is audio (no header; the
+// whole sector is data). The header size follows the track's mode: Mode 1 uses
+// 16 bytes, Mode 2 uses 24. An lba below the first track defaults to Mode 1.
+func (d *Disc) sectorHeader(lba int) (header int, audio bool) {
+	for i := d.NumTracks() - 1; i >= 0; i-- {
+		_, typ, _, _, startLBA, _ := d.Track(i)
+		if lba < startLBA {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(typ, "AUDIO"):
+			return 0, true
+		case strings.Contains(typ, "MODE2"):
+			return mode2HeaderSize, false
+		default:
+			return mode1HeaderSize, false
+		}
+	}
+	return mode1HeaderSize, false
 }
 
 // NumTracks returns the number of tracks on the disc.
