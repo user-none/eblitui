@@ -790,36 +790,27 @@ func (a *App) Draw(screen *ebiten.Image) {
 	} else {
 		// With effects/shaders - use preprocessing pipeline
 		sw, sh := screen.Bounds().Dx(), screen.Bounds().Dy()
-		buffer := a.getOrCreateShaderBuffer(sw, sh)
-		buffer.Clear()
 
-		// Determine input for preprocessing based on xBR and state
-		var preprocessInput *ebiten.Image
-		hasXBR := shader.HasXBR(shaderIDs)
-
+		var processed *ebiten.Image
 		switch a.state {
 		case StatePlaying:
-			// Keep the xBR/shader aspect scaling in sync with the core's
-			// current pixel aspect (variable horizontal resolution).
-			a.shaderManager.SetPAR(a.gameplay.currentPAR())
-			if hasXBR {
-				// xBR path: pass native framebuffer to preprocessing
-				preprocessInput = a.gameplay.DrawFramebuffer()
-			} else {
-				// Non-xBR path: draw scaled game to buffer
-				a.gameplay.Draw(buffer)
-				preprocessInput = buffer
-			}
+			// Run the full native-frame pipeline: overscan crop, xBR/scale,
+			// ghosting. The frame carries its own pixel aspect ratio so
+			// variable-resolution cores scale correctly.
+			native, par := a.gameplay.DrawFramebuffer()
+			processed = a.shaderManager.ApplyPreprocessEffects(native, par, shaderIDs, sw, sh)
 		default:
-			// UI: draw to buffer (xBR has no effect on UI)
+			// UI: preprocessors are game-only, so draw straight to the buffer.
+			buffer := a.getOrCreateShaderBuffer(sw, sh)
+			buffer.Clear()
 			a.ui.Draw(buffer)
-			preprocessInput = buffer
+			processed = buffer
 		}
 
-		// Apply preprocessing effects (xBR, ghosting)
-		// xBR scales native -> screen size; ghosting operates at screen size
-		processed := a.shaderManager.ApplyPreprocessEffects(
-			preprocessInput, shaderIDs, sw, sh)
+		// No frame yet (e.g. before the first emulated frame); skip this draw.
+		if processed == nil {
+			return
+		}
 
 		// For StatePlaying: draw pause menu and achievement overlay after effects (so shaders apply to them)
 		if a.state == StatePlaying {

@@ -56,6 +56,31 @@ func ScaleAndCenter(displayW, displayH, sourceW, sourceH float64, screenW, scree
 	return
 }
 
+// DrawScaled draws src into dst, scaled and centered to fit dst using the
+// given aspect ratio mode and pixel aspect ratio. Nearest filtering preserves
+// pixel-art crispness. src's bounds determine the source size, so a cropped
+// sub-image scales by its cropped dimensions.
+func DrawScaled(dst, src *ebiten.Image, mode string, par float64) {
+	if src == nil {
+		return
+	}
+	b := src.Bounds()
+	srcW, srcH := b.Dx(), b.Dy()
+	if srcW == 0 || srcH == 0 {
+		return
+	}
+
+	screenW, screenH := dst.Bounds().Dx(), dst.Bounds().Dy()
+	displayW, displayH := Size(mode, screenW, screenH, srcW, srcH, par)
+	scaleX, scaleY, offsetX, offsetY := ScaleAndCenter(displayW, displayH, float64(srcW), float64(srcH), screenW, screenH)
+
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Scale(scaleX, scaleY)
+	op.GeoM.Translate(offsetX, offsetY)
+	op.Filter = ebiten.FilterNearest
+	dst.DrawImage(src, op)
+}
+
 // DPIScale returns the device scale factor for the current monitor.
 // Returns 1.0 if the monitor is not available (e.g. in test environments).
 func DPIScale() float64 {

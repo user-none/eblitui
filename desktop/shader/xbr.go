@@ -29,15 +29,6 @@ func (x *XBRScaler) SetAspectRatioMode(mode string) {
 	x.aspectRatioMode = mode
 }
 
-// SetPAR updates the pixel aspect ratio used for "dar" scaling. Called
-// per frame so cores whose PAR changes with video mode (variable
-// horizontal resolution) scale correctly.
-func (x *XBRScaler) SetPAR(par float64) {
-	if par > 0 {
-		x.par = par
-	}
-}
-
 // NewXBRScaler creates a new xBR scaler instance with the given
 // pixel aspect ratio.
 func NewXBRScaler(par float64) *XBRScaler {
@@ -47,10 +38,14 @@ func NewXBRScaler(par float64) *XBRScaler {
 }
 
 // Apply runs xBR scaling on the source and returns a screen-sized image.
-// Automatically selects 2x, 4x, or 8x scaling based on screen size.
-func (x *XBRScaler) Apply(src *ebiten.Image, screenW, screenH int) *ebiten.Image {
+// Automatically selects 2x, 4x, or 8x scaling based on screen size. par is the
+// pixel aspect ratio delivered with this frame, used for the final scale.
+func (x *XBRScaler) Apply(src *ebiten.Image, par float64, screenW, screenH int) *ebiten.Image {
 	if src == nil {
 		return nil
+	}
+	if par > 0 {
+		x.par = par
 	}
 
 	srcBounds := src.Bounds()
@@ -80,8 +75,8 @@ func (x *XBRScaler) Apply(src *ebiten.Image, screenW, screenH int) *ebiten.Image
 		currentInput = x.passBuffers[pass]
 	}
 
-	// Scale final xBR output to screen with centering
-	x.drawToScreenBuffer(currentInput, screenW, screenH)
+	// Scale final xBR output to the pooled screen buffer with centering
+	display.DrawScaled(x.screenBuffer, currentInput, x.aspectRatioMode, x.par)
 
 	return x.screenBuffer
 }
@@ -201,37 +196,10 @@ func (x *XBRScaler) runShaderPass(input, output *ebiten.Image) {
 	output.DrawTrianglesShader(vertices, indices, x.shader, op)
 }
 
-// scaleToScreen scales src to fit screen using the dynamically computed
-// display aspect ratio, centered. Used as fallback when shader fails.
+// scaleToScreen scales src into a new screen-sized image using the configured
+// display aspect ratio, centered. Used as fallback when the shader fails.
 func (x *XBRScaler) scaleToScreen(src *ebiten.Image, screenW, screenH int) *ebiten.Image {
-	srcW := float64(src.Bounds().Dx())
-	srcH := float64(src.Bounds().Dy())
-
-	displayW, displayH := display.Size(x.aspectRatioMode, screenW, screenH, int(srcW), int(srcH), x.par)
-	scaleX, scaleY, offsetX, offsetY := display.ScaleAndCenter(displayW, displayH, srcW, srcH, screenW, screenH)
-
 	screenBuffer := ebiten.NewImage(screenW, screenH)
-	drawOp := &ebiten.DrawImageOptions{}
-	drawOp.GeoM.Scale(scaleX, scaleY)
-	drawOp.GeoM.Translate(offsetX, offsetY)
-	drawOp.Filter = ebiten.FilterNearest
-	screenBuffer.DrawImage(src, drawOp)
-
+	display.DrawScaled(screenBuffer, src, x.aspectRatioMode, x.par)
 	return screenBuffer
-}
-
-// drawToScreenBuffer scales src to the pooled screen buffer using the
-// dynamically computed display aspect ratio, centered in the screen area.
-func (x *XBRScaler) drawToScreenBuffer(src *ebiten.Image, screenW, screenH int) {
-	srcW := float64(src.Bounds().Dx())
-	srcH := float64(src.Bounds().Dy())
-
-	displayW, displayH := display.Size(x.aspectRatioMode, screenW, screenH, int(srcW), int(srcH), x.par)
-	scaleX, scaleY, offsetX, offsetY := display.ScaleAndCenter(displayW, displayH, srcW, srcH, screenW, screenH)
-
-	drawOp := &ebiten.DrawImageOptions{}
-	drawOp.GeoM.Scale(scaleX, scaleY)
-	drawOp.GeoM.Translate(offsetX, offsetY)
-	drawOp.Filter = ebiten.FilterNearest
-	x.screenBuffer.DrawImage(src, drawOp)
 }

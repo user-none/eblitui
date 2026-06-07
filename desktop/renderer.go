@@ -14,7 +14,6 @@ type FramebufferRenderer struct {
 	par             float64
 	aspectRatioMode string
 	offscreen       *ebiten.Image
-	drawOpts        ebiten.DrawImageOptions
 }
 
 // SetAspectRatioMode sets the aspect ratio scaling mode ("dar", "4:3", "1:1", "stretch").
@@ -59,18 +58,7 @@ func (r *FramebufferRenderer) DrawFramebuffer(screen *ebiten.Image, pixels []byt
 
 	r.offscreen.WritePixels(pixels[:requiredLen])
 
-	screenW, screenH := screen.Bounds().Dx(), screen.Bounds().Dy()
-	nativeW := float64(pixelWidth)
-	nativeH := float64(activeHeight)
-
-	displayW, displayH := display.Size(r.aspectRatioMode, screenW, screenH, pixelWidth, activeHeight, r.par)
-	scaleX, scaleY, offsetX, offsetY := display.ScaleAndCenter(displayW, displayH, nativeW, nativeH, screenW, screenH)
-
-	r.drawOpts = ebiten.DrawImageOptions{}
-	r.drawOpts.GeoM.Scale(scaleX, scaleY)
-	r.drawOpts.GeoM.Translate(offsetX, offsetY)
-	r.drawOpts.Filter = ebiten.FilterNearest
-	screen.DrawImage(r.offscreen, &r.drawOpts)
+	display.DrawScaled(screen, r.offscreen, r.aspectRatioMode, r.par)
 }
 
 // GetFramebufferImage returns pixel data as an ebiten.Image at native

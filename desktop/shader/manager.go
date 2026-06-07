@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/user-none/eblitui/desktop/display"
 )
 
 //go:embed shaders/crt.kage
@@ -97,8 +98,15 @@ type Manager struct {
 	// Ghosting buffer for phosphor persistence (persistent across frames)
 	ghostingBuffer *ebiten.Image
 
+	// Pooled buffer for the non-xBR native-to-screen scale
+	scaleBuffer *ebiten.Image
+
 	// xBR scaler for pixel art scaling
 	xbrScaler *XBRScaler
+
+	// Aspect ratio scaling parameters, also forwarded to the xBR scaler
+	par             float64
+	aspectRatioMode string
 
 	// Frame counter for animated shaders
 	frame int
@@ -114,18 +122,15 @@ func NewManager(par float64) *Manager {
 	return &Manager{
 		shaders:   make(map[string]*ebiten.Shader),
 		xbrScaler: NewXBRScaler(par),
+		par:       par,
 	}
 }
 
-// SetAspectRatioMode passes the aspect ratio mode to the xBR scaler.
+// SetAspectRatioMode sets the aspect ratio mode used for scaling, forwarding
+// it to the xBR scaler.
 func (m *Manager) SetAspectRatioMode(mode string) {
+	m.aspectRatioMode = mode
 	m.xbrScaler.SetAspectRatioMode(mode)
-}
-
-// SetPAR passes the current pixel aspect ratio to the xBR scaler. Called
-// per frame so variable-resolution cores scale correctly under "dar".
-func (m *Manager) SetPAR(par float64) {
-	m.xbrScaler.SetPAR(par)
 }
 
 // ResetBuffers clears all effect buffers. Call when switching games.
@@ -141,6 +146,10 @@ func (m *Manager) ResetBuffers() {
 	if m.bufferB != nil {
 		m.bufferB.Deallocate()
 		m.bufferB = nil
+	}
+	if m.scaleBuffer != nil {
+		m.scaleBuffer.Deallocate()
+		m.scaleBuffer = nil
 	}
 }
 
@@ -341,23 +350,61 @@ func HasXBR(shaderIDs []string) bool {
 	return false
 }
 
-// ApplyPreprocessEffects applies xBR and ghosting effects (not Kage shaders).
-// If xBR is in shaderIDs, src should be native resolution and will be scaled to screen size.
-// Otherwise, src should already be screen resolution.
-// Returns the processed image (screen-sized).
-func (m *Manager) ApplyPreprocessEffects(src *ebiten.Image, shaderIDs []string, screenW, screenH int) *ebiten.Image {
+// ensureScaleBuffer creates or resizes the scale buffer to match dimensions.
+func (m *Manager) ensureScaleBuffer(width, height int) {
+	if m.scaleBuffer != nil {
+		bw, bh := m.scaleBuffer.Bounds().Dx(), m.scaleBuffer.Bounds().Dy()
+		if bw != width || bh != height {
+			m.scaleBuffer.Deallocate()
+			m.scaleBuffer = nil
+		}
+	}
+	if m.scaleBuffer == nil {
+		m.scaleBuffer = ebiten.NewImage(width, height)
+	}
+}
+
+// basicScale promotes a native-resolution src to window size in the pooled
+// scale buffer using the configured aspect ratio, centered. Used when xBR is
+// disabled.
+func (m *Manager) basicScale(src *ebiten.Image, screenW, screenH int) *ebiten.Image {
+	m.ensureScaleBuffer(screenW, screenH)
+	m.scaleBuffer.Clear()
+	display.DrawScaled(m.scaleBuffer, src, m.aspectRatioMode, m.par)
+	return m.scaleBuffer
+}
+
+// ApplyPreprocessEffects runs the native-frame effects pipeline and returns a
+// screen-sized image. src must be the native-resolution game frame and par the
+// pixel aspect ratio delivered with it. The frame is cropped (overscan),
+// promoted to screen size (xBR when enabled, otherwise a plain scale), then
+// ghosted. None of these are Kage shaders.
+func (m *Manager) ApplyPreprocessEffects(src *ebiten.Image, par float64, shaderIDs []string, screenW, screenH int) *ebiten.Image {
 	if src == nil {
 		return nil
 	}
 
-	effectiveInput := src
-
-	// Handle xBR first (scales native -> screen size with smoothing)
-	if HasXBR(shaderIDs) {
-		effectiveInput = m.xbrScaler.Apply(src, screenW, screenH)
+	// Track the frame's pixel aspect ratio (sticky on non-positive values, so a
+	// core that omits PAR keeps the last good value).
+	if par > 0 {
+		m.par = par
 	}
 
-	// Handle ghosting second (operates at screen size)
+	effectiveInput := src
+
+	// Overscan crop on the native frame, before any scale-to-screen.
+	if hasOverscan(shaderIDs) {
+		effectiveInput = cropOverscan(effectiveInput)
+	}
+
+	// Promote native -> screen size: xBR (with smoothing) or a plain scale.
+	if HasXBR(shaderIDs) {
+		effectiveInput = m.xbrScaler.Apply(effectiveInput, m.par, screenW, screenH)
+	} else {
+		effectiveInput = m.basicScale(effectiveInput, screenW, screenH)
+	}
+
+	// Ghosting operates at screen size.
 	if hasGhosting(shaderIDs) {
 		effectiveInput = m.applyGhosting(effectiveInput)
 	}

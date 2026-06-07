@@ -755,17 +755,18 @@ func (gm *GameplayManager) Draw(screen *ebiten.Image) {
 	}
 }
 
-// DrawFramebuffer returns the native-resolution framebuffer for xBR processing.
-// Reads from the shared framebuffer rather than directly from the emulator.
-func (gm *GameplayManager) DrawFramebuffer() *ebiten.Image {
+// DrawFramebuffer returns the native-resolution framebuffer and the pixel
+// aspect ratio delivered with that frame, for the effects pipeline. Reads from
+// the shared framebuffer rather than directly from the emulator.
+func (gm *GameplayManager) DrawFramebuffer() (*ebiten.Image, float64) {
 	if gm.emulator == nil || gm.sharedFramebuffer == nil || gm.renderer == nil {
-		return nil
+		return nil, 0
 	}
-	pixels, stride, height, _ := gm.sharedFramebuffer.Read()
+	pixels, stride, height, par := gm.sharedFramebuffer.Read()
 	if height == 0 {
-		return nil
+		return nil, 0
 	}
-	return gm.renderer.GetFramebufferImage(pixels, stride, height)
+	return gm.renderer.GetFramebufferImage(pixels, stride, height), par
 }
 
 // DrawPauseMenu draws the pause menu overlay

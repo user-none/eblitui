@@ -36,6 +36,13 @@ var AvailableShaders = []ShaderInfo{
 		Context:     ContextGame,
 	},
 	{
+		ID:          "overscan",
+		Name:        "Overscan Crop",
+		Description: "Crop the simulated overscan border",
+		Preprocess:  true,
+		Context:     ContextGame,
+	},
+	{
 		ID:          "crt",
 		Name:        "CRT",
 		Description: "Curved screen with RGB separation and vignette",
