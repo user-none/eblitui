@@ -105,6 +105,9 @@ type artworkJob struct {
 type resolvedJob struct {
 	downloadURL string
 	savePath    string
+	// validateImage decodes the download as an image before writing it, so
+	// corrupt downloads are not persisted. Used for artwork, not text assets.
+	validateImage bool
 }
 
 // NewScanner creates a new scanner instance
@@ -770,8 +773,9 @@ func (s *Scanner) resolveArtwork(queue []artworkJob) []resolvedJob {
 					dlURL := fmt.Sprintf("%s/%s/raw/refs/heads/master/%s/%s.png",
 						thumbnailBaseURL, repo, artType, encodedName)
 					resolved = append(resolved, resolvedJob{
-						downloadURL: dlURL,
-						savePath:    savePath,
+						downloadURL:   dlURL,
+						savePath:      savePath,
+						validateImage: true,
 					})
 				} else {
 					remaining = append(remaining, job)
@@ -812,8 +816,9 @@ func (s *Scanner) resolveArtwork(queue []artworkJob) []resolvedJob {
 						dlURL := fmt.Sprintf("%s/%s/raw/refs/heads/master/%s/%s.png",
 							thumbnailBaseURL, repo, artType, encodedName)
 						resolved = append(resolved, resolvedJob{
-							downloadURL: dlURL,
-							savePath:    savePath,
+							downloadURL:   dlURL,
+							savePath:      savePath,
+							validateImage: true,
 						})
 						matched = true
 						break
@@ -930,7 +935,11 @@ func (s *Scanner) downloadAssets(jobs []resolvedJob, statusText string) {
 				return
 			}
 
-			netutil.DownloadToFile(j.downloadURL, j.savePath)
+			if j.validateImage {
+				netutil.DownloadImgToFile(j.downloadURL, j.savePath)
+			} else {
+				netutil.DownloadToFile(j.downloadURL, j.savePath)
+			}
 
 			s.mu.Lock()
 			complete++

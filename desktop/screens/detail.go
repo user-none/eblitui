@@ -2,7 +2,7 @@ package screens
 
 import (
 	"fmt"
-	"image/png"
+	goimage "image"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -539,7 +539,7 @@ func (s *DetailScreen) loadBoxArtScaled(maxWidth, maxHeight int) *ebiten.Image {
 	}
 	defer f.Close()
 
-	img, err := png.Decode(f)
+	img, _, err := goimage.Decode(f)
 	if err != nil {
 		return nil
 	}
