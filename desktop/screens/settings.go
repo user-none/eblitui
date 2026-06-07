@@ -36,12 +36,13 @@ type SettingsScreen struct {
 	retroAchievements *settings.RetroAchievementsSection
 	input             *settings.InputSection
 	coreOptions       *settings.CoreSection
+	about             *settings.AboutSection
 }
 
 // NewSettingsScreen creates a new settings screen.
 // serializeSize is the bytes per save state for rewind duration estimates.
 // systemInfo provides button definitions and core options for the input section.
-func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config *storage.Config, achievementMgr *achievements.Manager, serializeSize int, systemInfo coreif.SystemInfo) *SettingsScreen {
+func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config *storage.Config, achievementMgr *achievements.Manager, serializeSize int, systemInfo coreif.SystemInfo, appIcon []byte) *SettingsScreen {
 	s := &SettingsScreen{
 		callback:          callback,
 		selectedSection:   0,
@@ -52,6 +53,7 @@ func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config
 		rewind:            settings.NewRewindSection(callback, config, serializeSize),
 		retroAchievements: settings.NewRetroAchievementsSection(callback, config, achievementMgr),
 		input:             settings.NewInputSection(callback, config, systemInfo),
+		about:             settings.NewAboutSection(systemInfo.CoreName, systemInfo.CoreVersion, appIcon),
 	}
 	s.InitBase()
 
@@ -81,6 +83,14 @@ func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config
 			setupNav: s.setupCoreNav,
 		})
 	}
+
+	// About is always the last section.
+	s.sections = append(s.sections, sectionDescriptor{
+		label:    "About",
+		focusKey: "section-about",
+		build:    s.about.Build,
+		setupNav: s.setupAboutNav,
+	})
 
 	return s
 }
@@ -297,6 +307,10 @@ func (s *SettingsScreen) setupAchievementsNav() {
 	s.SetNavTransition("sidebar", types.DirRight, "ra-settings", types.NavIndexFirst)
 	s.SetNavTransition("ra-settings", types.DirLeft, "sidebar", types.NavIndexFirst)
 }
+
+// setupAboutNav is a no-op: the About section has no focusable widgets, so
+// there is no sidebar-to-content navigation transition to register.
+func (s *SettingsScreen) setupAboutNav() {}
 
 func (s *SettingsScreen) setupCoreNav() {
 	firstZone := "core-core-opts"

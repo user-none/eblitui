@@ -74,6 +74,7 @@ func RunDirect(factory coreif.CoreFactory, romPath string, options map[string]st
 	emulator.Start()
 
 	ebiten.SetWindowTitle(systemInfo.CoreName)
+	applyWindowIcon()
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	ebiten.SetTPS(60)
 

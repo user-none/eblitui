@@ -131,6 +131,7 @@ func Run(factory coreif.CoreFactory) error {
 
 	// Configure window
 	ebiten.SetWindowTitle(info.CoreName)
+	applyWindowIcon()
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	ebiten.SetWindowSizeLimits(900, 650, -1, -1)
 
@@ -421,7 +422,7 @@ func (a *App) toggleFullscreen() {
 func (a *App) initScreens() {
 	a.libraryScreen = screens.NewLibraryScreen(a, a.library, a.config)
 	a.detailScreen = screens.NewDetailScreen(a, a.library, a.config, a.achievementManager, a.systemInfo.ConsoleID)
-	a.settingsScreen = screens.NewSettingsScreen(a, a.library, a.config, a.achievementManager, a.systemInfo.SerializeSize, a.systemInfo)
+	a.settingsScreen = screens.NewSettingsScreen(a, a.library, a.config, a.achievementManager, a.systemInfo.SerializeSize, a.systemInfo, appIconPNG)
 	a.scanScreen = screens.NewScanProgressScreen(a)
 	a.errorScreen = screens.NewErrorScreen(a, a.errorFile, a.errorPath, a.handleDeleteAndContinue)
 }
