@@ -132,6 +132,10 @@ func Run(factory coreif.CoreFactory) error {
 	// Configure window
 	ebiten.SetWindowTitle(info.CoreName)
 	applyWindowIcon()
+	// Remove the macOS About menu item; the in-app About (settings) is the only
+	// About. One-time call; on darwin the menu work is deferred until the menu
+	// exists. No-op on other platforms.
+	removeNativeAboutMenuItem()
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	ebiten.SetWindowSizeLimits(900, 650, -1, -1)
 
