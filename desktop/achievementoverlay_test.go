@@ -199,8 +199,8 @@ func TestScrollClampsToRange(t *testing.T) {
 
 func TestApplyNavigationScrollsDown(t *testing.T) {
 	o := NewAchievementOverlay(nil)
-	o.scrollMax = 5
 	o.Show()
+	o.scrollMax = 5
 
 	if handled := o.applyNavigation(UINavigation{Direction: types.DirDown}); handled {
 		t.Error("Down navigation should not resolve the overlay")
@@ -212,8 +212,8 @@ func TestApplyNavigationScrollsDown(t *testing.T) {
 
 func TestApplyNavigationScrollsUp(t *testing.T) {
 	o := NewAchievementOverlay(nil)
-	o.scrollMax = 5
 	o.Show()
+	o.scrollMax = 5
 	o.scrollOffset = 3
 
 	o.applyNavigation(UINavigation{Direction: types.DirUp})

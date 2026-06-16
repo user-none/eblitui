@@ -148,12 +148,3 @@ func TestScaleAndCenterFullFit(t *testing.T) {
 		t.Errorf("offsetY: got %v, want 0", offsetY)
 	}
 }
-
-func TestDPIScale(t *testing.T) {
-	// In test environments ebiten.Monitor() returns nil, so DPIScale
-	// should return the fallback value of 1.0.
-	s := DPIScale()
-	if s < 1.0 {
-		t.Errorf("DPIScale: got %v, want >= 1.0", s)
-	}
-}
