@@ -20,6 +20,7 @@ type directRunner struct {
 	inputMapping   InputMapping
 	renderer       *FramebufferRenderer
 	audioPlayer    *AudioPlayer
+	framePacer     *framePacer
 	emuControl     *EmuControl
 	sharedInput    *SharedInput
 	sharedFB       *SharedFramebuffer
@@ -33,8 +34,8 @@ func RunDirect(factory coreif.CoreFactory, romPath string, options map[string]st
 	systemInfo := factory.SystemInfo()
 
 	// oto allows a single context rate per process. Use the core's rate
-	// so emulator audio plays at the correct pitch and the audio-demand
-	// pacing stays in lockstep. Must be set before any audio/oto use.
+	// so emulator audio plays at the correct pitch and the framePacer's
+	// frame/ring sizing matches. Must be set before any audio/oto use.
 	if systemInfo.SampleRate > 0 {
 		audioSampleRate = systemInfo.SampleRate
 	}
@@ -109,7 +110,8 @@ func RunDirect(factory coreif.CoreFactory, romPath string, options map[string]st
 	ebiten.SetWindowSize(windowW, windowH)
 	ebiten.SetWindowSizeLimits(minW, minH, -1, -1)
 
-	audioPlayer := NewAudioPlayer(1.0, emulator.GetTiming().FPS)
+	pacer := newFramePacer(audioSampleRate, emulator.GetTiming().FPS)
+	audioPlayer := NewAudioPlayer(1.0, pacer.RingCapacity(), pacer.FrameBytes())
 
 	aspectProvider, _ := emulator.(coreif.AspectProvider)
 
@@ -120,6 +122,7 @@ func RunDirect(factory coreif.CoreFactory, romPath string, options map[string]st
 		inputMapping:   BuildDefaultMapping(systemInfo.Buttons),
 		renderer:       NewFramebufferRenderer(systemInfo.ScreenWidth, systemInfo.PixelAspectRatio),
 		audioPlayer:    audioPlayer,
+		framePacer:     pacer,
 		emuControl:     NewEmuControl(),
 		sharedInput:    &SharedInput{},
 		sharedFB:       NewSharedFramebuffer(systemInfo.ScreenWidth, systemInfo.MaxScreenHeight),
@@ -136,9 +139,9 @@ func RunDirect(factory coreif.CoreFactory, romPath string, options map[string]st
 }
 
 // emulationLoop runs on a dedicated goroutine. Pacing comes from the
-// audio player's WaitForDemand: each frame waits until the audio device
-// has drained enough bytes to request another frame. The audio device's
-// drain rate is the loop's clock.
+// framePacer: each frame sleeps to an absolute deadline, with the interval
+// slowly corrected from the audio ring fill so long-term rate stays locked
+// to the device.
 func (dr *directRunner) emulationLoop() {
 	defer close(dr.emuDone)
 
@@ -146,9 +149,7 @@ func (dr *directRunner) emulationLoop() {
 		if !dr.emuControl.CheckPause() {
 			return
 		}
-		if !dr.audioPlayer.WaitForDemand() {
-			return
-		}
+		dr.framePacer.wait(dr.audioPlayer.Buffered())
 
 		buttons := dr.sharedInput.Read()
 		for player := 0; player < maxPlayers; player++ {

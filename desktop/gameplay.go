@@ -22,11 +22,10 @@ import (
 // This includes emulator control, input handling, save states,
 // play time tracking, and the pause menu.
 //
-// The emulator runs on a dedicated goroutine paced by the audio
-// player's WaitForDemand: each iteration parks until the audio device
-// has drained enough bytes to request another frame's worth of work.
-// The Ebiten thread handles UI, input polling, and reads the shared
-// framebuffer.
+// The emulator runs on a dedicated goroutine paced by the framePacer:
+// an absolute-deadline timer at the frame interval, slowly corrected from
+// the audio ring fill so long-term rate stays locked to the device. The
+// Ebiten thread handles UI, input polling, and reads the shared framebuffer.
 type GameplayManager struct {
 	// Core factory and system info
 	factory      coreif.CoreFactory
@@ -40,6 +39,7 @@ type GameplayManager struct {
 	aspectProvider coreif.AspectProvider // Detected at launch (may be nil)
 	renderer       *FramebufferRenderer
 	audioPlayer    *AudioPlayer
+	framePacer     *framePacer
 	currentGame    *storage.GameEntry
 	disc           *romloader.Disc // open streaming disc (disc-based systems)
 
@@ -364,16 +364,18 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bo
 	gm.emuControl = NewEmuControl()
 	gm.emuDone = make(chan struct{})
 
-	// The audio device's drain rate paces the emulation loop via
-	// WaitForDemand. When muted, volume is set to 0 so the player still
-	// drains the ring (driving timing) but produces no audible output.
-	// If no audio device is available, NewAudioPlayer returns a silent
-	// fallback that still paces the loop via a timer-driven drain.
+	// The emulation loop is paced by the framePacer (an absolute-deadline
+	// timer locked to the audio ring fill), not by audio drain. The pacer
+	// owns the rate-derived ring/frame sizing; the audio player just outputs.
+	// When muted, volume is set to 0 (silent output, loop still paced). If no
+	// audio device is available, NewAudioPlayer falls back to a timer-driven
+	// drain so the ring still empties.
 	volume := gm.config.Audio.Volume
 	if gm.config.Audio.Muted {
 		volume = 0
 	}
-	gm.audioPlayer = NewAudioPlayer(volume, emu.GetTiming().FPS)
+	gm.framePacer = newFramePacer(audioSampleRate, emu.GetTiming().FPS)
+	gm.audioPlayer = NewAudioPlayer(volume, gm.framePacer.RingCapacity(), gm.framePacer.FrameBytes())
 
 	// Load SRAM if exists
 	if gm.batterySaver != nil {
@@ -486,25 +488,23 @@ func (gm *GameplayManager) runEmulatorFrame() {
 }
 
 // emulationLoop runs on a dedicated goroutine. It executes emulator
-// frames, queues audio, and updates the shared framebuffer. Pacing
-// comes from the audio player's WaitForDemand: each iteration waits
-// until the audio device has drained enough bytes to request another
-// frame's worth of work. Empty audio frames are padded to one frame of
-// silence inside QueueSamples so the demand signal keeps firing even
-// when the core produces no samples.
+// frames, queues audio, and updates the shared framebuffer. Pacing comes
+// from the framePacer: each iteration sleeps to an absolute frame deadline,
+// with the interval slowly corrected from the audio ring fill so long-term
+// rate stays locked to the device. Turbo runs several emulated frames per
+// pacer step, so audio plays at 1x while emulation runs faster.
 func (gm *GameplayManager) emulationLoop() {
 	defer close(gm.emuDone)
 
 	autoSaveTimer := time.Now().Add(time.Second) // First serialize after 1 second
 
 	for {
-		// Check pause/stop
+		// Check pause/stop. Shutdown exits here (Stop + ring Close); the
+		// pacer only ever parks in a bounded time.Sleep.
 		if !gm.emuControl.CheckPause() {
 			return
 		}
-		if !gm.audioPlayer.WaitForDemand() {
-			return
-		}
+		gm.framePacer.wait(gm.audioPlayer.Buffered())
 
 		// Read input from shared state
 		buttons := gm.sharedInput.Read()
@@ -541,8 +541,7 @@ func (gm *GameplayManager) emulationLoop() {
 		}
 
 		// Queue one frame of audio. QueueSamples auto-pads empty input
-		// to one frame of silence, so every branch drives the demand
-		// signal even when the core produces no samples.
+		// to one frame of silence so oto always has samples to drain.
 		switch {
 		case multiplier == 1:
 			gm.audioPlayer.QueueSamples(gm.emulator.GetAudioSamples())
@@ -809,10 +808,11 @@ func (gm *GameplayManager) Exit(saveResume bool) {
 		return
 	}
 
-	// Stop emulation goroutine and wait for it to exit. The audio player
-	// is closed before waiting because the goroutine may be parked inside
-	// WaitForDemand or ring.Write; AudioPlayer.Close wakes both paths so
-	// the goroutine can reach its next CheckPause check and exit.
+	// Stop emulation goroutine and wait for it to exit. The audio player is
+	// closed before waiting because the goroutine may be blocked in ring.Write
+	// on a full ring; AudioPlayer.Close wakes that path. Otherwise the pacer
+	// parks only in a bounded time.Sleep, so the goroutine reaches its next
+	// CheckPause and exits.
 	if gm.emuControl != nil {
 		gm.emuControl.Stop()
 		gm.audioPlayer.Close()

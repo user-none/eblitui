@@ -8,8 +8,8 @@ import (
 // AudioRingBuffer is a thread-safe ring buffer implementing io.Reader.
 // The emulation goroutine writes samples via Write(), and oto's player
 // reads them via Read(). Write blocks when the buffer is full until Read
-// frees space; Read blocks when empty until Write adds data. The audio
-// device's drain rate paces the producer through this back-pressure.
+// frees space; Read blocks when empty until Write adds data. The block-on-full
+// Write is a backpressure safety net only - the framePacer drives timing.
 type AudioRingBuffer struct {
 	buf      []byte
 	readPos  int
@@ -19,9 +19,6 @@ type AudioRingBuffer struct {
 	mu       sync.Mutex
 	cond     *sync.Cond
 	closed   bool
-	// onDrain is invoked from Read after the buffer lock is released, so
-	// callbacks that take their own lock cannot deadlock against rb.mu.
-	onDrain func(n int)
 }
 
 // NewAudioRingBuffer creates a ring buffer with the given capacity in bytes.
@@ -135,24 +132,9 @@ func (rb *AudioRingBuffer) Read(p []byte) (int, error) {
 		rb.cond.Signal()
 	}
 
-	cb := rb.onDrain
 	rb.mu.Unlock()
-
-	if cb != nil {
-		cb(n)
-	}
 
 	return n, nil
-}
-
-// SetOnDrain installs a callback invoked after each Read completes,
-// outside the buffer lock, with the number of bytes read. Used by the
-// pacing layer to convert real-time consumer drain into producer wake
-// signals. Pass nil to clear.
-func (rb *AudioRingBuffer) SetOnDrain(fn func(n int)) {
-	rb.mu.Lock()
-	rb.onDrain = fn
-	rb.mu.Unlock()
 }
 
 // Buffered returns the number of bytes currently in the buffer.
