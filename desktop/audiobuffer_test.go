@@ -108,22 +108,29 @@ func TestAudioRingBuffer_Close(t *testing.T) {
 	}
 }
 
-func TestAudioRingBuffer_CloseUnblocksReader(t *testing.T) {
+func TestAudioRingBuffer_ReadEmptyReturnsSilence(t *testing.T) {
 	rb := NewAudioRingBuffer(16)
 
-	done := make(chan error, 1)
-	go func() {
-		buf := make([]byte, 4)
-		_, err := rb.Read(buf)
-		done <- err
-	}()
+	// Underrun on an open buffer: Read does not block, it returns a full
+	// buffer of zeroed silence with no error.
+	buf := []byte{9, 9, 9, 9}
+	n, err := rb.Read(buf)
+	if err != nil {
+		t.Fatalf("unexpected error on underrun: %v", err)
+	}
+	if n != len(buf) {
+		t.Fatalf("expected %d silence bytes, got %d", len(buf), n)
+	}
+	for i, b := range buf {
+		if b != 0 {
+			t.Fatalf("byte %d: expected silence 0, got %d", i, b)
+		}
+	}
 
-	// Close should unblock the reader
+	// Once closed and empty, Read returns io.EOF rather than silence.
 	rb.Close()
-
-	err := <-done
-	if err != io.EOF {
-		t.Fatalf("expected io.EOF from blocked reader, got %v", err)
+	if _, err := rb.Read(buf); err != io.EOF {
+		t.Fatalf("expected io.EOF on closed empty buffer, got %v", err)
 	}
 }
 
@@ -136,27 +143,34 @@ func TestAudioRingBuffer_ConcurrentReadWrite(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// Writer goroutine
+	// Writer goroutine. Writes only non-zero bytes so the reader can
+	// distinguish real samples from the zeroed silence the ring returns on
+	// underrun. Write still blocks on a full buffer, so no data is lost.
 	go func() {
 		defer wg.Done()
 		data := make([]byte, chunk)
 		for i := 0; i < iterations; i++ {
 			for j := range data {
-				data[j] = byte(i)
+				data[j] = byte(i%255 + 1)
 			}
 			rb.Write(data)
 		}
 		rb.Close()
 	}()
 
-	// Reader goroutine
+	// Reader goroutine. Read never blocks; on underrun it returns zeroed
+	// silence, so count only the non-zero real bytes.
 	received := 0
 	go func() {
 		defer wg.Done()
 		buf := make([]byte, 64)
 		for {
 			n, err := rb.Read(buf)
-			received += n
+			for _, b := range buf[:n] {
+				if b != 0 {
+					received++
+				}
+			}
 			if err == io.EOF {
 				return
 			}
@@ -166,7 +180,7 @@ func TestAudioRingBuffer_ConcurrentReadWrite(t *testing.T) {
 	wg.Wait()
 
 	if received != totalBytes {
-		t.Fatalf("expected %d bytes with blocking write, got %d", totalBytes, received)
+		t.Fatalf("expected %d real bytes, got %d", totalBytes, received)
 	}
 }
 

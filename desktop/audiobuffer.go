@@ -8,8 +8,7 @@ import (
 // AudioRingBuffer is a thread-safe ring buffer implementing io.Reader.
 // The emulation goroutine writes samples via Write(), and oto's player
 // reads them via Read(). Write blocks when the buffer is full until Read
-// frees space; Read blocks when empty until Write adds data. The block-on-full
-// Write is a backpressure safety net only - the framePacer drives timing.
+// frees space. Read never blocks, returning silence on underrun.
 type AudioRingBuffer struct {
 	buf      []byte
 	readPos  int
@@ -94,17 +93,22 @@ func (rb *AudioRingBuffer) Write(p []byte) {
 	}
 }
 
-// Read implements io.Reader. Blocks until data is available or the buffer
-// is closed. Returns io.EOF when closed and empty.
+// Read implements io.Reader. It never blocks: on underrun (the ring is
+// open but empty) it returns a full buffer of silence. because the
+// Returns io.EOF only when the buffer is closed and empty.
 func (rb *AudioRingBuffer) Read(p []byte) (int, error) {
 	rb.mu.Lock()
+	defer rb.mu.Unlock()
 
-	for rb.count == 0 {
+	if rb.count == 0 {
 		if rb.closed {
-			rb.mu.Unlock()
 			return 0, io.EOF
 		}
-		rb.cond.Wait()
+		// Underrun: hand the consumer silence instead of blocking. Zero p
+		// because oto reuses read buffers from a pool, so stale bytes
+		// would otherwise play as noise.
+		clear(p)
+		return len(p), nil
 	}
 
 	// Signal a blocked writer only when the buffer transitions out of
@@ -131,8 +135,6 @@ func (rb *AudioRingBuffer) Read(p []byte) (int, error) {
 	if wasFull {
 		rb.cond.Signal()
 	}
-
-	rb.mu.Unlock()
 
 	return n, nil
 }
