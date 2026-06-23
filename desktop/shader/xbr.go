@@ -102,11 +102,11 @@ func (x *XBRScaler) ensureBufferPool(srcW, srcH, screenW, screenH int) {
 		}
 
 		// Create all pass buffers
-		x.normalizedSrc = ebiten.NewImage(srcW, srcH)
+		x.normalizedSrc = display.NewUnmanagedImage(srcW, srcH)
 		w, h := srcW, srcH
 		for i := range x.passBuffers {
 			w, h = w*2, h*2
-			x.passBuffers[i] = ebiten.NewImage(w, h)
+			x.passBuffers[i] = display.NewUnmanagedImage(w, h)
 		}
 	} else {
 		// Clear existing buffers for reuse
@@ -125,7 +125,7 @@ func (x *XBRScaler) ensureBufferPool(srcW, srcH, screenW, screenH int) {
 		if x.screenBuffer != nil {
 			x.screenBuffer.Deallocate()
 		}
-		x.screenBuffer = ebiten.NewImage(screenW, screenH)
+		x.screenBuffer = display.NewUnmanagedImage(screenW, screenH)
 	} else {
 		x.screenBuffer.Clear()
 	}
@@ -199,7 +199,7 @@ func (x *XBRScaler) runShaderPass(input, output *ebiten.Image) {
 // scaleToScreen scales src into a new screen-sized image using the configured
 // display aspect ratio, centered. Used as fallback when the shader fails.
 func (x *XBRScaler) scaleToScreen(src *ebiten.Image, screenW, screenH int) *ebiten.Image {
-	screenBuffer := ebiten.NewImage(screenW, screenH)
+	screenBuffer := display.NewUnmanagedImage(screenW, screenH)
 	display.DrawScaled(screenBuffer, src, x.aspectRatioMode, x.par)
 	return screenBuffer
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/desktop/types"
+	"github.com/user-none/eblitui/desktop/widgets"
 )
 
 // LibrarySection manages ROM folder settings
@@ -81,14 +82,14 @@ func (l *LibrarySection) Build(focus types.FocusManager) *widget.Container {
 	)
 
 	// Add Folder button
-	addDirBtn := style.TextButton("Add Folder...", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
+	addDirBtn := widgets.TextButton("Add Folder...", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
 		l.onAddDirectoryClick()
 	})
 	focus.RegisterFocusButton("lib-add", addDirBtn)
 	buttonRow.AddChild(addDirBtn)
 
 	// Scan Library button
-	scanBtn := style.PrimaryTextButton("Scan Library", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
+	scanBtn := widgets.PrimaryTextButton("Scan Library", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
 		l.callback.SwitchToScanProgress(true)
 	})
 	focus.RegisterFocusButton("lib-scan", scanBtn)
@@ -237,7 +238,7 @@ func (l *LibrarySection) buildFolderList(focus types.FocusManager) widget.Prefer
 			if wasTruncated {
 				pathWidgetOpts = append(pathWidgetOpts, widget.WidgetOpts.ToolTip(
 					widget.NewToolTip(
-						widget.ToolTipOpts.Content(style.TooltipContent(dirPath)),
+						widget.ToolTipOpts.Content(widgets.TooltipContent(dirPath)),
 					),
 				))
 			}
@@ -294,7 +295,7 @@ func (l *LibrarySection) buildFolderList(focus types.FocusManager) widget.Prefer
 	}
 
 	// Create scrollable container with border
-	_, _, wrapper := style.ScrollableContainer(style.ScrollableOpts{
+	_, _, wrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
 		Content:     listContent,
 		BgColor:     style.Surface,
 		BorderColor: style.Border,

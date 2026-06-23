@@ -9,6 +9,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/desktop/types"
+	"github.com/user-none/eblitui/desktop/widgets"
 )
 
 // aboutIconSize is the logical width/height the app icon is scaled to fit.
@@ -42,7 +43,7 @@ func (a *AboutSection) Build(focus types.FocusManager) *widget.Container {
 		widget.ContainerOpts.Layout(widget.NewAnchorLayout()),
 	)
 
-	center := style.CenteredContainer(style.DefaultSpacing)
+	center := widgets.CenteredContainer(style.DefaultSpacing)
 
 	if img := a.icon(); img != nil {
 		center.AddChild(widget.NewGraphic(

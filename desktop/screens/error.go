@@ -6,6 +6,7 @@ import (
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/user-none/eblitui/desktop/style"
+	"github.com/user-none/eblitui/desktop/widgets"
 )
 
 // ErrorMode distinguishes between types of config errors
@@ -64,7 +65,7 @@ func (s *ErrorScreen) Build() *widget.Container {
 		widget.ContainerOpts.Layout(widget.NewAnchorLayout()),
 	)
 
-	centerContent := style.CenteredContainer(style.DefaultSpacing)
+	centerContent := widgets.CenteredContainer(style.DefaultSpacing)
 
 	switch s.mode {
 	case ErrorModeInvalid:
@@ -110,7 +111,7 @@ func (s *ErrorScreen) buildCorruptedMode(container *widget.Container) {
 	)
 
 	// Delete and Continue button
-	deleteButton := style.TextButton("Delete and Continue", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
+	deleteButton := widgets.TextButton("Delete and Continue", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
 		if s.onDelete != nil {
 			s.onDelete()
 		}
@@ -118,7 +119,7 @@ func (s *ErrorScreen) buildCorruptedMode(container *widget.Container) {
 	buttonsContainer.AddChild(deleteButton)
 
 	// Exit button
-	exitButton := style.TextButton("Exit", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
+	exitButton := widgets.TextButton("Exit", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
 		s.callback.Exit()
 	})
 	buttonsContainer.AddChild(exitButton)
@@ -177,7 +178,7 @@ func (s *ErrorScreen) buildInvalidMode(container *widget.Container) {
 	)
 
 	// Reset and Continue button
-	resetButton := style.TextButton("Reset and Continue", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
+	resetButton := widgets.TextButton("Reset and Continue", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
 		if s.onReset != nil {
 			s.onReset()
 		}
@@ -185,7 +186,7 @@ func (s *ErrorScreen) buildInvalidMode(container *widget.Container) {
 	buttonsContainer.AddChild(resetButton)
 
 	// Exit button
-	exitButton := style.TextButton("Exit", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
+	exitButton := widgets.TextButton("Exit", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
 		s.callback.Exit()
 	})
 	buttonsContainer.AddChild(exitButton)

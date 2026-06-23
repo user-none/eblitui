@@ -1,9 +1,20 @@
 package display
 
 import (
+	"image"
+
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/user-none/eblitui/coreif"
 )
+
+// NewUnmanagedImage creates an off-atlas ebiten image of the given size. Render
+// targets are large, drawn individually, and used as draw sources, so they must
+// not be placed on ebiten's texture atlas: ebiten would promote them onto giant
+// source-atlas pages that stay mostly empty and accumulate across rebuilds.
+// Unmanaged images are never atlased and are freed immediately on Deallocate.
+func NewUnmanagedImage(w, h int) *ebiten.Image {
+	return ebiten.NewImageWithOptions(image.Rect(0, 0, w, h), &ebiten.NewImageOptions{Unmanaged: true})
+}
 
 // Size computes the display dimensions for the given aspect ratio mode,
 // fitting within screenW x screenH while preserving the chosen ratio.

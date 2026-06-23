@@ -8,6 +8,7 @@ import (
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/desktop/types"
+	"github.com/user-none/eblitui/desktop/widgets"
 )
 
 const (
@@ -114,14 +115,14 @@ func (r *RewindSection) Build(focus types.FocusManager) *widget.Container {
 	r.setupNavigation(focus)
 
 	// Wrap in scrollable container
-	scrollContainer, vSlider, scrollWrapper := style.ScrollableContainer(style.ScrollableOpts{
+	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
 		Content:     section,
 		BgColor:     style.Background,
 		BorderColor: style.Border,
 		Spacing:     0,
 		Padding:     style.SmallSpacing,
 	})
-	focus.SetScrollWidgets(scrollContainer, vSlider)
+	focus.SetScrollContainer(scrollContainer)
 	focus.RestoreScrollPosition()
 	outer.AddChild(scrollWrapper)
 	return outer

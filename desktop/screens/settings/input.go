@@ -8,6 +8,7 @@ import (
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/desktop/types"
+	"github.com/user-none/eblitui/desktop/widgets"
 )
 
 // keyToNameFunc and related are injected from the standalone package to
@@ -279,14 +280,14 @@ func (s *InputSection) Build(focus types.FocusManager) *widget.Container {
 	s.setupNavigation(focus)
 
 	// Wrap in scrollable container
-	scrollContainer, vSlider, scrollWrapper := style.ScrollableContainer(style.ScrollableOpts{
+	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
 		Content:     section,
 		BgColor:     style.Background,
 		BorderColor: style.Border,
 		Spacing:     0,
 		Padding:     style.SmallSpacing,
 	})
-	focus.SetScrollWidgets(scrollContainer, vSlider)
+	focus.SetScrollContainer(scrollContainer)
 	focus.RestoreScrollPosition()
 	outer.AddChild(scrollWrapper)
 	return outer
@@ -375,7 +376,7 @@ func (s *InputSection) buildHeaderRow() *widget.Container {
 
 // buildBindingRow creates a row for a single button binding
 func (s *InputSection) buildBindingRow(focus types.FocusManager, buttonName, defaultKey, defaultPad string) *widget.Container {
-	row := style.SettingsRow(3)
+	row := widgets.SettingsRow(3)
 
 	// Button name label
 	row.AddChild(widget.NewText(
@@ -491,7 +492,7 @@ func (s *InputSection) buildResetRow(focus types.FocusManager) *widget.Container
 	// Spacer
 	row.AddChild(widget.NewContainer())
 
-	resetKBBtn := style.TextButton("Reset Keyboard", style.ButtonPaddingSmall, func(args *widget.ButtonClickedEventArgs) {
+	resetKBBtn := widgets.TextButton("Reset Keyboard", style.ButtonPaddingSmall, func(args *widget.ButtonClickedEventArgs) {
 		s.config.Input.P1Keyboard = nil
 		storage.SaveConfig(s.config)
 		focus.SetPendingFocus("input-reset-kb")
@@ -500,7 +501,7 @@ func (s *InputSection) buildResetRow(focus types.FocusManager) *widget.Container
 	focus.RegisterFocusButton("input-reset-kb", resetKBBtn)
 	row.AddChild(resetKBBtn)
 
-	resetPadBtn := style.TextButton("Reset Controller", style.ButtonPaddingSmall, func(args *widget.ButtonClickedEventArgs) {
+	resetPadBtn := widgets.TextButton("Reset Controller", style.ButtonPaddingSmall, func(args *widget.ButtonClickedEventArgs) {
 		s.config.Input.P1Controller = nil
 		storage.SaveConfig(s.config)
 		focus.SetPendingFocus("input-reset-pad")
@@ -514,7 +515,7 @@ func (s *InputSection) buildResetRow(focus types.FocusManager) *widget.Container
 
 // buildAnalogStickRow creates the "Disable Analog Stick" toggle row
 func (s *InputSection) buildAnalogStickRow(focus types.FocusManager) *widget.Container {
-	row := style.SettingsRow(2)
+	row := widgets.SettingsRow(2)
 
 	label := widget.NewText(
 		widget.TextOpts.Text("Disable Analog Stick", style.FontFace(), style.Text),
@@ -566,7 +567,7 @@ func rumbleLevelLabel(level int) string {
 
 // buildRumbleRow creates the "Rumble" cycle row (Off / On / On 2x / On 3x)
 func (s *InputSection) buildRumbleRow(focus types.FocusManager) *widget.Container {
-	row := style.SettingsRow(2)
+	row := widgets.SettingsRow(2)
 
 	label := widget.NewText(
 		widget.TextOpts.Text("Rumble", style.FontFace(), style.Text),

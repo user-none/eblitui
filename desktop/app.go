@@ -426,7 +426,7 @@ func (a *App) toggleFullscreen() {
 func (a *App) initScreens() {
 	a.libraryScreen = screens.NewLibraryScreen(a, a.library, a.config)
 	a.detailScreen = screens.NewDetailScreen(a, a.library, a.config, a.achievementManager, a.systemInfo.ConsoleID)
-	a.settingsScreen = screens.NewSettingsScreen(a, a.library, a.config, a.achievementManager, a.systemInfo.SerializeSize, a.systemInfo, appIconPNG)
+	a.settingsScreen = screens.NewSettingsScreen(a, a.library, a.config, a.achievementManager, a.systemInfo.SerializeSize, a.systemInfo, appIcon)
 	a.scanScreen = screens.NewScanProgressScreen(a)
 	a.errorScreen = screens.NewErrorScreen(a, a.errorFile, a.errorPath, a.handleDeleteAndContinue)
 }
@@ -624,6 +624,9 @@ func (a *App) Update() error {
 		if !a.rebuildPending {
 			a.restorePendingFocus(a.libraryScreen)
 		}
+		// Finish top-aligning the selected icon card once real layout rects
+		// are available (one frame after a rebuild).
+		a.libraryScreen.ApplyPendingIconScroll()
 		if nav.FocusChanged {
 			a.ensureFocusedVisible()
 		}
@@ -710,29 +713,43 @@ func (a *App) applySpatialNavigation(direction int) {
 
 	// Try spatial navigation on the current screen
 	var nextBtn *widget.Button
+	// Linear fallback for the current screen, used when zone navigation has no
+	// target. The custom scroll view hides content from ebitenui's GetFocusers,
+	// so ChangeFocus cannot reach scrolled widgets; the screen's own ordered
+	// list can.
+	var linearFallback func(widget.Focuser, bool) *widget.Button
 
 	switch a.state {
 	case StateLibrary:
 		nextBtn = a.libraryScreen.FindFocusInDirection(focused, direction)
+		linearFallback = a.libraryScreen.FindFocusLinear
 	case StateDetail:
 		nextBtn = a.detailScreen.FindFocusInDirection(focused, direction)
+		linearFallback = a.detailScreen.FindFocusLinear
 	case StateSettings:
 		nextBtn = a.settingsScreen.FindFocusInDirection(focused, direction)
+		linearFallback = a.settingsScreen.FindFocusLinear
 		// StateError and StateScanProgress use linear navigation (simple layouts)
 	}
 
+	forward := !(direction == types.DirUp || direction == types.DirLeft)
+
+	if nextBtn == nil && linearFallback != nil {
+		nextBtn = linearFallback(focused, forward)
+	}
+
 	if nextBtn != nil {
-		// Spatial navigation found a target - unfocus current first
+		// Found a target - unfocus current first
 		if focused != nil {
 			focused.Focus(false)
 		}
 		nextBtn.Focus(true)
 	} else {
-		// Fallback to linear navigation
-		if direction == types.DirUp || direction == types.DirLeft {
-			a.ui.ChangeFocus(widget.FOCUS_PREVIOUS)
-		} else {
+		// Last resort for screens without a registered focus order.
+		if forward {
 			a.ui.ChangeFocus(widget.FOCUS_NEXT)
+		} else {
+			a.ui.ChangeFocus(widget.FOCUS_PREVIOUS)
 		}
 	}
 }
@@ -928,6 +945,11 @@ func (a *App) LaunchGame(gameCRC string, resume bool, discIndex int) {
 	if a.gameplay.Launch(gameCRC, resume, discIndex) {
 		a.previousState = a.state
 		a.state = StatePlaying
+
+		// Free the library cover textures while playing; they are rebuilt
+		// when the icon view is shown again on return.
+		// Disabled for the moment due to the usefulness not being fully realized.
+		//a.libraryScreen.ClearArtworkCache()
 	}
 }
 
@@ -1301,6 +1323,6 @@ func (a *App) getOrCreateShaderBuffer(width, height int) *ebiten.Image {
 		}
 		a.shaderBuffer.Deallocate()
 	}
-	a.shaderBuffer = ebiten.NewImage(width, height)
+	a.shaderBuffer = display.NewUnmanagedImage(width, height)
 	return a.shaderBuffer
 }

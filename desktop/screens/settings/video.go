@@ -7,6 +7,7 @@ import (
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/desktop/types"
+	"github.com/user-none/eblitui/desktop/widgets"
 )
 
 // VideoSection manages video settings including shaders
@@ -156,14 +157,14 @@ func (v *VideoSection) buildShadersList(focus types.FocusManager) widget.Preferr
 	}
 
 	// Wrap in scrollable container
-	scrollContainer, vSlider, scrollWrapper := style.ScrollableContainer(style.ScrollableOpts{
+	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
 		Content:     listContent,
 		BgColor:     style.Background,
 		BorderColor: style.Border,
 		Spacing:     0,
 		Padding:     style.SmallSpacing,
 	})
-	focus.SetScrollWidgets(scrollContainer, vSlider)
+	focus.SetScrollContainer(scrollContainer)
 	focus.RestoreScrollPosition()
 
 	return scrollWrapper
@@ -279,7 +280,7 @@ func (v *VideoSection) buildShaderRow(info shader.ShaderInfo, focus types.FocusM
 	)
 
 	// Info column
-	row.AddChild(style.LabeledText(displayName, displayDesc))
+	row.AddChild(widgets.LabeledText(displayName, displayDesc))
 
 	// UI toggle button (hidden for game-only preprocessing effects)
 	supportsUI := info.Context&shader.ContextUI != 0

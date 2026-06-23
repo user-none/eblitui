@@ -8,10 +8,11 @@ import (
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/sqweek/dialog"
 	"github.com/user-none/eblitui/coreif"
-	"github.com/user-none/eblitui/romloader"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/desktop/types"
+	"github.com/user-none/eblitui/desktop/widgets"
+	"github.com/user-none/eblitui/romloader"
 )
 
 // CoreSection manages core-category option settings
@@ -81,14 +82,14 @@ func (c *CoreSection) Build(focus types.FocusManager) *widget.Container {
 
 	c.setupNavigation(focus)
 
-	scrollContainer, vSlider, scrollWrapper := style.ScrollableContainer(style.ScrollableOpts{
+	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
 		Content:     section,
 		BgColor:     style.Background,
 		BorderColor: style.Border,
 		Spacing:     0,
 		Padding:     style.SmallSpacing,
 	})
-	focus.SetScrollWidgets(scrollContainer, vSlider)
+	focus.SetScrollContainer(scrollContainer)
 	focus.RestoreScrollPosition()
 	outer.AddChild(scrollWrapper)
 	return outer
@@ -131,7 +132,7 @@ func (c *CoreSection) buildBIOSOption(section *widget.Container, focus types.Foc
 	}
 	nextIdx := (currentIdx + 1) % len(cycleOptions)
 
-	activeRow := style.SettingsRow(2)
+	activeRow := widgets.SettingsRow(2)
 	activeRow.AddChild(widget.NewText(
 		widget.TextOpts.Text("Active", style.FontFace(), style.Text),
 		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
@@ -180,14 +181,14 @@ func (c *CoreSection) buildBIOSVariantRow(section *widget.Container, focus types
 	}
 	hasFile := filePath != ""
 
-	row := style.SettingsRow(2)
+	row := widgets.SettingsRow(2)
 
 	// Left: info column (label + status)
 	statusText := "(Not Found)"
 	if hasFile {
 		statusText = filepath.Base(filePath)
 	}
-	row.AddChild(style.LabeledText(v.Label, statusText))
+	row.AddChild(widgets.LabeledText(v.Label, statusText))
 
 	// Right: Browse or Remove button
 	if hasFile {

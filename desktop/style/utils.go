@@ -13,10 +13,10 @@ import (
 	xdraw "golang.org/x/image/draw"
 )
 
-// ScaleImage scales an image to fit within maxWidth x maxHeight while preserving aspect ratio.
-// Returns an ebiten.Image suitable for display.
-// Scaling is done on CPU to avoid creating large temporary GPU textures.
-func ScaleImage(src goimage.Image, maxWidth, maxHeight int) *ebiten.Image {
+// scaleToRGBA scales src to fit within maxWidth x maxHeight while preserving
+// aspect ratio. Scaling is done on CPU to avoid creating large temporary GPU
+// textures.
+func scaleToRGBA(src goimage.Image, maxWidth, maxHeight int) *goimage.RGBA {
 	bounds := src.Bounds()
 	srcWidth := bounds.Dx()
 	srcHeight := bounds.Dy()
@@ -44,9 +44,27 @@ func ScaleImage(src goimage.Image, maxWidth, maxHeight int) *ebiten.Image {
 	dstRect := goimage.Rect(0, 0, newWidth, newHeight)
 	scaled := goimage.NewRGBA(dstRect)
 	xdraw.ApproxBiLinear.Scale(scaled, dstRect, src, bounds, draw.Over, nil)
+	return scaled
+}
 
-	// Create Ebiten image from the small scaled image only
-	return ebiten.NewImageFromImage(scaled)
+// ScaleImage scales an image to fit within maxWidth x maxHeight while preserving
+// aspect ratio. The result is a managed (atlased) ebiten.Image, suitable for
+// small, long-lived images that benefit from draw-call batching.
+func ScaleImage(src goimage.Image, maxWidth, maxHeight int) *ebiten.Image {
+	return ebiten.NewImageFromImage(scaleToRGBA(src, maxWidth, maxHeight))
+}
+
+// ScaleImageUnmanaged is like ScaleImage but returns an unmanaged (off-atlas)
+// ebiten.Image. Each unmanaged image is its own right-sized GPU texture that is
+// freed immediately on Deallocate, rather than being packed onto a large shared
+// atlas page that is only released once every image on it is gone. This is the
+// right choice for numerous or frequently rebuilt artwork (cover art, box art)
+// where atlas packing wastes memory and fragments. The trade-off is that these
+// images are not batched with others when drawn, which is immaterial for the
+// handful of static artwork images on a UI screen.
+func ScaleImageUnmanaged(src goimage.Image, maxWidth, maxHeight int) *ebiten.Image {
+	return ebiten.NewImageFromImageWithOptions(scaleToRGBA(src, maxWidth, maxHeight),
+		&ebiten.NewImageFromImageOptions{Unmanaged: true})
 }
 
 // TruncateStart truncates a string from the start, keeping the end portion.

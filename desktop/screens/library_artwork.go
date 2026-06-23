@@ -108,11 +108,8 @@ func (a *artworkLoader) CancelAndClear() {
 			continue
 		}
 		seen[art] = true
-		if art.normal != nil {
-			art.normal.Deallocate()
-		}
-		if art.focused != nil {
-			art.focused.Deallocate()
+		if art.image != nil {
+			art.image.Deallocate()
 		}
 	}
 	a.cache = make(map[string]*iconArtwork)
@@ -205,13 +202,10 @@ func (a *artworkLoader) loadOne(crc string, cardWidth, artHeight int, cancel cha
 	default:
 	}
 
-	focusedImg := style.ScaleImage(img, cardWidth, artHeight)
-	normalW := int(float64(cardWidth) * style.IconUnfocusedScale)
-	normalH := int(float64(artHeight) * style.IconUnfocusedScale)
-	normalImg := dimImage(style.ScaleImage(img, normalW, normalH))
+	artImg := style.ScaleImageUnmanaged(img, cardWidth, artHeight)
 
 	a.mu.Lock()
-	a.cache[crc] = &iconArtwork{normal: normalImg, focused: focusedImg}
+	a.cache[crc] = &iconArtwork{image: artImg}
 	a.mu.Unlock()
 
 	a.hasNew.Store(true)
@@ -230,29 +224,23 @@ func (a *artworkLoader) storeMissing(crc string) {
 // it under key. If imageData is nil or fails to decode, a solid-color
 // fallback is used.
 func (a *artworkLoader) buildImage(key string, imageData []byte, cardWidth, artHeight int) {
-	normalW := int(float64(cardWidth) * style.IconUnfocusedScale)
-	normalH := int(float64(artHeight) * style.IconUnfocusedScale)
-
 	if imageData != nil {
 		img, _, err := goimage.Decode(bytes.NewReader(imageData))
 		if err == nil {
-			focusedImg := style.ScaleImage(img, cardWidth, artHeight)
-			normalImg := dimImage(style.ScaleImage(img, normalW, normalH))
+			artImg := style.ScaleImage(img, cardWidth, artHeight)
 
 			a.mu.Lock()
-			a.cache[key] = &iconArtwork{normal: normalImg, focused: focusedImg}
+			a.cache[key] = &iconArtwork{image: artImg}
 			a.mu.Unlock()
 			return
 		}
 	}
 
 	// Fallback to solid color
-	focusedImg := ebiten.NewImage(cardWidth, artHeight)
-	focusedImg.Fill(style.Surface)
-	normalImg := ebiten.NewImage(normalW, normalH)
-	normalImg.Fill(style.Surface)
+	artImg := ebiten.NewImage(cardWidth, artHeight)
+	artImg.Fill(style.Surface)
 
 	a.mu.Lock()
-	a.cache[key] = &iconArtwork{normal: normalImg, focused: focusedImg}
+	a.cache[key] = &iconArtwork{image: artImg}
 	a.mu.Unlock()
 }

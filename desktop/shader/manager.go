@@ -208,7 +208,7 @@ func (m *Manager) ensureGhostingBuffer(width, height int) {
 		}
 	}
 	if m.ghostingBuffer == nil {
-		m.ghostingBuffer = ebiten.NewImage(width, height)
+		m.ghostingBuffer = display.NewUnmanagedImage(width, height)
 	}
 }
 
@@ -223,7 +223,7 @@ func (m *Manager) ensureBuffers(width, height int) {
 		}
 	}
 	if m.bufferA == nil {
-		m.bufferA = ebiten.NewImage(width, height)
+		m.bufferA = display.NewUnmanagedImage(width, height)
 	}
 
 	// Check if bufferB needs (re)creation
@@ -235,7 +235,7 @@ func (m *Manager) ensureBuffers(width, height int) {
 		}
 	}
 	if m.bufferB == nil {
-		m.bufferB = ebiten.NewImage(width, height)
+		m.bufferB = display.NewUnmanagedImage(width, height)
 	}
 }
 
@@ -360,7 +360,7 @@ func (m *Manager) ensureScaleBuffer(width, height int) {
 		}
 	}
 	if m.scaleBuffer == nil {
-		m.scaleBuffer = ebiten.NewImage(width, height)
+		m.scaleBuffer = display.NewUnmanagedImage(width, height)
 	}
 }
 

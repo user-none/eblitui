@@ -4,6 +4,7 @@ package types
 
 import (
 	"github.com/ebitenui/ebitenui/widget"
+	"github.com/user-none/eblitui/desktop/widgets"
 )
 
 // Direction constants for navigation
@@ -63,7 +64,7 @@ type FocusRestorer interface {
 type FocusManager interface {
 	RegisterFocusButton(key string, btn *widget.Button)
 	SetPendingFocus(key string)
-	SetScrollWidgets(sc *widget.ScrollContainer, slider *widget.Slider)
+	SetScrollContainer(sc *widgets.ScrollView)
 	SaveScrollPosition()
 	RestoreScrollPosition()
 	// Zone-based navigation

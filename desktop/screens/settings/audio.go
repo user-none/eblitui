@@ -9,6 +9,7 @@ import (
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/desktop/types"
+	"github.com/user-none/eblitui/desktop/widgets"
 )
 
 const (
@@ -88,14 +89,14 @@ func (a *AudioSection) Build(focus types.FocusManager) *widget.Container {
 
 	a.setupNavigation(focus)
 
-	scrollContainer, vSlider, scrollWrapper := style.ScrollableContainer(style.ScrollableOpts{
+	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
 		Content:     section,
 		BgColor:     style.Background,
 		BorderColor: style.Border,
 		Spacing:     0,
 		Padding:     style.SmallSpacing,
 	})
-	focus.SetScrollWidgets(scrollContainer, vSlider)
+	focus.SetScrollContainer(scrollContainer)
 	focus.RestoreScrollPosition()
 	outer.AddChild(scrollWrapper)
 	return outer
@@ -130,7 +131,7 @@ func (a *AudioSection) setupNavigation(focus types.FocusManager) {
 
 // buildVolumeRow creates the volume control row with [-] value [+] buttons
 func (a *AudioSection) buildVolumeRow(focus types.FocusManager) *widget.Container {
-	row := style.SettingsRow(2)
+	row := widgets.SettingsRow(2)
 
 	labelText := widget.NewText(
 		widget.TextOpts.Text("Volume", style.FontFace(), style.Text),
@@ -227,7 +228,7 @@ func (a *AudioSection) updateVolumeLabel() {
 
 // buildMuteRow creates the mute toggle row
 func (a *AudioSection) buildMuteRow(focus types.FocusManager) *widget.Container {
-	row := style.SettingsRow(2)
+	row := widgets.SettingsRow(2)
 
 	label := widget.NewText(
 		widget.TextOpts.Text("Mute Game Audio", style.FontFace(), style.Text),
@@ -260,7 +261,7 @@ func (a *AudioSection) buildMuteRow(focus types.FocusManager) *widget.Container 
 
 // buildFastForwardMuteRow creates the fast-forward audio mute toggle row
 func (a *AudioSection) buildFastForwardMuteRow(focus types.FocusManager) *widget.Container {
-	row := style.SettingsRow(2)
+	row := widgets.SettingsRow(2)
 
 	label := widget.NewText(
 		widget.TextOpts.Text("Mute Fast-Forward Audio", style.FontFace(), style.Text),

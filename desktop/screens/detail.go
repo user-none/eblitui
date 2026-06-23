@@ -15,6 +15,7 @@ import (
 	"github.com/user-none/eblitui/desktop/achievements"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
+	"github.com/user-none/eblitui/desktop/widgets"
 	"github.com/user-none/eblitui/romloader"
 	"github.com/user-none/go-rcheevos"
 )
@@ -185,7 +186,7 @@ func (s *DetailScreen) Build() *widget.Container {
 			widget.RowLayoutOpts.Direction(widget.DirectionHorizontal),
 		)),
 	)
-	backButton := style.TextButton("Back", style.ButtonPaddingSmall, func(args *widget.ButtonClickedEventArgs) {
+	backButton := widgets.TextButton("Back", style.ButtonPaddingSmall, func(args *widget.ButtonClickedEventArgs) {
 		s.callback.SwitchToLibrary()
 	})
 	toolbarLeft.AddChild(backButton)
@@ -221,7 +222,7 @@ func (s *DetailScreen) Build() *widget.Container {
 	hasResume := s.hasResumeState()
 
 	if !s.game.Missing {
-		playButton := style.PrimaryTextButton("Play", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
+		playButton := widgets.PrimaryTextButton("Play", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
 			s.callback.LaunchGame(s.game.CRC32, false, -1)
 		})
 		s.RegisterFocusButton("play", playButton)
@@ -244,7 +245,7 @@ func (s *DetailScreen) Build() *widget.Container {
 		)
 		buttonContainer.AddChild(resumeButton)
 	} else {
-		removeButton := style.TextButton("Remove from Library", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
+		removeButton := widgets.TextButton("Remove from Library", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
 			s.library.RemoveGame(s.game.CRC32)
 			storage.SaveLibrary(s.library)
 			s.callback.SwitchToLibrary()
@@ -257,7 +258,7 @@ func (s *DetailScreen) Build() *widget.Container {
 	if s.game.Favorite {
 		favText = "Remove from Favorites"
 	}
-	favButton := style.TextButton(favText, style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
+	favButton := widgets.TextButton(favText, style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
 		s.game.Favorite = !s.game.Favorite
 		storage.SaveLibrary(s.library)
 		s.callback.RequestRebuild()
@@ -431,9 +432,9 @@ func (s *DetailScreen) Build() *widget.Container {
 			}
 			var btn *widget.Button
 			if i == sel {
-				btn = style.PrimaryTextButton(label, style.ButtonPaddingMedium, handler)
+				btn = widgets.PrimaryTextButton(label, style.ButtonPaddingMedium, handler)
 			} else {
-				btn = style.TextButton(label, style.ButtonPaddingMedium, handler)
+				btn = widgets.TextButton(label, style.ButtonPaddingMedium, handler)
 			}
 			s.RegisterFocusButton(fmt.Sprintf("disc-%d", i), btn)
 			metadataContainer.AddChild(btn)
@@ -509,12 +510,12 @@ func (s *DetailScreen) Build() *widget.Container {
 	)
 	scrollContent.AddChild(contentContainer)
 
-	scrollContainer, vSlider, scrollWrapper := style.ScrollableContainer(style.ScrollableOpts{
+	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
 		Content: scrollContent,
 		BgColor: style.Background,
 		Spacing: style.TinySpacing,
 	})
-	s.SetScrollWidgets(scrollContainer, vSlider)
+	s.SetScrollContainer(scrollContainer)
 	s.RestoreScrollPosition()
 
 	rootContainer.AddChild(scrollWrapper)
@@ -544,7 +545,7 @@ func (s *DetailScreen) loadBoxArtScaled(maxWidth, maxHeight int) *ebiten.Image {
 		return nil
 	}
 
-	return style.ScaleImage(img, maxWidth, maxHeight)
+	return style.ScaleImageUnmanaged(img, maxWidth, maxHeight)
 }
 
 // hasResumeState checks if a resume state exists for the current game
@@ -630,7 +631,7 @@ func (s *DetailScreen) buildMetadataRow(label, value string, valuePixelWidth int
 			}),
 			widget.WidgetOpts.ToolTip(
 				widget.NewToolTip(
-					widget.ToolTipOpts.Content(style.TooltipContent(value)),
+					widget.ToolTipOpts.Content(widgets.TooltipContent(value)),
 				),
 			),
 		))

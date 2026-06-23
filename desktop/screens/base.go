@@ -3,6 +3,7 @@ package screens
 import (
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/user-none/eblitui/desktop/types"
+	"github.com/user-none/eblitui/desktop/widgets"
 )
 
 // NavZone defines a navigation zone with ordered buttons
@@ -22,9 +23,8 @@ type NavTransition struct {
 // Embed this in screen structs to get scroll position preservation
 // and focus restoration after rebuilds.
 type BaseScreen struct {
-	// Scroll container and slider for scroll position preservation
-	scrollContainer *widget.ScrollContainer
-	vSlider         *widget.Slider
+	// Scroll container for scroll position preservation (owns its slider)
+	scrollContainer *widgets.ScrollView
 	scrollTop       float64
 
 	// Button references for focus restoration (maps key to button)
@@ -48,11 +48,10 @@ func (b *BaseScreen) InitBase() {
 	b.buttonToZone = make(map[string]string)
 }
 
-// SetScrollWidgets stores references to the scroll widgets for position preservation.
+// SetScrollContainer stores the scroll container for position preservation.
 // Call this during Build() after creating the scroll container.
-func (b *BaseScreen) SetScrollWidgets(scrollContainer *widget.ScrollContainer, vSlider *widget.Slider) {
+func (b *BaseScreen) SetScrollContainer(scrollContainer *widgets.ScrollView) {
 	b.scrollContainer = scrollContainer
-	b.vSlider = vSlider
 }
 
 // SaveScrollPosition saves the current scroll position.
@@ -67,10 +66,7 @@ func (b *BaseScreen) SaveScrollPosition() {
 // Call this after rebuilding the screen, once the scroll container is set.
 func (b *BaseScreen) RestoreScrollPosition() {
 	if b.scrollContainer != nil && b.scrollTop > 0 {
-		b.scrollContainer.ScrollTop = b.scrollTop
-		if b.vSlider != nil {
-			b.vSlider.Current = int(b.scrollTop * 1000)
-		}
+		b.scrollContainer.SetScrollTop(b.scrollTop)
 	}
 }
 
@@ -183,53 +179,11 @@ func (b *BaseScreen) EnsureFocusedVisible(focused widget.Focuser, isScrollableBu
 		return
 	}
 
-	// Get the focused widget's rectangle
 	focusWidget := focused.GetWidget()
 	if focusWidget == nil {
 		return
 	}
-	focusRect := focusWidget.Rect
-
-	// Get the scroll container's view rect (visible area on screen)
-	viewRect := b.scrollContainer.ViewRect()
-	contentRect := b.scrollContainer.ContentRect()
-
-	// If content fits in view, no scrolling needed
-	if contentRect.Dy() <= viewRect.Dy() {
-		return
-	}
-
-	// Current scroll offset in pixels
-	maxScroll := contentRect.Dy() - viewRect.Dy()
-	scrollOffset := int(b.scrollContainer.ScrollTop * float64(maxScroll))
-
-	// Widget's position relative to view top
-	widgetTopInView := focusRect.Min.Y - viewRect.Min.Y
-	widgetBottomInView := focusRect.Max.Y - viewRect.Min.Y
-	viewHeight := viewRect.Dy()
-
-	// Check if widget top is above the visible area
-	if widgetTopInView < 0 {
-		// Scroll up: align widget top with view top
-		newScrollOffset := scrollOffset + widgetTopInView
-		if newScrollOffset < 0 {
-			newScrollOffset = 0
-		}
-		b.scrollContainer.ScrollTop = float64(newScrollOffset) / float64(maxScroll)
-		if b.vSlider != nil {
-			b.vSlider.Current = int(b.scrollContainer.ScrollTop * 1000)
-		}
-	} else if widgetBottomInView > viewHeight {
-		// Scroll down: align widget bottom with view bottom (minimal scroll)
-		newScrollOffset := scrollOffset + (widgetBottomInView - viewHeight)
-		if newScrollOffset > maxScroll {
-			newScrollOffset = maxScroll
-		}
-		b.scrollContainer.ScrollTop = float64(newScrollOffset) / float64(maxScroll)
-		if b.vSlider != nil {
-			b.vSlider.Current = int(b.scrollContainer.ScrollTop * 1000)
-		}
-	}
+	b.scrollContainer.ScrollRectIntoView(focusWidget.Rect)
 }
 
 // FindFocusInDirection finds the next button in the specified direction
@@ -260,6 +214,54 @@ func (b *BaseScreen) FindFocusInDirection(current widget.Focuser, direction int)
 
 	// Fallback to spatial navigation (legacy behavior)
 	return b.findFocusSpatial(current, direction)
+}
+
+// FindFocusLinear cycles focus within the current button's navigation zone,
+// wrapping at the ends. forward advances to the next button in the zone;
+// otherwise the previous. It is used as the fallback when directional zone
+// navigation has no target (e.g. moving past the right edge of a grid row),
+// replacing ebitenui's ChangeFocus, which cannot see content inside the custom
+// scroll view. Staying within the zone keeps the wrap spatially sensible (a
+// grid advances to the next cell; a list wraps within the list) instead of
+// jumping into an unrelated zone. Returns nil when there is no current button
+// or it is not in a zone.
+func (b *BaseScreen) FindFocusLinear(current widget.Focuser, forward bool) *widget.Button {
+	if current == nil {
+		return nil
+	}
+
+	currentKey := ""
+	for key, btn := range b.focusButtons {
+		if btn.GetWidget() == current.GetWidget() {
+			currentKey = key
+			break
+		}
+	}
+	if currentKey == "" {
+		return nil
+	}
+
+	zone := b.navZones[b.buttonToZone[currentKey]]
+	if zone == nil || len(zone.Keys) == 0 {
+		return nil
+	}
+
+	idx := -1
+	for i, k := range zone.Keys {
+		if k == currentKey {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return nil
+	}
+
+	n := len(zone.Keys)
+	if forward {
+		return b.focusButtons[zone.Keys[(idx+1)%n]]
+	}
+	return b.focusButtons[zone.Keys[(idx-1+n)%n]]
 }
 
 // findFocusInZone implements zone-aware navigation

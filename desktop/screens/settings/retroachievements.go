@@ -7,6 +7,7 @@ import (
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/desktop/types"
+	"github.com/user-none/eblitui/desktop/widgets"
 	rcheevos "github.com/user-none/go-rcheevos"
 )
 
@@ -20,7 +21,7 @@ type RetroAchievementsSection struct {
 	achievements *achievements.Manager
 
 	// Input handling
-	textInputs    *style.TextInputGroup
+	textInputs    *widgets.TextInputGroup
 	usernameInput *widget.TextInput
 	passwordInput *widget.TextInput
 	errorMessage  string
@@ -37,7 +38,7 @@ func NewRetroAchievementsSection(
 		callback:     callback,
 		config:       config,
 		achievements: achievementMgr,
-		textInputs:   style.NewTextInputGroup(),
+		textInputs:   widgets.NewTextInputGroup(),
 	}
 }
 
@@ -166,14 +167,14 @@ func (r *RetroAchievementsSection) Build(focus types.FocusManager) *widget.Conta
 	r.setupNavigation(focus)
 
 	// Wrap in scrollable container
-	scrollContainer, vSlider, scrollWrapper := style.ScrollableContainer(style.ScrollableOpts{
+	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
 		Content:     section,
 		BgColor:     style.Background,
 		BorderColor: style.Border,
 		Spacing:     0,
 		Padding:     style.SmallSpacing,
 	})
-	focus.SetScrollWidgets(scrollContainer, vSlider)
+	focus.SetScrollContainer(scrollContainer)
 	focus.RestoreScrollPosition()
 	outer.AddChild(scrollWrapper)
 	return outer
@@ -239,10 +240,10 @@ func (r *RetroAchievementsSection) buildToggleRow(focus types.FocusManager, key,
 		displayDesc, _ = style.TruncateToWidth(description, face, maxW)
 	}
 
-	row := style.SettingsRow(2)
+	row := widgets.SettingsRow(2)
 
 	// Info column (label + optional description)
-	row.AddChild(style.LabeledText(displayLabel, displayDesc))
+	row.AddChild(widgets.LabeledText(displayLabel, displayDesc))
 
 	// Toggle button (right-aligned via grid)
 	toggleBtn := widget.NewButton(
@@ -289,7 +290,7 @@ func (r *RetroAchievementsSection) setupNavigation(focus types.FocusManager) {
 
 // buildLoggedInSection creates the logged-in status section
 func (r *RetroAchievementsSection) buildLoggedInSection(focus types.FocusManager) *widget.Container {
-	row := style.SettingsRow(2)
+	row := widgets.SettingsRow(2)
 
 	// Get username from manager if available, otherwise from config
 	username := r.config.RetroAchievements.Username
@@ -369,7 +370,7 @@ func (r *RetroAchievementsSection) buildLoginSection(focus types.FocusManager) *
 	)
 	usernameRow.AddChild(usernameLabel)
 
-	r.usernameInput = style.StyledTextInput("Enter username", false, style.Px(200))
+	r.usernameInput = widgets.StyledTextInput("Enter username", false, style.Px(200))
 	r.textInputs.Add(r.usernameInput)
 	if r.config.RetroAchievements.Username != "" {
 		r.usernameInput.SetText(r.config.RetroAchievements.Username)
@@ -398,7 +399,7 @@ func (r *RetroAchievementsSection) buildLoginSection(focus types.FocusManager) *
 	)
 	passwordRow.AddChild(passwordLabel)
 
-	r.passwordInput = style.StyledTextInput("Enter password", true, style.Px(200))
+	r.passwordInput = widgets.StyledTextInput("Enter password", true, style.Px(200))
 	r.textInputs.Add(r.passwordInput)
 	passwordRow.AddChild(r.passwordInput)
 	section.AddChild(passwordRow)

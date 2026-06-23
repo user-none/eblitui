@@ -6,14 +6,15 @@ import (
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/desktop/types"
+	"github.com/user-none/eblitui/desktop/widgets"
 )
 
 // buildCoreOptionRow creates a settings row for a core option.
 // prefix is used for focus key namespacing (e.g. "audio", "video", "input").
 func buildCoreOptionRow(focus types.FocusManager, callback types.ScreenCallback, config *storage.Config, opt coreif.CoreOption, prefix string) *widget.Container {
-	row := style.SettingsRow(2)
+	row := widgets.SettingsRow(2)
 
-	row.AddChild(style.LabeledText(opt.Label, opt.Description))
+	row.AddChild(widgets.LabeledText(opt.Label, opt.Description))
 
 	focusKey := prefix + "-opt-" + opt.Key
 

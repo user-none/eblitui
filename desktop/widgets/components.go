@@ -1,4 +1,4 @@
-package style
+package widgets
 
 import (
 	"image/color"
@@ -8,21 +8,22 @@ import (
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
+	"github.com/user-none/eblitui/desktop/style"
 	"golang.design/x/clipboard"
 )
 
-// SettingsRow creates a standard settings row container with Surface background,
+// SettingsRow creates a standard settings row container with style.Surface background,
 // N-column grid layout, and RowLayoutData stretch.
 func SettingsRow(columns int) *widget.Container {
 	stretch := make([]bool, columns)
 	stretch[0] = true
 	return widget.NewContainer(
-		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(Surface)),
+		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
 		widget.ContainerOpts.Layout(widget.NewGridLayout(
 			widget.GridLayoutOpts.Columns(columns),
 			widget.GridLayoutOpts.Stretch(stretch, []bool{true}),
-			widget.GridLayoutOpts.Spacing(DefaultSpacing, 0),
-			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(SmallSpacing)),
+			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
+			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
 		)),
 		widget.ContainerOpts.WidgetOpts(
 			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
@@ -33,19 +34,19 @@ func SettingsRow(columns int) *widget.Container {
 // ScrollSlider creates a vertical scroll slider bound to a scroll container.
 // The needsScroll function should return true when content exceeds view height.
 // Returns the slider widget.
-func ScrollSlider(scrollContainer *widget.ScrollContainer, needsScroll func() bool) *widget.Slider {
+func ScrollSlider(scrollContainer *ScrollView, needsScroll func() bool) *widget.Slider {
 	return widget.NewSlider(
 		widget.SliderOpts.TabOrder(-1), // Non-focusable for gamepad navigation
 		widget.SliderOpts.Direction(widget.DirectionVertical),
 		widget.SliderOpts.MinMax(0, 1000),
 		widget.SliderOpts.Images(
 			&widget.SliderTrackImage{
-				Idle:  image.NewNineSliceColor(Border),
-				Hover: image.NewNineSliceColor(Border),
+				Idle:  image.NewNineSliceColor(style.Border),
+				Hover: image.NewNineSliceColor(style.Border),
 			},
-			SliderButtonImage(),
+			style.SliderButtonImage(),
 		),
-		widget.SliderOpts.FixedHandleSize(Px(40)),
+		widget.SliderOpts.FixedHandleSize(style.Px(40)),
 		widget.SliderOpts.PageSizeFunc(func() int {
 			if !needsScroll() {
 				return 1000 // Handle fills track - no scrolling needed
@@ -66,7 +67,7 @@ func ScrollSlider(scrollContainer *widget.ScrollContainer, needsScroll func() bo
 
 // SetupScrollHandler adds mouse wheel scroll support to a scroll container.
 // The slider's Current value is kept in sync with scroll position.
-func SetupScrollHandler(scrollContainer *widget.ScrollContainer, vSlider *widget.Slider, needsScroll func() bool) {
+func SetupScrollHandler(scrollContainer *ScrollView, vSlider *widget.Slider, needsScroll func() bool) {
 	scrollContainer.GetWidget().ScrolledEvent.AddHandler(func(args interface{}) {
 		if !needsScroll() {
 			scrollContainer.ScrollTop = 0
@@ -89,16 +90,16 @@ func SetupScrollHandler(scrollContainer *widget.ScrollContainer, vSlider *widget
 // Used for future/coming-soon menu items.
 func DisabledSidebarItem(label string) *widget.Container {
 	item := widget.NewContainer(
-		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(Border)),
+		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Border)),
 		widget.ContainerOpts.Layout(widget.NewAnchorLayout(
-			widget.AnchorLayoutOpts.Padding(widget.NewInsetsSimple(SmallSpacing)),
+			widget.AnchorLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
 		)),
 		widget.ContainerOpts.WidgetOpts(
 			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
 		),
 	)
 	item.AddChild(widget.NewText(
-		widget.TextOpts.Text(label, FontFace(), TextSecondary),
+		widget.TextOpts.Text(label, style.FontFace(), style.TextSecondary),
 		widget.TextOpts.WidgetOpts(
 			widget.WidgetOpts.LayoutData(widget.AnchorLayoutData{
 				HorizontalPosition: widget.AnchorLayoutPositionStart,
@@ -113,8 +114,8 @@ func DisabledSidebarItem(label string) *widget.Container {
 // Use for regular actions like "Back", "Cancel", "Settings".
 func TextButton(text string, padding int, handler func(*widget.ButtonClickedEventArgs)) *widget.Button {
 	return widget.NewButton(
-		widget.ButtonOpts.Image(ButtonImage()),
-		widget.ButtonOpts.Text(text, FontFace(), ButtonTextColor()),
+		widget.ButtonOpts.Image(style.ButtonImage()),
+		widget.ButtonOpts.Text(text, style.FontFace(), style.ButtonTextColor()),
 		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(padding)),
 		widget.ButtonOpts.ClickedHandler(handler),
 	)
@@ -124,8 +125,8 @@ func TextButton(text string, padding int, handler func(*widget.ButtonClickedEven
 // Use for main actions like "Play", "Save", "Scan Library".
 func PrimaryTextButton(text string, padding int, handler func(*widget.ButtonClickedEventArgs)) *widget.Button {
 	return widget.NewButton(
-		widget.ButtonOpts.Image(PrimaryButtonImage()),
-		widget.ButtonOpts.Text(text, FontFace(), ButtonTextColor()),
+		widget.ButtonOpts.Image(style.PrimaryButtonImage()),
+		widget.ButtonOpts.Text(text, style.FontFace(), style.ButtonTextColor()),
 		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(padding)),
 		widget.ButtonOpts.ClickedHandler(handler),
 	)
@@ -135,9 +136,9 @@ func PrimaryTextButton(text string, padding int, handler func(*widget.ButtonClic
 // Use for view mode toggles, filters, and other binary state buttons.
 func ToggleButton(text string, active bool, handler func(*widget.ButtonClickedEventArgs)) *widget.Button {
 	return widget.NewButton(
-		widget.ButtonOpts.Image(ActiveButtonImage(active)),
-		widget.ButtonOpts.Text(text, FontFace(), ButtonTextColor()),
-		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(ButtonPaddingSmall)),
+		widget.ButtonOpts.Image(style.ActiveButtonImage(active)),
+		widget.ButtonOpts.Text(text, style.FontFace(), style.ButtonTextColor()),
+		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
 		widget.ButtonOpts.ClickedHandler(handler),
 	)
 }
@@ -146,13 +147,13 @@ func ToggleButton(text string, active bool, handler func(*widget.ButtonClickedEv
 // Use for showing full text when content is truncated.
 func TooltipContent(text string) *widget.Container {
 	container := widget.NewContainer(
-		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(Border)),
+		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Border)),
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
-			widget.RowLayoutOpts.Padding(widget.NewInsetsSimple(SmallSpacing)),
+			widget.RowLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
 		)),
 	)
 	label := widget.NewText(
-		widget.TextOpts.Text(text, FontFace(), Text),
+		widget.TextOpts.Text(text, style.FontFace(), style.Text),
 	)
 	container.AddChild(label)
 	return container
@@ -168,7 +169,7 @@ func TableCell(text string, width, height int, textColor color.Color) *widget.Co
 		),
 	)
 	label := widget.NewText(
-		widget.TextOpts.Text(text, FontFace(), textColor),
+		widget.TextOpts.Text(text, style.FontFace(), textColor),
 		widget.TextOpts.WidgetOpts(
 			widget.WidgetOpts.LayoutData(widget.AnchorLayoutData{
 				VerticalPosition: widget.AnchorLayoutPositionCenter,
@@ -182,14 +183,14 @@ func TableCell(text string, width, height int, textColor color.Color) *widget.Co
 // TableHeaderCell creates a table header cell with secondary text color.
 // Use for column headers in list/table views.
 func TableHeaderCell(text string, width, height int) *widget.Container {
-	return TableCell(text, width, height, TextSecondary)
+	return TableCell(text, width, height, style.TextSecondary)
 }
 
 // ScrollableOpts configures a scrollable container.
 type ScrollableOpts struct {
 	Content     *widget.Container // Required: content to scroll
-	BgColor     color.Color       // Background color for scroll area (default: Background)
-	BorderColor color.Color       // Border color for wrapper (nil = no border)
+	BgColor     color.Color       // style.Background color for scroll area (default: style.Background)
+	BorderColor color.Color       // style.Border color for wrapper (nil = no border)
 	Spacing     int               // Spacing between scroll area and slider (default: 4)
 	Padding     int               // Padding inside wrapper, used with BorderColor (default: 0)
 }
@@ -197,26 +198,20 @@ type ScrollableOpts struct {
 // ScrollableContainer creates a scrollable container with a vertical slider.
 // Returns the scroll container, slider, and wrapper widget for embedding in layouts.
 // The scroll container and slider references can be used for scroll position preservation.
-func ScrollableContainer(opts ScrollableOpts) (*widget.ScrollContainer, *widget.Slider, widget.PreferredSizeLocateableWidget) {
+func ScrollableContainer(opts ScrollableOpts) (*ScrollView, *widget.Slider, widget.PreferredSizeLocateableWidget) {
 	// Apply defaults
 	bgColor := opts.BgColor
 	if bgColor == nil {
-		bgColor = Background
+		bgColor = style.Background
 	}
 	spacing := opts.Spacing
 	if spacing == 0 && opts.BorderColor == nil {
 		spacing = 4 // Default spacing when no border
 	}
 
-	// Create scroll container
-	scrollContainer := widget.NewScrollContainer(
-		widget.ScrollContainerOpts.Content(opts.Content),
-		widget.ScrollContainerOpts.StretchContentWidth(),
-		widget.ScrollContainerOpts.Image(&widget.ScrollContainerImage{
-			Idle: image.NewNineSliceColor(bgColor),
-			Mask: image.NewNineSliceColor(bgColor),
-		}),
-	)
+	// Create scroll container (clips with a SubImage rather than an allocated
+	// mask buffer; see ScrollView).
+	scrollContainer := NewScrollView(opts.Content, bgColor, true)
 
 	// Helper to check if scrolling is needed
 	needsScroll := func() bool {
@@ -225,8 +220,10 @@ func ScrollableContainer(opts ScrollableOpts) (*widget.ScrollContainer, *widget.
 		return contentHeight > 0 && viewHeight > 0 && contentHeight > viewHeight
 	}
 
-	// Create vertical slider
+	// Create vertical slider and pair it with the view so programmatic scroll
+	// changes keep it in sync.
 	vSlider := ScrollSlider(scrollContainer, needsScroll)
+	scrollContainer.SetSlider(vSlider)
 
 	// Setup mouse wheel scroll support
 	SetupScrollHandler(scrollContainer, vSlider, needsScroll)
@@ -289,17 +286,17 @@ func EmptyState(title, subtitle string, button *widget.Button) *widget.Container
 		),
 	)
 
-	centerContent := CenteredContainer(DefaultSpacing)
+	centerContent := CenteredContainer(style.DefaultSpacing)
 
 	titleLabel := widget.NewText(
-		widget.TextOpts.Text(title, FontFace(), Text),
+		widget.TextOpts.Text(title, style.FontFace(), style.Text),
 		widget.TextOpts.Position(widget.TextPositionCenter, widget.TextPositionCenter),
 	)
 	centerContent.AddChild(titleLabel)
 
 	if subtitle != "" {
 		subtitleLabel := widget.NewText(
-			widget.TextOpts.Text(subtitle, FontFace(), TextSecondary),
+			widget.TextOpts.Text(subtitle, style.FontFace(), style.TextSecondary),
 			widget.TextOpts.Position(widget.TextPositionCenter, widget.TextPositionCenter),
 		)
 		centerContent.AddChild(subtitleLabel)
@@ -317,7 +314,7 @@ func EmptyState(title, subtitle string, button *widget.Button) *widget.Container
 // The container uses AnchorLayout so children can stretch to fill.
 func ScreenContainer() *widget.Container {
 	return widget.NewContainer(
-		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(Background)),
+		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Background)),
 		widget.ContainerOpts.Layout(widget.NewAnchorLayout()),
 	)
 }
@@ -329,8 +326,8 @@ func ScreenContentContainer(rowStretch []bool) *widget.Container {
 	return widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewGridLayout(
 			widget.GridLayoutOpts.Columns(1),
-			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(DefaultPadding)),
-			widget.GridLayoutOpts.Spacing(DefaultSpacing, DefaultSpacing),
+			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(style.DefaultPadding)),
+			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, style.DefaultSpacing),
 			widget.GridLayoutOpts.Stretch([]bool{true}, rowStretch),
 		)),
 		widget.ContainerOpts.WidgetOpts(
@@ -347,18 +344,18 @@ func ButtonRow() *widget.Container {
 	return widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
 			widget.RowLayoutOpts.Direction(widget.DirectionHorizontal),
-			widget.RowLayoutOpts.Spacing(SmallSpacing),
+			widget.RowLayoutOpts.Spacing(style.SmallSpacing),
 		)),
 	)
 }
 
 // AlternatingRowColor returns the appropriate background color for alternating rows.
-// Even indices (0, 2, 4...) return Background, odd indices return Surface.
+// Even indices (0, 2, 4...) return style.Background, odd indices return style.Surface.
 func AlternatingRowColor(index int) color.Color {
 	if index%2 == 0 {
-		return Background
+		return style.Background
 	}
-	return Surface
+	return style.Surface
 }
 
 // TextInputGroup manages a group of text inputs with clipboard support.
@@ -447,7 +444,7 @@ func (g *TextInputGroup) Update() {
 }
 
 // LabeledText creates a vertical container with a primary label and optional
-// secondary subtext. Text is vertically centered within the grid cell.
+// secondary subtext. style.Text is vertically centered within the grid cell.
 func LabeledText(label, subtext string) *widget.Container {
 	if subtext == "" {
 		c := widget.NewContainer(
@@ -457,7 +454,7 @@ func LabeledText(label, subtext string) *widget.Container {
 			)),
 		)
 		c.AddChild(widget.NewText(
-			widget.TextOpts.Text(label, FontFace(), Text),
+			widget.TextOpts.Text(label, style.FontFace(), style.Text),
 			widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
 		))
 		return c
@@ -466,14 +463,14 @@ func LabeledText(label, subtext string) *widget.Container {
 	c := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
 			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
-			widget.RowLayoutOpts.Spacing(TinySpacing),
+			widget.RowLayoutOpts.Spacing(style.TinySpacing),
 		)),
 	)
 	c.AddChild(widget.NewText(
-		widget.TextOpts.Text(label, FontFace(), Text),
+		widget.TextOpts.Text(label, style.FontFace(), style.Text),
 	))
 	c.AddChild(widget.NewText(
-		widget.TextOpts.Text(subtext, FontFace(), TextSecondary),
+		widget.TextOpts.Text(subtext, style.FontFace(), style.TextSecondary),
 	))
 	return c
 }
@@ -482,17 +479,17 @@ func LabeledText(label, subtext string) *widget.Container {
 func StyledTextInput(placeholder string, secure bool, minWidth int) *widget.TextInput {
 	return widget.NewTextInput(
 		widget.TextInputOpts.Image(&widget.TextInputImage{
-			Idle:     image.NewNineSliceColor(Surface),
-			Disabled: image.NewNineSliceColor(Border),
+			Idle:     image.NewNineSliceColor(style.Surface),
+			Disabled: image.NewNineSliceColor(style.Border),
 		}),
-		widget.TextInputOpts.Face(FontFace()),
+		widget.TextInputOpts.Face(style.FontFace()),
 		widget.TextInputOpts.Color(&widget.TextInputColor{
-			Idle:          Text,
-			Disabled:      TextSecondary,
-			Caret:         Text,
-			DisabledCaret: TextSecondary,
+			Idle:          style.Text,
+			Disabled:      style.TextSecondary,
+			Caret:         style.Text,
+			DisabledCaret: style.TextSecondary,
 		}),
-		widget.TextInputOpts.Padding(widget.NewInsetsSimple(SmallSpacing)),
+		widget.TextInputOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
 		widget.TextInputOpts.Placeholder(placeholder),
 		widget.TextInputOpts.Secure(secure),
 		widget.TextInputOpts.WidgetOpts(

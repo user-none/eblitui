@@ -8,6 +8,7 @@ import (
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/desktop/types"
+	"github.com/user-none/eblitui/desktop/widgets"
 )
 
 // AppearanceSection manages theme settings
@@ -62,14 +63,14 @@ func (a *AppearanceSection) Build(focus types.FocusManager) *widget.Container {
 	// Set up navigation zones
 	a.setupNavigation(focus)
 
-	scrollContainer, vSlider, scrollWrapper := style.ScrollableContainer(style.ScrollableOpts{
+	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
 		Content:     section,
 		BgColor:     style.Background,
 		BorderColor: style.Border,
 		Spacing:     0,
 		Padding:     style.SmallSpacing,
 	})
-	focus.SetScrollWidgets(scrollContainer, vSlider)
+	focus.SetScrollContainer(scrollContainer)
 	focus.RestoreScrollPosition()
 	outer.AddChild(scrollWrapper)
 
@@ -107,7 +108,7 @@ func (a *AppearanceSection) buildFontSizeRow(focus types.FocusManager) *widget.C
 		}
 	}
 
-	row := style.SettingsRow(2)
+	row := widgets.SettingsRow(2)
 
 	// Label on left
 	labelText := widget.NewText(

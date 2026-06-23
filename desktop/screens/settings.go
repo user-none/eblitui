@@ -9,6 +9,7 @@ import (
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/desktop/types"
+	"github.com/user-none/eblitui/desktop/widgets"
 )
 
 // sectionDescriptor describes a settings sidebar section
@@ -153,9 +154,10 @@ func (s *SettingsScreen) Build() *widget.Container {
 		)),
 	)
 
-	backButton := style.TextButton("Back", style.ButtonPaddingSmall, func(args *widget.ButtonClickedEventArgs) {
+	backButton := widgets.TextButton("Back", style.ButtonPaddingSmall, func(args *widget.ButtonClickedEventArgs) {
 		s.callback.SwitchToLibrary()
 	})
+	s.RegisterFocusButton("settings-back", backButton)
 	header.AddChild(backButton)
 
 	rootContainer.AddChild(header)
@@ -237,7 +239,13 @@ func (s *SettingsScreen) setupNavigation() {
 	for i, sec := range s.sections {
 		sidebarKeys[i] = sec.focusKey
 	}
+
+	// Header zone holds the Back button above the sidebar/content. Up from the
+	// top of the sidebar reaches it; Down from it returns to the sidebar.
+	s.RegisterNavZone("header", types.NavZoneHorizontal, []string{"settings-back"}, 0)
 	s.RegisterNavZone("sidebar", types.NavZoneVertical, sidebarKeys, 0)
+	s.SetNavTransition("header", types.DirDown, "sidebar", types.NavIndexFirst)
+	s.SetNavTransition("sidebar", types.DirUp, "header", types.NavIndexFirst)
 
 	if s.selectedSection >= 0 && s.selectedSection < len(s.sections) {
 		s.sections[s.selectedSection].setupNav()

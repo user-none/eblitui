@@ -451,14 +451,6 @@ func SliderTrackImage() *widget.SliderTrackImage {
 	}
 }
 
-// ScrollContainerImage creates a scroll container image
-func ScrollContainerImage() *widget.ScrollContainerImage {
-	return &widget.ScrollContainerImage{
-		Idle: image.NewNineSliceColor(Background),
-		Mask: image.NewNineSliceColor(Background),
-	}
-}
-
 // ButtonTextColor returns the standard button text colors
 func ButtonTextColor() *widget.ButtonTextColor {
 	return &widget.ButtonTextColor{

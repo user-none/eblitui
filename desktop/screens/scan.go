@@ -6,6 +6,7 @@ import (
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/user-none/eblitui/desktop/style"
+	"github.com/user-none/eblitui/desktop/widgets"
 )
 
 // ScanProgress represents progress updates from the scanner
@@ -73,7 +74,7 @@ func (s *ScanProgressScreen) Build() *widget.Container {
 		widget.ContainerOpts.Layout(widget.NewAnchorLayout()),
 	)
 
-	centerContent := style.CenteredContainer(style.DefaultSpacing)
+	centerContent := widgets.CenteredContainer(style.DefaultSpacing)
 
 	// Status text
 	statusText := s.statusText
