@@ -4,8 +4,8 @@ go 1.25.7
 
 require (
 	github.com/ebitengine/oto/v3 v3.4.0
-	github.com/ebitenui/ebitenui v0.7.2
-	github.com/hajimehoshi/ebiten/v2 v2.9.8
+	github.com/ebitenui/ebitenui v0.7.3
+	github.com/hajimehoshi/ebiten/v2 v2.9.9
 	github.com/sqweek/dialog v0.0.0-20240226140203-065105509627
 	github.com/user-none/eblitui/coreif v0.7.0
 	github.com/user-none/eblitui/rdb v0.2.0
