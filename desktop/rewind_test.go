@@ -1,6 +1,40 @@
 package desktop
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/user-none/eblitui/coreif"
+)
+
+// rewindMockSaveStater records the data passed to the most recent Deserialize
+// call so tests can assert which buffered state a rewind landed on.
+type rewindMockSaveStater struct {
+	lastDeserialized []byte
+}
+
+func (m *rewindMockSaveStater) Serialize() ([]byte, error) { return nil, nil }
+
+func (m *rewindMockSaveStater) Deserialize(data []byte) error {
+	m.lastDeserialized = data
+	return nil
+}
+
+// rewindMockEmulator is a no-op emulator; Rewind only calls RunFrame on it.
+type rewindMockEmulator struct{}
+
+func (rewindMockEmulator) RunFrame()                             {}
+func (rewindMockEmulator) GetFramebuffer() []byte                { return nil }
+func (rewindMockEmulator) GetFramebufferStride() int             { return 0 }
+func (rewindMockEmulator) GetActiveHeight() int                  { return 0 }
+func (rewindMockEmulator) GetAudioSamples() []int16              { return nil }
+func (rewindMockEmulator) SetInput(player int, buttons uint32)   {}
+func (rewindMockEmulator) GetTiming() coreif.Timing              { return coreif.Timing{} }
+func (rewindMockEmulator) SetOption(key string, value string)    {}
+func (rewindMockEmulator) SetRom(data []byte)                    {}
+func (rewindMockEmulator) SetDisc(disc coreif.DiscReader)        {}
+func (rewindMockEmulator) SetBIOS(key string, data []byte) error { return nil }
+func (rewindMockEmulator) Start()                                {}
+func (rewindMockEmulator) Close()                                {}
 
 func TestNewRewindBuffer(t *testing.T) {
 	// 1MB buffer, 100 bytes per state = 10485 entries
@@ -184,6 +218,44 @@ func TestRewindItemsForHoldDuration(t *testing.T) {
 		result := rewindItemsForHoldDuration(tt.duration)
 		if result != tt.expected {
 			t.Errorf("rewindItemsForHoldDuration(%d) = %d, want %d", tt.duration, result, tt.expected)
+		}
+	}
+}
+
+// TestRewindBufferStopsAtOldestState verifies that rewinding to the end of a
+// wrapped buffer holds on the oldest captured state rather than jumping to the
+// stale pre-rewind state left in the wrap-around slot.
+func TestRewindBufferStopsAtOldestState(t *testing.T) {
+	// Capacity of 5.
+	rb := NewRewindBuffer(1, 1, (1*1024*1024)/5)
+	if rb == nil {
+		t.Fatal("expected non-nil buffer")
+	}
+	if rb.Capacity() != 5 {
+		t.Fatalf("capacity = %d, want 5", rb.Capacity())
+	}
+
+	// Write 10 states so the buffer wraps once. Each state's single byte
+	// encodes its value; the buffer ends holding [5 6 7 8 9] with head at 0.
+	for i := 0; i < 10; i++ {
+		rb.buffer[rb.head] = []byte{byte(i)}
+		rb.head = (rb.head + 1) % rb.capacity
+		if rb.count < rb.capacity {
+			rb.count++
+		}
+	}
+
+	emu := rewindMockEmulator{}
+	ss := &rewindMockSaveStater{}
+
+	// Stepping back one at a time yields 8, 7, 6, 5, then holds at 5.
+	want := []byte{8, 7, 6, 5, 5, 5}
+	for step, expected := range want {
+		if !rb.Rewind(emu, ss, 1) {
+			t.Fatalf("step %d: Rewind returned false", step)
+		}
+		if len(ss.lastDeserialized) != 1 || ss.lastDeserialized[0] != expected {
+			t.Fatalf("step %d: deserialized %v, want state %d", step, ss.lastDeserialized, expected)
 		}
 	}
 }

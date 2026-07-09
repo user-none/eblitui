@@ -68,8 +68,11 @@ func (rb *RewindBuffer) Rewind(emu coreif.Emulator, saveStater coreif.SaveStater
 		return false
 	}
 
-	if count > rb.count {
-		count = rb.count
+	// Never rewind past the oldest captured state. Keep at least one entry:
+	// draining to zero would wrap the read index onto a stale slot still
+	// holding the pre-rewind state, jumping forward instead of stopping.
+	if count > rb.count-1 {
+		count = rb.count - 1
 	}
 
 	// Move head back by count entries
