@@ -398,7 +398,7 @@ func TestValidateConfig(t *testing.T) {
 		config.Rewind.BufferSizeMB = 500
 		errs := ValidateConfig(config, validTestThemes)
 		if len(errs) == 0 {
-			t.Error("expected error for bufferSizeMB > 200")
+			t.Error("expected error for bufferSizeMB > 400")
 		}
 	})
 
@@ -413,10 +413,10 @@ func TestValidateConfig(t *testing.T) {
 
 	t.Run("frameStep too large", func(t *testing.T) {
 		config := DefaultConfig()
-		config.Rewind.FrameStep = 11
+		config.Rewind.FrameStep = 31
 		errs := ValidateConfig(config, validTestThemes)
 		if len(errs) == 0 {
-			t.Error("expected error for frameStep > 10")
+			t.Error("expected error for frameStep > 30")
 		}
 	})
 
@@ -483,12 +483,12 @@ func TestValidateConfig(t *testing.T) {
 		}
 	})
 
-	t.Run("boundary: bufferSizeMB 200 is valid", func(t *testing.T) {
+	t.Run("boundary: bufferSizeMB 400 is valid", func(t *testing.T) {
 		config := DefaultConfig()
-		config.Rewind.BufferSizeMB = 200
+		config.Rewind.BufferSizeMB = 400
 		errs := ValidateConfig(config, validTestThemes)
 		if len(errs) != 0 {
-			t.Errorf("bufferSizeMB 200 should be valid, got errors: %v", errs)
+			t.Errorf("bufferSizeMB 400 should be valid, got errors: %v", errs)
 		}
 	})
 
@@ -501,12 +501,12 @@ func TestValidateConfig(t *testing.T) {
 		}
 	})
 
-	t.Run("boundary: frameStep 10 is valid", func(t *testing.T) {
+	t.Run("boundary: frameStep 30 is valid", func(t *testing.T) {
 		config := DefaultConfig()
-		config.Rewind.FrameStep = 10
+		config.Rewind.FrameStep = 30
 		errs := ValidateConfig(config, validTestThemes)
 		if len(errs) != 0 {
-			t.Errorf("frameStep 10 should be valid, got errors: %v", errs)
+			t.Errorf("frameStep 30 should be valid, got errors: %v", errs)
 		}
 	})
 }

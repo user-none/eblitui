@@ -13,10 +13,10 @@ import (
 
 const (
 	rewindBufferMin  = 10
-	rewindBufferMax  = 200
+	rewindBufferMax  = 400
 	rewindBufferStep = 10
 	rewindFrameMin   = 1
-	rewindFrameMax   = 10
+	rewindFrameMax   = 30
 	rewindFrameStep  = 1
 )
 

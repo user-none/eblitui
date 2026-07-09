@@ -208,13 +208,13 @@ func ValidateConfig(config *Config, validThemes []string) []string {
 	}
 
 	// rewind.bufferSizeMB
-	if config.Rewind.BufferSizeMB < 10 || config.Rewind.BufferSizeMB > 200 {
-		errors = append(errors, fmt.Sprintf("rewind.bufferSizeMB: %d (valid: 10-200)", config.Rewind.BufferSizeMB))
+	if config.Rewind.BufferSizeMB < 10 || config.Rewind.BufferSizeMB > 400 {
+		errors = append(errors, fmt.Sprintf("rewind.bufferSizeMB: %d (valid: 10-400)", config.Rewind.BufferSizeMB))
 	}
 
 	// rewind.frameStep
-	if config.Rewind.FrameStep < 1 || config.Rewind.FrameStep > 10 {
-		errors = append(errors, fmt.Sprintf("rewind.frameStep: %d (valid: 1-10)", config.Rewind.FrameStep))
+	if config.Rewind.FrameStep < 1 || config.Rewind.FrameStep > 30 {
+		errors = append(errors, fmt.Sprintf("rewind.frameStep: %d (valid: 1-30)", config.Rewind.FrameStep))
 	}
 
 	return errors
@@ -325,12 +325,12 @@ func CorrectConfig(config *Config, validThemes []string) *Config {
 	}
 
 	// rewind.bufferSizeMB
-	if config.Rewind.BufferSizeMB < 10 || config.Rewind.BufferSizeMB > 200 {
+	if config.Rewind.BufferSizeMB < 10 || config.Rewind.BufferSizeMB > 400 {
 		config.Rewind.BufferSizeMB = defaults.Rewind.BufferSizeMB
 	}
 
 	// rewind.frameStep
-	if config.Rewind.FrameStep < 1 || config.Rewind.FrameStep > 10 {
+	if config.Rewind.FrameStep < 1 || config.Rewind.FrameStep > 30 {
 		config.Rewind.FrameStep = defaults.Rewind.FrameStep
 	}
 
