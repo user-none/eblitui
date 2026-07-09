@@ -23,6 +23,13 @@ import (
 	rcheevos "github.com/user-none/go-rcheevos"
 )
 
+// thumbnailCacheClearThreshold is the library size above which the icon-view
+// artwork cache is freed when a game launches. Small libraries keep their
+// thumbnails cached (fast return, low memory); large libraries can hold
+// hundreds of MB of textures, which is freed while playing and rebuilt on
+// return to the icon view.
+const thumbnailCacheClearThreshold = 75
+
 // App is the main application struct that implements ebiten.Game
 type App struct {
 	ui *ebitenui.UI
@@ -946,10 +953,12 @@ func (a *App) LaunchGame(gameCRC string, resume bool, discIndex int) {
 		a.previousState = a.state
 		a.state = StatePlaying
 
-		// Free the library cover textures while playing; they are rebuilt
-		// when the icon view is shown again on return.
-		// Disabled for the moment due to the usefulness not being fully realized.
-		//a.libraryScreen.ClearArtworkCache()
+		// Free the library cover textures while playing; they are rebuilt when
+		// the icon view is shown again on return. Only done for large libraries,
+		// where the thumbnail cache is large enough to be worth reclaiming.
+		if a.library.GameCount() > thumbnailCacheClearThreshold {
+			a.libraryScreen.ClearArtworkCache()
+		}
 	}
 }
 
