@@ -89,44 +89,39 @@ func (r *RetroAchievementsSection) Build(focus types.FocusManager) *widget.Conta
 	section.AddChild(r.buildSectionHeader("Account"))
 	if r.isLoggedIn() {
 		section.AddChild(r.buildLoggedInSection(focus))
-	} else {
-		section.AddChild(r.buildLoginSection(focus))
-	}
 
-	// General section
-	section.AddChild(r.buildSectionHeader("General"))
-	section.AddChild(r.buildToggleRow(focus, "ra-enable", "Enable RetroAchievements", "",
-		r.config.RetroAchievements.Enabled,
-		func() {
-			r.config.RetroAchievements.Enabled = !r.config.RetroAchievements.Enabled
+		// General section
+		section.AddChild(r.buildSectionHeader("General"))
+		section.AddChild(r.buildToggleRow(focus, "ra-enable", "Enable RetroAchievements", "",
+			r.config.RetroAchievements.Enabled,
+			func() {
+				r.config.RetroAchievements.Enabled = !r.config.RetroAchievements.Enabled
 
-			if r.config.RetroAchievements.Enabled {
-				// Toggling ON: auto-login if we have stored credentials
-				if r.achievements != nil && !r.achievements.IsLoggedIn() && r.hasStoredCredentials() {
-					username := r.config.RetroAchievements.Username
-					token := r.config.RetroAchievements.Token
-					r.achievements.LoginWithToken(username, token, func(success bool, result int, err error) {
-						if !success {
-							// Only clear token for credential errors, not transient failures
-							if result == rcheevos.InvalidCredentials ||
-								result == rcheevos.ExpiredToken ||
-								result == rcheevos.AccessDenied {
-								r.config.RetroAchievements.Token = ""
-								storage.SaveConfig(r.config)
+				if r.config.RetroAchievements.Enabled {
+					// Toggling ON: auto-login if we have stored credentials
+					if r.achievements != nil && !r.achievements.IsLoggedIn() && r.hasStoredCredentials() {
+						username := r.config.RetroAchievements.Username
+						token := r.config.RetroAchievements.Token
+						r.achievements.LoginWithToken(username, token, func(success bool, result int, err error) {
+							if !success {
+								// Only clear token for credential errors, not transient failures
+								if result == rcheevos.InvalidCredentials ||
+									result == rcheevos.ExpiredToken ||
+									result == rcheevos.AccessDenied {
+									r.config.RetroAchievements.Token = ""
+									storage.SaveConfig(r.config)
+								}
 							}
-						}
-					})
+						})
+					}
+				} else {
+					// Toggling OFF: logout but preserve stored credentials
+					if r.achievements != nil && r.achievements.IsLoggedIn() {
+						r.achievements.Logout()
+					}
 				}
-			} else {
-				// Toggling OFF: logout but preserve stored credentials
-				if r.achievements != nil && r.achievements.IsLoggedIn() {
-					r.achievements.Logout()
-				}
-			}
-		}))
+			}))
 
-	// Options (only shown when enabled)
-	if r.config.RetroAchievements.Enabled {
 		// Notifications section
 		section.AddChild(r.buildSectionHeader("Notifications"))
 		section.AddChild(r.buildToggleRow(focus, "ra-notification", "Show Notification", "Display popup on unlock",
@@ -162,6 +157,8 @@ func (r *RetroAchievementsSection) Build(focus types.FocusManager) *widget.Conta
 			func() {
 				r.config.RetroAchievements.SpectatorMode = !r.config.RetroAchievements.SpectatorMode
 			}))
+	} else {
+		section.AddChild(r.buildLoginSection(focus))
 	}
 
 	r.setupNavigation(focus)
@@ -274,15 +271,10 @@ func (r *RetroAchievementsSection) setupNavigation(focus types.FocusManager) {
 	keys := []string{}
 
 	if r.isLoggedIn() {
-		keys = append(keys, "ra-logout")
+		keys = append(keys, "ra-logout", "ra-enable",
+			"ra-notification", "ra-sound", "ra-screenshot", "ra-suppress", "ra-encore", "ra-spectator")
 	} else {
 		keys = append(keys, "ra-login")
-	}
-
-	keys = append(keys, "ra-enable")
-
-	if r.config.RetroAchievements.Enabled {
-		keys = append(keys, "ra-notification", "ra-sound", "ra-screenshot", "ra-suppress", "ra-encore", "ra-spectator")
 	}
 
 	focus.RegisterNavZone("ra-settings", types.NavZoneVertical, keys, 0)
@@ -445,6 +437,7 @@ func (r *RetroAchievementsSection) buildLoginSection(focus types.FocusManager) *
 				if success {
 					r.config.RetroAchievements.Username = username
 					r.config.RetroAchievements.Token = token
+					r.config.RetroAchievements.Enabled = true
 					storage.SaveConfig(r.config)
 					r.errorMessage = ""
 				} else {
