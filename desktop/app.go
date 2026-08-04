@@ -87,6 +87,9 @@ type App struct {
 	// Input manager for UI navigation
 	inputManager *InputManager
 
+	// Player-to-controller assignment (updated every frame)
+	assignment *PlayerAssignment
+
 	// Shader manager for visual effects
 	shaderManager *shader.Manager
 	shaderBuffer  *ebiten.Image // Intermediate buffer for shader rendering
@@ -219,6 +222,7 @@ func newApp(factory coreif.CoreFactory, info coreif.SystemInfo) (*App, error) {
 	app.saveStateManager = NewSaveStateManager(app.notification)
 	app.screenshotManager = NewScreenshotManager(app.notification)
 	app.inputManager = NewInputManager()
+	app.assignment = NewPlayerAssignment(info.Players)
 	app.shaderManager = shader.NewManager(info.PixelAspectRatio)
 	app.searchOverlay = NewSearchOverlay(func(text string) {
 		if app.state == StateLibrary {
@@ -315,6 +319,7 @@ func newApp(factory coreif.CoreFactory, info coreif.SystemInfo) (*App, error) {
 		app.factory,
 		app.systemInfo,
 		app.inputManager,
+		app.assignment,
 		app.saveStateManager,
 		app.screenshotManager,
 		app.notification,
@@ -521,6 +526,8 @@ func (a *App) Update() error {
 	if fullscreenToggle {
 		a.toggleFullscreen()
 	}
+
+	a.updatePlayerAssignment()
 
 	// Check for window resize that needs UI rebuild (for responsive layouts)
 	// Rebuild when width changes for screens with responsive layout
@@ -761,6 +768,43 @@ func (a *App) applySpatialNavigation(direction int) {
 	}
 }
 
+// updatePlayerAssignment reconciles player-to-controller bindings with the
+// currently connected gamepads. Runs every frame in all states so bindings
+// are current before gameplay polls input and before settings render.
+func (a *App) updatePlayerAssignment() {
+	if a.state == StateError || a.config == nil {
+		return
+	}
+
+	pads := SnapshotPads()
+
+	// One-time bootstrap: first ever controller gets a profile and player 1.
+	if !a.configLoadFailed && AutoCreateFirstProfile(&a.config.Input, pads) {
+		storage.SaveConfig(a.config)
+		if a.state == StateSettings {
+			a.RequestRebuild()
+		}
+	}
+
+	events := a.assignment.Update(pads, &a.config.Input)
+
+	// Surface controller changes only during gameplay.
+	if a.state != StatePlaying {
+		return
+	}
+	for _, ev := range events {
+		state := "connected"
+		if !ev.Bound {
+			state = "disconnected"
+		}
+		name := ev.Controller
+		if name == "" {
+			name = "Controller"
+		}
+		a.notification.ShowShort(fmt.Sprintf("Player %d: %s %s", ev.Player+1, name, state))
+	}
+}
+
 // handleGamepadBack handles B button press for back navigation
 func (a *App) handleGamepadBack() {
 	switch a.state {
@@ -770,6 +814,9 @@ func (a *App) handleGamepadBack() {
 	case StateDetail:
 		a.SwitchToLibrary()
 	case StateSettings:
+		if a.settingsScreen.HandleBack() {
+			return
+		}
 		a.SwitchToLibrary()
 	case StateScanProgress:
 		// Cancel scan and return to settings
@@ -1074,6 +1121,7 @@ func (a *App) handleDeleteAndContinue() {
 			a.factory,
 			a.systemInfo,
 			a.inputManager,
+			a.assignment,
 			a.saveStateManager,
 			a.screenshotManager,
 			a.notification,
@@ -1172,6 +1220,7 @@ func (a *App) handleResetAndContinue() {
 			a.factory,
 			a.systemInfo,
 			a.inputManager,
+			a.assignment,
 			a.saveStateManager,
 			a.screenshotManager,
 			a.notification,
@@ -1240,6 +1289,7 @@ func (a *App) handleLibraryResetAndContinue() {
 			a.factory,
 			a.systemInfo,
 			a.inputManager,
+			a.assignment,
 			a.saveStateManager,
 			a.screenshotManager,
 			a.notification,

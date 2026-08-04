@@ -28,9 +28,9 @@ import (
 // Ebiten thread handles UI, input polling, and reads the shared framebuffer.
 type GameplayManager struct {
 	// Core factory and system info
-	factory      coreif.CoreFactory
-	systemInfo   coreif.SystemInfo
-	inputMapping InputMapping
+	factory    coreif.CoreFactory
+	systemInfo coreif.SystemInfo
+	mappings   [maxPlayers]InputMapping // per-player input mappings
 
 	// Emulation state
 	emulator       coreif.Emulator
@@ -92,6 +92,7 @@ type GameplayManager struct {
 
 	// External dependencies (not owned by GameplayManager)
 	inputManager       *InputManager
+	assignment         *PlayerAssignment
 	saveStateManager   *SaveStateManager
 	screenshotManager  *ScreenshotManager
 	notification       *Notification
@@ -117,6 +118,7 @@ func NewGameplayManager(
 	factory coreif.CoreFactory,
 	systemInfo coreif.SystemInfo,
 	inputManager *InputManager,
+	assignment *PlayerAssignment,
 	saveStateManager *SaveStateManager,
 	screenshotManager *ScreenshotManager,
 	notification *Notification,
@@ -130,10 +132,11 @@ func NewGameplayManager(
 	gm := &GameplayManager{
 		factory:            factory,
 		systemInfo:         systemInfo,
-		inputMapping:       BuildMappingFromConfig(systemInfo.Buttons, config.Input.P1Keyboard, config.Input.P1Controller),
+		mappings:           buildPlayerMappings(systemInfo, &config.Input),
 		autoSaveInterval:   style.AutoSaveInterval,
 		turboState:         &TurboState{multiplier: 1},
 		inputManager:       inputManager,
+		assignment:         assignment,
 		saveStateManager:   saveStateManager,
 		screenshotManager:  screenshotManager,
 		notification:       notification,
@@ -175,14 +178,10 @@ func (gm *GameplayManager) SetLibrary(library *storage.Library) {
 	gm.library = library
 }
 
-// SetConfig updates the config reference and rebuilds the input mapping
+// SetConfig updates the config reference and rebuilds the input mappings
 func (gm *GameplayManager) SetConfig(config *storage.Config) {
 	gm.config = config
-	gm.inputMapping = BuildMappingFromConfig(
-		gm.systemInfo.Buttons,
-		config.Input.P1Keyboard,
-		config.Input.P1Controller,
-	)
+	gm.mappings = buildPlayerMappings(gm.systemInfo, &config.Input)
 }
 
 // IsPlaying returns true if a game is currently being played
@@ -202,12 +201,8 @@ func (gm *GameplayManager) CurrentGameCRC() string {
 // which disc of a multi-disc game to launch; -1 uses the entry's
 // remembered SelectedDisc. Ignored for single-disc and cartridge games.
 func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bool {
-	// Rebuild input mapping from current config (settings may have changed)
-	gm.inputMapping = BuildMappingFromConfig(
-		gm.systemInfo.Buttons,
-		gm.config.Input.P1Keyboard,
-		gm.config.Input.P1Controller,
-	)
+	// Rebuild input mappings from current config (settings may have changed)
+	gm.mappings = buildPlayerMappings(gm.systemInfo, &gm.config.Input)
 
 	game := gm.library.GetGame(gameCRC)
 	if game == nil {
@@ -667,7 +662,7 @@ func (gm *GameplayManager) Update() (pauseMenuOpened bool, err error) {
 	// game input neutral until every held input is released, so nothing from
 	// the overlay interaction leaks into the game.
 	if gm.resumeInputGuard {
-		p1, p2, _ := gm.pollButtons()
+		p1, p2 := gm.pollButtons()
 		gm.sharedInput.Set(0, 0)
 		gm.sharedInput.Set(1, 0)
 		if p1 == 0 && p2 == 0 {
@@ -887,37 +882,28 @@ func (gm *GameplayManager) Exit(saveResume bool) {
 	ebiten.SetTPS(60)
 }
 
-// pollButtons reads the current button bitmasks for both players.
-// hasP2 reports whether a second gamepad is connected.
-func (gm *GameplayManager) pollButtons() (p1, p2 uint32, hasP2 bool) {
-	gamepadIDs := ebiten.AppendGamepadIDs(nil)
-	hasGamepad := len(gamepadIDs) > 0
-
-	var gamepadID ebiten.GamepadID
-	if hasGamepad {
-		gamepadID = gamepadIDs[0]
-	}
-
-	// Player 1: keyboard + first gamepad
+// pollButtons reads the current button bitmasks for both players using the
+// player-to-controller assignment. Player 1 always includes the keyboard;
+// a player with no bound controller reads 0 from the pad.
+func (gm *GameplayManager) pollButtons() (p1, p2 uint32) {
 	disableAnalog := gm.config.Input.DisableAnalogStick
-	p1 = PollButtons(gm.inputMapping, gamepadID, hasGamepad, disableAnalog)
 
-	// Player 2: second gamepad only
-	if len(gamepadIDs) > 1 {
-		p2 = PollGamepadButtons(gm.inputMapping, gamepadIDs[1], disableAnalog)
-		hasP2 = true
+	p1Pad, p1HasPad := gm.assignment.PadFor(0)
+	p1 = PollButtons(gm.mappings[0], p1Pad, p1HasPad, disableAnalog)
+
+	if p2Pad, ok := gm.assignment.PadFor(1); ok {
+		p2 = PollGamepadButtons(gm.mappings[1], p2Pad, disableAnalog)
 	}
-	return p1, p2, hasP2
+	return p1, p2
 }
 
 // pollInputToShared reads input and writes it to the shared input state
-// for the emulation goroutine to consume.
+// for the emulation goroutine to consume. Both players are always written
+// so a disconnected controller reads as no buttons held.
 func (gm *GameplayManager) pollInputToShared() {
-	p1, p2, hasP2 := gm.pollButtons()
+	p1, p2 := gm.pollButtons()
 	gm.sharedInput.Set(0, p1)
-	if hasP2 {
-		gm.sharedInput.Set(1, p2)
-	}
+	gm.sharedInput.Set(1, p2)
 }
 
 // handleTurboKey checks F4 to cycle turbo speed: Off → 2x → 3x → Off.

@@ -220,6 +220,9 @@ func ValidateConfig(config *Config, validThemes []string) []string {
 	return errors
 }
 
+// MaxInputPlayers is the maximum number of player slots stored in config.
+const MaxInputPlayers = 2
+
 // ValidateInputConfig checks input config overrides using the provided
 // validators. Returns error descriptions for invalid entries.
 // isValidKey checks if a key name is valid, isValidPad checks if a pad name is valid.
@@ -230,15 +233,50 @@ func ValidateInputConfig(config *Config, isValidKey, isValidPad func(string) boo
 			errors = append(errors, fmt.Sprintf("input.p1Keyboard[%q]: invalid key %q", btn, keyName))
 		}
 	}
-	for btn, padName := range config.Input.P1Controller {
-		if !isValidPad(padName) {
-			errors = append(errors, fmt.Sprintf("input.p1Controller[%q]: invalid pad %q", btn, padName))
+
+	seenIDs := make(map[string]bool)
+	seenNames := make(map[string]bool)
+	for i := range config.Input.Profiles {
+		p := &config.Input.Profiles[i]
+		if p.ID == "" || p.SDLID == "" || p.Controller == "" || p.Name == "" {
+			errors = append(errors, fmt.Sprintf("input.profiles[%d]: missing id, sdlId, controller, or name", i))
+			continue
+		}
+		if seenIDs[p.ID] {
+			errors = append(errors, fmt.Sprintf("input.profiles[%d]: duplicate id %q", i, p.ID))
+		}
+		seenIDs[p.ID] = true
+		nameKey := p.SDLID + "\x00" + p.Controller + "\x00" + p.Name
+		if seenNames[nameKey] {
+			errors = append(errors, fmt.Sprintf("input.profiles[%d]: duplicate name %q", i, p.Name))
+		}
+		seenNames[nameKey] = true
+		for btn, padName := range p.Bindings {
+			if !isValidPad(padName) {
+				errors = append(errors, fmt.Sprintf("input.profiles[%d].bindings[%q]: invalid pad %q", i, btn, padName))
+			}
+		}
+	}
+
+	if len(config.Input.Players) > MaxInputPlayers {
+		errors = append(errors, fmt.Sprintf("input.players: %d entries (valid: <= %d)", len(config.Input.Players), MaxInputPlayers))
+	}
+	for i, pl := range config.Input.Players {
+		if i >= MaxInputPlayers {
+			break
+		}
+		if pl.Profile != "" && !seenIDs[pl.Profile] {
+			errors = append(errors, fmt.Sprintf("input.players[%d]: unknown profile %q", i, pl.Profile))
 		}
 	}
 	return errors
 }
 
-// CorrectInputConfig removes invalid entries from input override maps.
+// CorrectInputConfig removes invalid entries from input override maps and
+// profile/player configuration. Profiles missing identity fields are dropped,
+// duplicate IDs and duplicate names per controller model are dropped, invalid
+// bindings are removed, the players list is clamped, and dangling player
+// profile references are cleared.
 // isValidKey checks if a key name is valid, isValidPad checks if a pad name is valid.
 func CorrectInputConfig(config *Config, isValidKey, isValidPad func(string) bool) {
 	for btn, keyName := range config.Input.P1Keyboard {
@@ -246,9 +284,45 @@ func CorrectInputConfig(config *Config, isValidKey, isValidPad func(string) bool
 			delete(config.Input.P1Keyboard, btn)
 		}
 	}
-	for btn, padName := range config.Input.P1Controller {
-		if !isValidPad(padName) {
-			delete(config.Input.P1Controller, btn)
+
+	seenIDs := make(map[string]bool)
+	seenNames := make(map[string]bool)
+	kept := config.Input.Profiles[:0]
+	for i := range config.Input.Profiles {
+		p := config.Input.Profiles[i]
+		if p.ID == "" || p.SDLID == "" || p.Controller == "" || p.Name == "" {
+			continue
+		}
+		if seenIDs[p.ID] {
+			continue
+		}
+		nameKey := p.SDLID + "\x00" + p.Controller + "\x00" + p.Name
+		if seenNames[nameKey] {
+			continue
+		}
+		seenIDs[p.ID] = true
+		seenNames[nameKey] = true
+		for btn, padName := range p.Bindings {
+			if !isValidPad(padName) {
+				delete(p.Bindings, btn)
+			}
+		}
+		if len(p.Bindings) == 0 {
+			p.Bindings = nil
+		}
+		kept = append(kept, p)
+	}
+	config.Input.Profiles = kept
+	if len(config.Input.Profiles) == 0 {
+		config.Input.Profiles = nil
+	}
+
+	if len(config.Input.Players) > MaxInputPlayers {
+		config.Input.Players = config.Input.Players[:MaxInputPlayers]
+	}
+	for i := range config.Input.Players {
+		if config.Input.Players[i].Profile != "" && !seenIDs[config.Input.Players[i].Profile] {
+			config.Input.Players[i].Profile = ""
 		}
 	}
 }

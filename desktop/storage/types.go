@@ -1,5 +1,10 @@
 package storage
 
+import (
+	"crypto/rand"
+	"encoding/hex"
+)
+
 // Config represents the application configuration stored in config.json
 type Config struct {
 	Version           int                     `json:"version"`
@@ -23,13 +28,74 @@ type BIOSConfig struct {
 	Files  map[string]string `json:"files,omitempty"`  // variant label -> file path
 }
 
-// InputConfig contains input binding overrides for P1 keyboard and controller.
+// InputConfig contains input binding overrides and controller configuration.
 // Empty/nil maps mean "use adaptor defaults." Only user overrides are stored.
 type InputConfig struct {
-	P1Keyboard         map[string]string `json:"p1Keyboard,omitempty"`         // button name -> key name override
-	P1Controller       map[string]string `json:"p1Controller,omitempty"`       // button name -> pad button name override
-	DisableAnalogStick bool              `json:"disableAnalogStick,omitempty"` // disable analog stick mirroring d-pad
-	RumbleLevel        int               `json:"rumbleLevel,omitempty"`        // 0=off, 1=1x, 2=2x, 3=3x, 4=4x, 5=Max. Intensity/duration multiplier
+	P1Keyboard         map[string]string   `json:"p1Keyboard,omitempty"`         // button name -> key name override
+	DisableAnalogStick bool                `json:"disableAnalogStick,omitempty"` // disable analog stick mirroring d-pad
+	RumbleLevel        int                 `json:"rumbleLevel,omitempty"`        // 0=off, 1=1x, 2=2x, 3=3x, 4=4x, 5=Max. Intensity/duration multiplier
+	Profiles           []ControllerProfile `json:"profiles,omitempty"`           // named controller mappings, in creation order
+	Players            []PlayerConfig      `json:"players,omitempty"`            // player slot -> profile assignment
+}
+
+// ControllerProfile is a named controller button mapping for a controller
+// model. The model is identified by SDLID+Controller; multiple profiles can
+// exist for the same model (e.g. third-party pads reported as the same
+// device). ID is immutable and referenced by PlayerConfig; Name is the
+// user-editable display name, unique per model.
+type ControllerProfile struct {
+	ID         string            `json:"id"`
+	SDLID      string            `json:"sdlId"`
+	Controller string            `json:"controller"`
+	Name       string            `json:"name"`
+	Bindings   map[string]string `json:"bindings,omitempty"` // button name -> pad button name override
+}
+
+// PlayerConfig holds the controller assignment for one player slot.
+// An empty Profile means no controller is assigned to that player.
+type PlayerConfig struct {
+	Profile string `json:"profile,omitempty"` // ControllerProfile.ID
+}
+
+// MatchesPad reports whether this profile's controller model matches the
+// given pad identity (SDL ID and name).
+func (p *ControllerProfile) MatchesPad(sdlID, name string) bool {
+	return p.SDLID == sdlID && p.Controller == name
+}
+
+// ProfileByID returns the profile with the given ID, or nil if not found.
+func (c *InputConfig) ProfileByID(id string) *ControllerProfile {
+	if id == "" {
+		return nil
+	}
+	for i := range c.Profiles {
+		if c.Profiles[i].ID == id {
+			return &c.Profiles[i]
+		}
+	}
+	return nil
+}
+
+// PlayerProfile returns the profile assigned to the given player slot,
+// or nil if the slot is unassigned or the reference is dangling.
+func (c *InputConfig) PlayerProfile(player int) *ControllerProfile {
+	if player < 0 || player >= len(c.Players) {
+		return nil
+	}
+	return c.ProfileByID(c.Players[player].Profile)
+}
+
+// NewProfileID returns a random 8-hex-char profile ID unique within this
+// input config.
+func (c *InputConfig) NewProfileID() string {
+	for {
+		var b [4]byte
+		rand.Read(b[:])
+		id := hex.EncodeToString(b[:])
+		if c.ProfileByID(id) == nil {
+			return id
+		}
+	}
 }
 
 // RetroAchievementsConfig contains RetroAchievements integration settings

@@ -659,7 +659,10 @@ func TestValidateInputConfig(t *testing.T) {
 	t.Run("valid overrides have no errors", func(t *testing.T) {
 		config := DefaultConfig()
 		config.Input.P1Keyboard = map[string]string{"Up": "ArrowUp", "A": "J"}
-		config.Input.P1Controller = map[string]string{"A": "DpadUp"}
+		config.Input.Profiles = []ControllerProfile{
+			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "default", Bindings: map[string]string{"A": "DpadUp"}},
+		}
+		config.Input.Players = []PlayerConfig{{Profile: "p1"}, {Profile: ""}}
 		errs := ValidateInputConfig(config, validKey, validPad)
 		if len(errs) != 0 {
 			t.Errorf("expected no errors, got: %v", errs)
@@ -677,10 +680,39 @@ func TestValidateInputConfig(t *testing.T) {
 
 	t.Run("invalid pad name detected", func(t *testing.T) {
 		config := DefaultConfig()
-		config.Input.P1Controller = map[string]string{"A": "BadPad"}
+		config.Input.Profiles = []ControllerProfile{
+			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "default", Bindings: map[string]string{"A": "BadPad"}},
+		}
 		errs := ValidateInputConfig(config, validKey, validPad)
 		if len(errs) != 1 {
 			t.Errorf("expected 1 error, got %d: %v", len(errs), errs)
+		}
+	})
+
+	t.Run("profile identity problems detected", func(t *testing.T) {
+		config := DefaultConfig()
+		config.Input.Profiles = []ControllerProfile{
+			{ID: "", SDLID: "sdl1", Controller: "Pad", Name: "default"},
+			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "one"},
+			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "two"},
+			{ID: "p2", SDLID: "sdl1", Controller: "Pad", Name: "one"},
+		}
+		errs := ValidateInputConfig(config, validKey, validPad)
+		// missing id, duplicate id, duplicate name per model
+		if len(errs) != 3 {
+			t.Errorf("expected 3 errors, got %d: %v", len(errs), errs)
+		}
+	})
+
+	t.Run("player problems detected", func(t *testing.T) {
+		config := DefaultConfig()
+		config.Input.Players = []PlayerConfig{
+			{Profile: "missing"}, {Profile: ""}, {Profile: ""},
+		}
+		errs := ValidateInputConfig(config, validKey, validPad)
+		// too many players, unknown profile reference
+		if len(errs) != 2 {
+			t.Errorf("expected 2 errors, got %d: %v", len(errs), errs)
 		}
 	})
 }
@@ -696,7 +728,9 @@ func TestCorrectInputConfig(t *testing.T) {
 	t.Run("removes invalid entries", func(t *testing.T) {
 		config := DefaultConfig()
 		config.Input.P1Keyboard = map[string]string{"A": "J", "B": "BadKey"}
-		config.Input.P1Controller = map[string]string{"A": "A", "B": "BadPad"}
+		config.Input.Profiles = []ControllerProfile{
+			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "default", Bindings: map[string]string{"A": "A", "B": "BadPad"}},
+		}
 
 		CorrectInputConfig(config, validKey, validPad)
 
@@ -706,11 +740,57 @@ func TestCorrectInputConfig(t *testing.T) {
 		if config.Input.P1Keyboard["A"] != "J" {
 			t.Error("valid keyboard entry should be preserved")
 		}
-		if len(config.Input.P1Controller) != 1 {
-			t.Errorf("expected 1 controller entry, got %d", len(config.Input.P1Controller))
+		if len(config.Input.Profiles[0].Bindings) != 1 {
+			t.Errorf("expected 1 binding, got %d", len(config.Input.Profiles[0].Bindings))
 		}
-		if config.Input.P1Controller["A"] != "A" {
-			t.Error("valid controller entry should be preserved")
+		if config.Input.Profiles[0].Bindings["A"] != "A" {
+			t.Error("valid binding should be preserved")
+		}
+	})
+
+	t.Run("drops invalid and duplicate profiles", func(t *testing.T) {
+		config := DefaultConfig()
+		config.Input.Profiles = []ControllerProfile{
+			{ID: "", SDLID: "sdl1", Controller: "Pad", Name: "default"},
+			{ID: "p1", SDLID: "", Controller: "Pad", Name: "default"},
+			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "one"},
+			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "two"},
+			{ID: "p2", SDLID: "sdl1", Controller: "Pad", Name: "one"},
+			{ID: "p3", SDLID: "sdl2", Controller: "Pad", Name: "one"},
+		}
+
+		CorrectInputConfig(config, validKey, validPad)
+
+		if len(config.Input.Profiles) != 2 {
+			t.Fatalf("expected 2 profiles, got %d: %v", len(config.Input.Profiles), config.Input.Profiles)
+		}
+		if config.Input.Profiles[0].ID != "p1" || config.Input.Profiles[0].Name != "one" {
+			t.Errorf("unexpected first profile: %v", config.Input.Profiles[0])
+		}
+		if config.Input.Profiles[1].ID != "p3" {
+			t.Errorf("unexpected second profile: %v", config.Input.Profiles[1])
+		}
+	})
+
+	t.Run("clamps players and clears dangling references", func(t *testing.T) {
+		config := DefaultConfig()
+		config.Input.Profiles = []ControllerProfile{
+			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "default"},
+		}
+		config.Input.Players = []PlayerConfig{
+			{Profile: "p1"}, {Profile: "missing"}, {Profile: "p1"},
+		}
+
+		CorrectInputConfig(config, validKey, validPad)
+
+		if len(config.Input.Players) != 2 {
+			t.Fatalf("expected 2 players, got %d", len(config.Input.Players))
+		}
+		if config.Input.Players[0].Profile != "p1" {
+			t.Error("valid player reference should be preserved")
+		}
+		if config.Input.Players[1].Profile != "" {
+			t.Error("dangling player reference should be cleared")
 		}
 	})
 
@@ -753,7 +833,10 @@ func TestInputConfigSerialization(t *testing.T) {
 	t.Run("roundtrip preserves overrides", func(t *testing.T) {
 		config := DefaultConfig()
 		config.Input.P1Keyboard = map[string]string{"Up": "ArrowUp", "A": "Z"}
-		config.Input.P1Controller = map[string]string{"A": "Y"}
+		config.Input.Profiles = []ControllerProfile{
+			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "default", Bindings: map[string]string{"A": "Y"}},
+		}
+		config.Input.Players = []PlayerConfig{{Profile: "p1"}}
 		config.CoreOptions = map[string]string{"sixbutton": "true"}
 
 		data, err := json.Marshal(config)
@@ -772,11 +855,47 @@ func TestInputConfigSerialization(t *testing.T) {
 		if restored.Input.P1Keyboard["A"] != "Z" {
 			t.Error("P1Keyboard A override not preserved")
 		}
-		if restored.Input.P1Controller["A"] != "Y" {
-			t.Error("P1Controller A override not preserved")
+		if len(restored.Input.Profiles) != 1 || restored.Input.Profiles[0].Bindings["A"] != "Y" {
+			t.Error("profile binding not preserved")
+		}
+		if len(restored.Input.Players) != 1 || restored.Input.Players[0].Profile != "p1" {
+			t.Error("player assignment not preserved")
 		}
 		if restored.CoreOptions["sixbutton"] != "true" {
 			t.Error("CoreOptions not preserved")
+		}
+	})
+
+	t.Run("legacy p1Controller key is ignored on load", func(t *testing.T) {
+		var restored Config
+		legacy := `{"input":{"p1Keyboard":{"Up":"ArrowUp"},"p1Controller":{"A":"Y"}}}`
+		if err := json.Unmarshal([]byte(legacy), &restored); err != nil {
+			t.Fatal(err)
+		}
+		if restored.Input.P1Keyboard["Up"] != "ArrowUp" {
+			t.Error("p1Keyboard should still load")
+		}
+		data, err := json.Marshal(&restored)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if contains(string(data), "p1Controller") {
+			t.Error("legacy p1Controller should not survive a save")
+		}
+	})
+
+	t.Run("absent profiles and players stay empty", func(t *testing.T) {
+		jsonBytes := []byte(`{"version":1}`)
+		var config Config
+		if err := json.Unmarshal(jsonBytes, &config); err != nil {
+			t.Fatal(err)
+		}
+		ApplyMissingDefaults(&config, detectPresentKeys(jsonBytes))
+		if len(config.Input.Profiles) != 0 {
+			t.Error("profiles should default to empty")
+		}
+		if len(config.Input.Players) != 0 {
+			t.Error("players should default to empty")
 		}
 	})
 }

@@ -3,6 +3,7 @@ package desktop
 import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/user-none/eblitui/coreif"
+	"github.com/user-none/eblitui/desktop/storage"
 )
 
 // InputMapping maps button bit IDs to ebiten input types.
@@ -285,6 +286,24 @@ func BuildMappingFromConfig(buttons []coreif.Button, kbOverrides, padOverrides m
 		}
 	}
 
+	return m
+}
+
+// buildPlayerMappings builds one input mapping per player slot. Each
+// player's controller bindings come from their assigned profile; player 1
+// also carries the keyboard overrides.
+func buildPlayerMappings(systemInfo coreif.SystemInfo, input *storage.InputConfig) [maxPlayers]InputMapping {
+	var m [maxPlayers]InputMapping
+	for p := 0; p < maxPlayers; p++ {
+		var kb, pad map[string]string
+		if p == 0 {
+			kb = input.P1Keyboard
+		}
+		if prof := input.PlayerProfile(p); prof != nil {
+			pad = prof.Bindings
+		}
+		m[p] = BuildMappingFromConfig(systemInfo.Buttons, kb, pad)
+	}
 	return m
 }
 

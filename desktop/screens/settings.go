@@ -282,17 +282,10 @@ func (s *SettingsScreen) setupAudioNav() {
 }
 
 func (s *SettingsScreen) setupInputNav() {
-	firstZone := "input-bindings"
-	for _, opt := range s.input.SystemInfo().CoreOptions {
-		if opt.Category == coreif.CoreOptionCategoryInput {
-			firstZone = "input-core-opts"
-			break
-		}
+	s.SetNavTransition("sidebar", types.DirRight, s.input.FirstNavZone(), types.NavIndexFirst)
+	for _, zone := range s.input.NavZones() {
+		s.SetNavTransition(zone, types.DirLeft, "sidebar", types.NavIndexFirst)
 	}
-	s.SetNavTransition("sidebar", types.DirRight, firstZone, types.NavIndexFirst)
-	s.SetNavTransition("input-core-opts", types.DirLeft, "sidebar", types.NavIndexFirst)
-	s.SetNavTransition("input-bindings", types.DirLeft, "sidebar", types.NavIndexFirst)
-	s.SetNavTransition("input-reset", types.DirLeft, "sidebar", types.NavIndexFirst)
 }
 
 func (s *SettingsScreen) setupLibraryNav() {
@@ -345,10 +338,20 @@ func (s *SettingsScreen) EnsureFocusedVisible(focused widget.Focuser) {
 
 // Update handles per-frame updates for settings sections
 func (s *SettingsScreen) Update() {
+	// Input capture must keep updating even if the visible section changed
+	// while capturing (e.g. a mouse click on the sidebar), so ESC can cancel.
+	inputUpdated := false
+	if s.input != nil && s.input.IsCapturing() {
+		s.input.Update()
+		inputUpdated = true
+	}
+
 	if s.selectedSection >= 0 && s.selectedSection < len(s.sections) {
 		switch s.sections[s.selectedSection].focusKey {
 		case "section-input":
-			s.input.Update()
+			if !inputUpdated {
+				s.input.Update()
+			}
 		case "section-achievements":
 			s.retroAchievements.Update()
 		}
@@ -358,4 +361,14 @@ func (s *SettingsScreen) Update() {
 // IsInputCaptureActive returns true when the input section is waiting for a key/button press
 func (s *SettingsScreen) IsInputCaptureActive() bool {
 	return s.input != nil && s.input.IsCapturing()
+}
+
+// HandleBack gives the selected section a chance to consume a back action
+// (e.g. leaving an input sub-view). Returns true when consumed.
+func (s *SettingsScreen) HandleBack() bool {
+	if s.selectedSection >= 0 && s.selectedSection < len(s.sections) &&
+		s.sections[s.selectedSection].focusKey == "section-input" {
+		return s.input.HandleBack()
+	}
+	return false
 }

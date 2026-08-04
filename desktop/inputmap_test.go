@@ -5,6 +5,7 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/user-none/eblitui/coreif"
+	"github.com/user-none/eblitui/desktop/storage"
 )
 
 func TestParseKeyValid(t *testing.T) {
@@ -422,5 +423,46 @@ func TestResolvePadDisplay(t *testing.T) {
 
 	if got := ResolvePadDisplay("B", "B", overrides); got != "B" {
 		t.Errorf("expected B, got %q", got)
+	}
+}
+
+func TestBuildPlayerMappings(t *testing.T) {
+	systemInfo := coreif.SystemInfo{
+		Buttons: []coreif.Button{
+			{Name: "A", ID: 4, DefaultKey: "J", DefaultPad: "A"},
+		},
+	}
+	input := &storage.InputConfig{
+		P1Keyboard: map[string]string{"A": "Z"},
+		Profiles: []storage.ControllerProfile{
+			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "one", Bindings: map[string]string{"A": "Y"}},
+			{ID: "p2", SDLID: "sdl1", Controller: "Pad", Name: "two", Bindings: map[string]string{"A": "X"}},
+		},
+		Players: []storage.PlayerConfig{{Profile: "p1"}, {Profile: "p2"}},
+	}
+
+	m := buildPlayerMappings(systemInfo, input)
+
+	// Player 1: keyboard overrides + profile p1 pad bindings
+	if m[0].Keys[4] != ebiten.KeyZ {
+		t.Error("player 1 keyboard override not applied")
+	}
+	if m[0].Gamepad[4] != ebiten.StandardGamepadButtonRightTop {
+		t.Error("player 1 profile binding not applied")
+	}
+
+	// Player 2: profile p2 pad bindings, no P1 keyboard overrides
+	if m[1].Keys[4] != ebiten.KeyJ {
+		t.Error("player 2 should use default keyboard mapping")
+	}
+	if m[1].Gamepad[4] != ebiten.StandardGamepadButtonRightLeft {
+		t.Error("player 2 profile binding not applied")
+	}
+
+	// Unassigned player falls back to adaptor defaults
+	input.Players[1].Profile = ""
+	m = buildPlayerMappings(systemInfo, input)
+	if m[1].Gamepad[4] != ebiten.StandardGamepadButtonRightBottom {
+		t.Error("unassigned player should use default pad mapping")
 	}
 }
