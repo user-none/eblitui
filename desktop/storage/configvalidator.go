@@ -269,6 +269,12 @@ func ValidateInputConfig(config *Config, isValidKey, isValidPad func(string) boo
 			errors = append(errors, fmt.Sprintf("input.players[%d]: unknown profile %q", i, pl.Profile))
 		}
 	}
+
+	for guid, line := range config.Input.PadMappings {
+		if !ValidPadMapping(guid, line) {
+			errors = append(errors, fmt.Sprintf("input.padMappings[%q]: malformed mapping", guid))
+		}
+	}
 	return errors
 }
 
@@ -324,6 +330,15 @@ func CorrectInputConfig(config *Config, isValidKey, isValidPad func(string) bool
 		if config.Input.Players[i].Profile != "" && !seenIDs[config.Input.Players[i].Profile] {
 			config.Input.Players[i].Profile = ""
 		}
+	}
+
+	for guid, line := range config.Input.PadMappings {
+		if !ValidPadMapping(guid, line) {
+			delete(config.Input.PadMappings, guid)
+		}
+	}
+	if len(config.Input.PadMappings) == 0 {
+		config.Input.PadMappings = nil
 	}
 }
 

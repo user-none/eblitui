@@ -3,6 +3,7 @@ package storage
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"strings"
 )
 
 // Config represents the application configuration stored in config.json
@@ -36,6 +37,7 @@ type InputConfig struct {
 	RumbleLevel        int                 `json:"rumbleLevel,omitempty"`        // 0=off, 1=1x, 2=2x, 3=3x, 4=4x, 5=Max. Intensity/duration multiplier
 	Profiles           []ControllerProfile `json:"profiles,omitempty"`           // named controller mappings, in creation order
 	Players            []PlayerConfig      `json:"players,omitempty"`            // player slot -> profile assignment
+	PadMappings        map[string]string   `json:"padMappings,omitempty"`        // SDL GUID -> generated standard-layout mapping line
 }
 
 // ControllerProfile is a named controller button mapping for a controller
@@ -61,6 +63,24 @@ type PlayerConfig struct {
 // given pad identity (SDL ID and name).
 func (p *ControllerProfile) MatchesPad(sdlID, name string) bool {
 	return p.SDLID == sdlID && p.Controller == name
+}
+
+// ValidPadMapping reports whether guid and line form a well-formed pad
+// mapping entry: the GUID is 32 lowercase hex characters, the line starts
+// with the GUID, and the line is a single line.
+func ValidPadMapping(guid, line string) bool {
+	if len(guid) != 32 {
+		return false
+	}
+	for _, c := range guid {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	if !strings.HasPrefix(line, guid+",") {
+		return false
+	}
+	return !strings.ContainsAny(line, "\n\r")
 }
 
 // ProfileByID returns the profile with the given ID, or nil if not found.

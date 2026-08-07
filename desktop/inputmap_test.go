@@ -66,6 +66,7 @@ func TestParsePadValid(t *testing.T) {
 		{"DpadRight", ebiten.StandardGamepadButtonLeftRight},
 		{"L3", ebiten.StandardGamepadButtonLeftStick},
 		{"R3", ebiten.StandardGamepadButtonRightStick},
+		{"Home", ebiten.StandardGamepadButtonCenterCenter},
 	}
 	for _, tt := range tests {
 		b, ok := ParsePad(tt.name)

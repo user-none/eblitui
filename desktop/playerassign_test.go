@@ -162,10 +162,19 @@ func TestPlayerAssignmentUnbinding(t *testing.T) {
 		pads := []PadInfo{{ID: 0, SDLID: "sdl-ps", Name: "PlayStation"}}
 		pa.Update(pads, cfg)
 
+		// The pad unbinds from player 1 and, in the same reconcile pass,
+		// binds to player 2, whose profile matches its model.
 		cfg.Players[0].Profile = "xb-default"
 		events := pa.Update(pads, cfg)
-		if len(events) != 1 || events[0].Bound {
-			t.Fatalf("expected unbind event, got %v", events)
+		if len(events) != 2 || events[0].Player != 0 || events[0].Bound ||
+			events[1].Player != 1 || !events[1].Bound {
+			t.Fatalf("expected player 1 unbind and player 2 bind events, got %v", events)
+		}
+		if _, ok := pa.PadFor(0); ok {
+			t.Error("player 1 should be unbound")
+		}
+		if id, ok := pa.PadFor(1); !ok || id != 0 {
+			t.Error("player 2 should be bound to the pad")
 		}
 	})
 
@@ -191,10 +200,19 @@ func TestPlayerAssignmentUnbinding(t *testing.T) {
 		pads := []PadInfo{{ID: 0, SDLID: "sdl-ps", Name: "PlayStation"}}
 		pa.Update(pads, cfg)
 
+		// The pad unbinds from player 1 and, in the same reconcile pass,
+		// binds to player 2, whose profile matches its model.
 		cfg.Players[0].Profile = ""
 		events := pa.Update(pads, cfg)
-		if len(events) != 1 || events[0].Bound {
-			t.Fatalf("expected unbind event, got %v", events)
+		if len(events) != 2 || events[0].Player != 0 || events[0].Bound ||
+			events[1].Player != 1 || !events[1].Bound {
+			t.Fatalf("expected player 1 unbind and player 2 bind events, got %v", events)
+		}
+		if _, ok := pa.PadFor(0); ok {
+			t.Error("player 1 should be unbound")
+		}
+		if id, ok := pa.PadFor(1); !ok || id != 0 {
+			t.Error("player 2 should be bound to the pad")
 		}
 	})
 

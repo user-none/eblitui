@@ -2,6 +2,7 @@ package storage
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -1033,4 +1034,62 @@ func TestPresentButZeroVsMissing(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestValidPadMapping(t *testing.T) {
+	const guid = "030000007e0500000920000000020000"
+	tests := []struct {
+		name string
+		guid string
+		line string
+		want bool
+	}{
+		{"valid", guid, guid + ",Pad,a:b0,dpup:h0.1,", true},
+		{"empty guid", "", ",Pad,a:b0,", false},
+		{"short guid", "abcd", "abcd,Pad,a:b0,", false},
+		{"uppercase guid", strings.ToUpper(guid), strings.ToUpper(guid) + ",Pad,a:b0,", false},
+		{"non-hex guid", "zz0000007e0500000920000000020000", "zz0000007e0500000920000000020000,Pad,", false},
+		{"line missing guid prefix", guid, "ffffffffffffffffffffffffffffffff,Pad,a:b0,", false},
+		{"guid only no comma", guid, guid, false},
+		{"newline injection", guid, guid + ",Pad,a:b0,\nffffffffffffffffffffffffffffffff,Other,b:b1,", false},
+		{"carriage return", guid, guid + ",Pad,a:b0,\r", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ValidPadMapping(tt.guid, tt.line); got != tt.want {
+				t.Errorf("ValidPadMapping(%q, %q) = %v, want %v", tt.guid, tt.line, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateAndCorrectPadMappings(t *testing.T) {
+	const guid = "030000007e0500000920000000020000"
+	validKey := func(string) bool { return true }
+	validPad := func(string) bool { return true }
+
+	config := DefaultConfig()
+	config.Input.PadMappings = map[string]string{
+		guid:  guid + ",Pad,a:b0,dpup:h0.1,",
+		"bad": "bad,Pad,a:b0,",
+	}
+
+	errs := ValidateInputConfig(config, validKey, validPad)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got: %v", errs)
+	}
+
+	CorrectInputConfig(config, validKey, validPad)
+	if len(config.Input.PadMappings) != 1 {
+		t.Fatalf("expected 1 mapping after correction, got: %v", config.Input.PadMappings)
+	}
+	if _, ok := config.Input.PadMappings[guid]; !ok {
+		t.Error("valid mapping was removed by correction")
+	}
+
+	config.Input.PadMappings = map[string]string{"bad": "bad"}
+	CorrectInputConfig(config, validKey, validPad)
+	if config.Input.PadMappings != nil {
+		t.Errorf("expected nil map after removing all entries, got: %v", config.Input.PadMappings)
+	}
 }

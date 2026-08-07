@@ -102,6 +102,7 @@ var padNameMap = map[string]ebiten.StandardGamepadButton{
 	"DpadRight": ebiten.StandardGamepadButtonLeftRight,
 	"L3":        ebiten.StandardGamepadButtonLeftStick,
 	"R3":        ebiten.StandardGamepadButtonRightStick,
+	"Home":      ebiten.StandardGamepadButtonCenterCenter,
 }
 
 // reservedKeys are keyboard keys used by the standalone UI for non-gameplay

@@ -73,6 +73,9 @@ type App struct {
 	errorPath        string
 	configLoadFailed bool // True if config.json failed to load (don't overwrite on exit)
 
+	// SDL GUIDs already given a baseline mapping attempt this session
+	padMappingTried map[string]bool
+
 	// Window tracking for persistence and responsive layouts
 	windowX, windowY   int
 	windowWidth        int
@@ -189,9 +192,10 @@ func Run(factory coreif.CoreFactory) error {
 // newApp creates and initializes the application with the given core factory and system info.
 func newApp(factory coreif.CoreFactory, info coreif.SystemInfo) (*App, error) {
 	app := &App{
-		state:      StateLibrary,
-		factory:    factory,
-		systemInfo: info,
+		state:           StateLibrary,
+		factory:         factory,
+		systemInfo:      info,
+		padMappingTried: make(map[string]bool),
 	}
 
 	// Ensure directory structure exists
@@ -280,6 +284,9 @@ func newApp(factory coreif.CoreFactory, info coreif.SystemInfo) (*App, error) {
 	// Apply theme and font size
 	style.ApplyThemeByName(app.config.Theme)
 	style.ApplyFontSize(storage.ValidFontSize(app.config.FontSize))
+
+	// Apply persisted controller mappings before any gamepad is polled
+	applySavedPadMappings(app.config.Input.PadMappings)
 
 	// Load library
 	library, err := storage.LoadLibrary()
@@ -777,6 +784,12 @@ func (a *App) updatePlayerAssignment() {
 	}
 
 	pads := SnapshotPads()
+
+	// Give controllers without a standard layout a generated baseline
+	// mapping so they work everywhere standard buttons are polled.
+	if a.ensurePadMappings(pads) && !a.configLoadFailed {
+		storage.SaveConfig(a.config)
+	}
 
 	// One-time bootstrap: first ever controller gets a profile and player 1.
 	if !a.configLoadFailed && AutoCreateFirstProfile(&a.config.Input, pads) {
