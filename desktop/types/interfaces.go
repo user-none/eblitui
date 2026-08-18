@@ -1,3 +1,6 @@
+// Copyright 2026 The eblitui Authors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Package types provides shared interfaces used across UI packages.
 // This package exists to avoid import cycles between screens and sub-packages.
 package types

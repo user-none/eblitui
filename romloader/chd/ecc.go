@@ -1,3 +1,6 @@
+// Copyright 2026 The eblitui Authors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 package chd
 
 // CD-ROM Mode 1 EDC/ECC regeneration. CHD CD compression strips the

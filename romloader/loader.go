@@ -1,3 +1,6 @@
+// Copyright 2026 The eblitui Authors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Package romloader handles loading ROM files from various sources,
 // including compressed archives (ZIP, 7z, gzip, tar.gz, RAR).
 package romloader

@@ -1,3 +1,6 @@
+// Copyright 2026 The eblitui Authors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 package coreif
 
 // Emulator is the core interface that every emulator adapter must implement.
