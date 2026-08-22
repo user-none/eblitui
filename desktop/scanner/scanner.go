@@ -28,6 +28,7 @@ const (
 	ScanPhaseInit ScanPhase = iota
 	ScanPhaseDiscovery
 	ScanPhaseArtwork
+	ScanPhaseRumble
 )
 
 const (
@@ -48,12 +49,12 @@ var artworkTypes = []string{
 
 // ScanProgress represents progress updates from the scanner
 type ScanProgress struct {
-	Phase           ScanPhase
-	Progress        float64 // 0.0 to 1.0
-	GamesFound      int
-	ArtworkTotal    int
-	ArtworkComplete int
-	StatusText      string
+	Phase            ScanPhase
+	Progress         float64 // 0.0 to 1.0
+	GamesFound       int
+	DownloadTotal    int
+	DownloadComplete int
+	StatusText       string
 }
 
 // ScanResult represents the final scan result
@@ -87,17 +88,19 @@ type Scanner struct {
 	done     chan ScanResult
 
 	// Internal state
-	mu           sync.Mutex
-	games        map[string]*storage.GameEntry
-	artworkQueue []artworkJob // Games that need artwork download
-	rumbleQueue  []artworkJob // Games that need rumble file download
-	errors       []error
-	cancelled    bool
-	downloadSem  chan struct{} // Semaphore for concurrent downloads (size 2)
+	mu             sync.Mutex
+	games          map[string]*storage.GameEntry
+	artworkQueue   []downloadJob // Games that need artwork download
+	chtRumbleQueue []downloadJob // Games that need legacy rumble CHT file download
+	erumbleQueue   []downloadJob // Games that need .erumble file download
+	errors         []error
+	cancelled      bool
+	downloadSem    chan struct{} // Semaphore for concurrent downloads (size 2)
 }
 
-// artworkJob represents a pending artwork or rumble download
-type artworkJob struct {
+// downloadJob represents a pending asset download: artwork, a legacy
+// rumble CHT file, or an .erumble file.
+type downloadJob struct {
 	gameCRC    string
 	gameName   string // No-Intro name from RDB
 	variantIdx int    // Index into MetadataVariants for correct repo
@@ -133,8 +136,9 @@ func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[st
 		progress:         make(chan ScanProgress, 10),
 		done:             make(chan ScanResult, 1),
 		games:            make(map[string]*storage.GameEntry),
-		artworkQueue:     make([]artworkJob, 0),
-		rumbleQueue:      make([]artworkJob, 0),
+		artworkQueue:     make([]downloadJob, 0),
+		chtRumbleQueue:   make([]downloadJob, 0),
+		erumbleQueue:     make([]downloadJob, 0),
 		downloadSem:      make(chan struct{}, 2), // Limit to 2 concurrent downloads
 	}
 }
@@ -230,21 +234,31 @@ func (s *Scanner) Run() {
 		return
 	}
 
-	// Phase 3: Resolve and download artwork, then rumble
+	// Phase 3: Resolve and download artwork
 	s.sendProgress(ScanProgress{
 		Phase:      ScanPhaseArtwork,
 		StatusText: "Resolving artwork...",
 	})
 	artworkJobs := s.resolveArtwork(s.artworkQueue)
-	s.downloadAssets(artworkJobs, "Downloading artwork...")
+	s.downloadAssets(artworkJobs, ScanPhaseArtwork, "Downloading artwork...")
+
+	// Phase 4: Resolve and download rumble files, legacy CHT then .erumble
+	if !s.isCancelled() {
+		s.sendProgress(ScanProgress{
+			Phase:      ScanPhaseRumble,
+			StatusText: "Resolving rumble data...",
+		})
+		chtRumbleJobs := s.resolveCHTRumble(s.chtRumbleQueue)
+		s.downloadAssets(chtRumbleJobs, ScanPhaseRumble, "Downloading rumble data...")
+	}
 
 	if !s.isCancelled() {
 		s.sendProgress(ScanProgress{
-			Phase:      ScanPhaseArtwork,
-			StatusText: "Resolving rumble data...",
+			Phase:      ScanPhaseRumble,
+			StatusText: "Resolving rumble files...",
 		})
-		rumbleJobs := s.resolveRumble(s.rumbleQueue)
-		s.downloadAssets(rumbleJobs, "Downloading rumble data...")
+		erumbleJobs := s.resolveERumble(s.erumbleQueue)
+		s.downloadAssets(erumbleJobs, ScanPhaseRumble, "Downloading rumble files...")
 	}
 
 	// Send final result
@@ -642,7 +656,7 @@ func (s *Scanner) applyMetadata(entry *storage.GameEntry, game *rdb.Game, varian
 		artPath, _ := storage.GetGameArtworkPath(crcHex)
 		if _, err := os.Stat(artPath); os.IsNotExist(err) {
 			s.mu.Lock()
-			s.artworkQueue = append(s.artworkQueue, artworkJob{
+			s.artworkQueue = append(s.artworkQueue, downloadJob{
 				gameCRC:    crcHex,
 				gameName:   game.Name,
 				variantIdx: variantIdx,
@@ -651,12 +665,30 @@ func (s *Scanner) applyMetadata(entry *storage.GameEntry, game *rdb.Game, varian
 		}
 
 		// Queue rumble file download only if rumble file doesn't exist
-		rumblePath, _ := storage.GetGameRumblePath(crcHex)
+		rumblePath, _ := storage.GetGameCHTRumblePath(crcHex)
 		if _, err := os.Stat(rumblePath); os.IsNotExist(err) {
 			s.mu.Lock()
-			s.rumbleQueue = append(s.rumbleQueue, artworkJob{
+			s.chtRumbleQueue = append(s.chtRumbleQueue, downloadJob{
 				gameCRC:    crcHex,
 				gameName:   game.Name,
+				variantIdx: variantIdx,
+			})
+			s.mu.Unlock()
+		}
+	}
+
+	// Queue .erumble download when the shared <gameid>.erumble is absent.
+	// Repo files are named by game ID (CRC32 / disc serial), so no RDB
+	// match is needed; a -1 variantIdx tries every variant's repo dir.
+	// Per-disc variant files resolve alongside the shared file. A core
+	// that declares no RumbleRepoDir does not support rumble downloads,
+	// so nothing is queued for it.
+	if s.hasERumbleRepoDir(variantIdx) {
+		erumblePath, _ := storage.GetGameRumblePath(crcHex)
+		if _, err := os.Stat(erumblePath); os.IsNotExist(err) {
+			s.mu.Lock()
+			s.erumbleQueue = append(s.erumbleQueue, downloadJob{
+				gameCRC:    crcHex,
 				variantIdx: variantIdx,
 			})
 			s.mu.Unlock()
@@ -670,7 +702,7 @@ func (s *Scanner) applyMetadata(entry *storage.GameEntry, game *rdb.Game, varian
 			// Use filename without extension (keep region parenthetical)
 			artName := strings.TrimSuffix(filename, filepath.Ext(filename))
 			s.mu.Lock()
-			s.artworkQueue = append(s.artworkQueue, artworkJob{
+			s.artworkQueue = append(s.artworkQueue, downloadJob{
 				gameCRC:    crcHex,
 				gameName:   artName,
 				variantIdx: -1, // Non-RDB: try all variants
@@ -707,7 +739,7 @@ func (s *Scanner) cleanDisplayName(filename string) string {
 // resolveArtwork resolves artwork download URLs for queued games by fetching
 // listings one artwork type at a time per variant. Games are removed from the
 // need queue as they are matched. Returns early if the queue is emptied.
-func (s *Scanner) resolveArtwork(queue []artworkJob) []resolvedJob {
+func (s *Scanner) resolveArtwork(queue []downloadJob) []resolvedJob {
 	if len(queue) == 0 {
 		return nil
 	}
@@ -716,10 +748,10 @@ func (s *Scanner) resolveArtwork(queue []artworkJob) []resolvedJob {
 
 	// Build per-variant sub-queues
 	type variantQueue struct {
-		jobs []artworkJob
+		jobs []downloadJob
 	}
 	byVariant := make(map[int]*variantQueue)
-	var nonRDB []artworkJob
+	var nonRDB []downloadJob
 
 	for _, job := range queue {
 		if job.variantIdx == -1 {
@@ -852,9 +884,10 @@ func (s *Scanner) resolveArtwork(queue []artworkJob) []resolvedJob {
 	return resolved
 }
 
-// resolveRumble resolves rumble download URLs for queued games by fetching
-// a single listing per variant. Returns early if the queue is empty.
-func (s *Scanner) resolveRumble(queue []artworkJob) []resolvedJob {
+// resolveCHTRumble resolves legacy rumble CHT download URLs for queued
+// games by fetching a single listing per variant. Returns early if the
+// queue is empty.
+func (s *Scanner) resolveCHTRumble(queue []downloadJob) []resolvedJob {
 	if len(queue) == 0 {
 		return nil
 	}
@@ -862,7 +895,7 @@ func (s *Scanner) resolveRumble(queue []artworkJob) []resolvedJob {
 	var resolved []resolvedJob
 
 	// Group by variant
-	byVariant := make(map[int][]artworkJob)
+	byVariant := make(map[int][]downloadJob)
 	for _, job := range queue {
 		byVariant[job.variantIdx] = append(byVariant[job.variantIdx], job)
 	}
@@ -885,7 +918,7 @@ func (s *Scanner) resolveRumble(queue []artworkJob) []resolvedJob {
 				continue
 			}
 
-			savePath, err := storage.GetGameRumblePath(job.gameCRC)
+			savePath, err := storage.GetGameCHTRumblePath(job.gameCRC)
 			if err != nil {
 				continue
 			}
@@ -903,20 +936,112 @@ func (s *Scanner) resolveRumble(queue []artworkJob) []resolvedJob {
 	return resolved
 }
 
+// hasERumbleRepoDir reports whether the variant declares a rumble repo
+// directory. A -1 variantIdx (no RDB match) checks every variant. A core
+// that declares none does not support rumble downloads.
+func (s *Scanner) hasERumbleRepoDir(variantIdx int) bool {
+	if variantIdx >= 0 {
+		return s.metadata.VariantRumbleRepoDir(variantIdx) != ""
+	}
+	for vi := 0; vi < s.metadata.VariantCount(); vi++ {
+		if s.metadata.VariantRumbleRepoDir(vi) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveERumble resolves .erumble download URLs for queued games by
+// fetching one repo directory listing per variant rumble repo dir.
+// Files are matched by game ID, so a job matches at most one variant's
+// listing; a -1 variantIdx (no RDB match) tries every variant that
+// declares a repo dir. Multi-disc games queue once per disc; duplicates
+// are dropped here.
+func (s *Scanner) resolveERumble(queue []downloadJob) []resolvedJob {
+	if len(queue) == 0 {
+		return nil
+	}
+
+	var resolved []resolvedJob
+
+	// One listing per distinct repo dir, fetched lazily. Variants may
+	// share a dir.
+	listings := make(map[string]*ERumbleListing)
+	listingFor := func(repoDir string) *ERumbleListing {
+		l, ok := listings[repoDir]
+		if !ok {
+			l = fetchERumbleListing(repoDir)
+			listings[repoDir] = l
+		}
+		return l
+	}
+
+	variantCount := s.metadata.VariantCount()
+	seen := make(map[string]bool, len(queue))
+
+	for _, job := range queue {
+		if s.isCancelled() {
+			break
+		}
+		if seen[job.gameCRC] {
+			continue
+		}
+		seen[job.gameCRC] = true
+
+		var dirs []string
+		if job.variantIdx >= 0 {
+			if d := s.metadata.VariantRumbleRepoDir(job.variantIdx); d != "" {
+				dirs = append(dirs, d)
+			}
+		} else {
+			for vi := 0; vi < variantCount; vi++ {
+				if d := s.metadata.VariantRumbleRepoDir(vi); d != "" {
+					dirs = append(dirs, d)
+				}
+			}
+		}
+
+		for _, dir := range dirs {
+			files := resolveERumbleFiles(listingFor(dir), job.gameCRC)
+			if len(files) == 0 {
+				continue
+			}
+			for _, f := range files {
+				savePath, err := storage.GetGameRumblePath(strings.TrimSuffix(f.Name, erumbleExt))
+				if err != nil {
+					continue
+				}
+				// A per-disc variant may already exist even when the
+				// shared file that queued the job does not.
+				if _, err := os.Stat(savePath); err == nil {
+					continue
+				}
+				resolved = append(resolved, resolvedJob{
+					downloadURL: f.DownloadURL,
+					savePath:    savePath,
+				})
+			}
+			break
+		}
+	}
+
+	return resolved
+}
+
 // downloadAssets downloads resolved asset jobs in parallel with a semaphore.
-func (s *Scanner) downloadAssets(jobs []resolvedJob, statusText string) {
+func (s *Scanner) downloadAssets(jobs []resolvedJob, phase ScanPhase, statusText string) {
 	total := len(jobs)
 	if total == 0 {
 		return
 	}
 
 	s.sendProgress(ScanProgress{
-		Phase:           ScanPhaseArtwork,
-		Progress:        0,
-		GamesFound:      s.gamesCount(),
-		ArtworkTotal:    total,
-		ArtworkComplete: 0,
-		StatusText:      statusText,
+		Phase:            phase,
+		Progress:         0,
+		GamesFound:       s.gamesCount(),
+		DownloadTotal:    total,
+		DownloadComplete: 0,
+		StatusText:       statusText,
 	})
 
 	var wg sync.WaitGroup
@@ -950,12 +1075,12 @@ func (s *Scanner) downloadAssets(jobs []resolvedJob, statusText string) {
 			s.mu.Unlock()
 
 			s.sendProgress(ScanProgress{
-				Phase:           ScanPhaseArtwork,
-				Progress:        float64(c) / float64(total),
-				GamesFound:      s.gamesCount(),
-				ArtworkTotal:    total,
-				ArtworkComplete: c,
-				StatusText:      statusText,
+				Phase:            phase,
+				Progress:         float64(c) / float64(total),
+				GamesFound:       s.gamesCount(),
+				DownloadTotal:    total,
+				DownloadComplete: c,
+				StatusText:       statusText,
 			})
 		}(job)
 	}

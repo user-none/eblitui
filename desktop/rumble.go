@@ -4,401 +4,142 @@
 package desktop
 
 import (
-	"bufio"
 	"fmt"
+	"log"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/user-none/eblitui/coreif"
+	"github.com/user-none/eblitui/desktop/storage"
+	"github.com/user-none/eblitui/rumble"
 )
 
-// Minimum thresholds for rumble events. CHT files often specify low intensity
-// values that are below the physical actuation threshold for gamepad motors
-// via CoreHaptics. These minimums ensure any non-zero rumble is perceptible.
-const (
-	minRumbleMagnitude  = 0.40
-	minRumbleDurationMs = 250
-)
-
-// RumbleEntry represents a single rumble definition from a CHT file.
-type RumbleEntry struct {
-	Address           uint32
-	MemorySearchSize  int    // 0=1bit, 1=2bit, 2=4bit, 3=8bit, 4=16bit, 5=32bit
-	RumbleType        int    // 0-10 (0 treated as 1/changes)
-	RumbleValue       uint32 // comparison value for types 5-10
-	RumblePort        int    // 0-15 specific, else all
-	BigEndian         bool   // CHT entry's big_endian field
-	PrimaryStrength   uint16 // 0-65535
-	PrimaryDuration   int    // milliseconds
-	SecondaryStrength uint16 // 0-65535
-	SecondaryDuration int    // milliseconds
+// launchedDiscNumber returns the 1-based disc number of the disc being
+// played, from the library entry where the scanner stored the
+// header-reported number. Returns 0 for cartridge systems or when the
+// number cannot be determined.
+func (gm *GameplayManager) launchedDiscNumber() int {
+	g := gm.currentGame
+	if !gm.systemInfo.Disc || g == nil {
+		return 0
+	}
+	if g.SelectedDisc < 0 || g.SelectedDisc >= len(g.Discs) {
+		return 0
+	}
+	return g.Discs[g.SelectedDisc].Index + 1
 }
 
-// RumbleEvent represents a rumble command to send to a gamepad.
-type RumbleEvent struct {
-	Port             int
-	StrongMagnitude  float64
-	WeakMagnitude    float64
-	StrongDurationMs int
-	WeakDurationMs   int
-}
-
-// ParseRumbleFile reads a CHT rumble file and returns the parsed entries.
-func ParseRumbleFile(path string) ([]RumbleEntry, error) {
-	f, err := os.Open(path)
+// rumbleGameID returns the .erumble lookup ID for the game:
+// <gameID>.disc<n> when a disc-specific file exists for the disc being
+// played, else gameID unchanged.
+func (gm *GameplayManager) rumbleGameID(gameID string) string {
+	n := gm.launchedDiscNumber()
+	if n < 1 {
+		return gameID
+	}
+	discID := fmt.Sprintf("%s.disc%d", gameID, n)
+	path, err := storage.GetGameRumblePath(discID)
 	if err != nil {
-		return nil, err
+		return gameID
 	}
-	defer f.Close()
+	if _, err := os.Stat(path); err != nil {
+		return gameID
+	}
+	return discID
+}
 
-	// Parse all key-value pairs from the file
-	kv := make(map[string]string)
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		parts := strings.SplitN(line, " = ", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		key := strings.TrimSpace(parts[0])
-		value := strings.Trim(strings.TrimSpace(parts[1]), "\"")
-		kv[key] = value
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-
-	countStr, ok := kv["cheats"]
-	if !ok {
-		return nil, fmt.Errorf("missing cheats count")
-	}
-	count, err := strconv.Atoi(countStr)
+// loadRumbleRuleset loads and binds a game's .erumble file, returning
+// nil when the game has none. A disc game prefers a disc-specific
+// <gameID>.disc<n>.erumble file over the shared <gameID>.erumble. A file
+// that fails to parse or bind is logged and treated as absent, so the
+// CHT fallback can take over.
+func (gm *GameplayManager) loadRumbleRuleset(gameID string, mem coreif.Memory) *rumble.Engine {
+	path, err := storage.GetGameRumblePath(gm.rumbleGameID(gameID))
 	if err != nil {
-		return nil, fmt.Errorf("invalid cheats count: %w", err)
-	}
-
-	var entries []RumbleEntry
-	for i := 0; i < count; i++ {
-		prefix := fmt.Sprintf("cheat%d_", i)
-
-		entry := RumbleEntry{
-			RumblePort: 1, // default: controller 1
-		}
-
-		if v, ok := kv[prefix+"big_endian"]; ok {
-			entry.BigEndian = v == "true"
-		}
-		if v, ok := kv[prefix+"address"]; ok {
-			addr, err := strconv.ParseUint(v, 10, 32)
-			if err == nil {
-				entry.Address = uint32(addr)
-			}
-		}
-		if v, ok := kv[prefix+"memory_search_size"]; ok {
-			n, err := strconv.Atoi(v)
-			if err == nil {
-				entry.MemorySearchSize = n
-			}
-		}
-		if v, ok := kv[prefix+"rumble_type"]; ok {
-			n, err := strconv.Atoi(v)
-			if err == nil {
-				entry.RumbleType = n
-			}
-		}
-		if v, ok := kv[prefix+"rumble_value"]; ok {
-			n, err := strconv.ParseUint(v, 10, 32)
-			if err == nil {
-				entry.RumbleValue = uint32(n)
-			}
-		}
-		if v, ok := kv[prefix+"rumble_port"]; ok {
-			n, err := strconv.Atoi(v)
-			if err == nil {
-				entry.RumblePort = n
-			}
-		}
-		if v, ok := kv[prefix+"rumble_primary_strength"]; ok {
-			n, err := strconv.ParseUint(v, 10, 16)
-			if err == nil {
-				entry.PrimaryStrength = uint16(n)
-			}
-		}
-		if v, ok := kv[prefix+"rumble_primary_duration"]; ok {
-			n, err := strconv.Atoi(v)
-			if err == nil {
-				entry.PrimaryDuration = n
-			}
-		}
-		if v, ok := kv[prefix+"rumble_secondary_strength"]; ok {
-			n, err := strconv.ParseUint(v, 10, 16)
-			if err == nil {
-				entry.SecondaryStrength = uint16(n)
-			}
-		}
-		if v, ok := kv[prefix+"rumble_secondary_duration"]; ok {
-			n, err := strconv.Atoi(v)
-			if err == nil {
-				entry.SecondaryDuration = n
-			}
-		}
-
-		entries = append(entries, entry)
-	}
-
-	return entries, nil
-}
-
-// RumbleEngine evaluates rumble entries each frame and produces rumble events.
-type RumbleEngine struct {
-	entries         []RumbleEntry
-	prevValues      []uint32
-	initialized     int // warmup frame counter
-	primaryEnd      []time.Time
-	secondaryEnd    []time.Time
-	systemBigEndian bool // true when the core uses big-endian memory (e.g. 68K)
-}
-
-// NewRumbleEngine creates a new rumble engine from parsed entries.
-// systemBigEndian should match SystemInfo.BigEndianMemory for the core.
-// Byte swapping is determined per-entry by comparing the CHT entry's
-// big_endian field against the system endianness.
-func NewRumbleEngine(entries []RumbleEntry, systemBigEndian bool) *RumbleEngine {
-	n := len(entries)
-	now := time.Now()
-	pEnd := make([]time.Time, n)
-	sEnd := make([]time.Time, n)
-	for i := range pEnd {
-		pEnd[i] = now
-		sEnd[i] = now
-	}
-	return &RumbleEngine{
-		entries:         entries,
-		prevValues:      make([]uint32, n),
-		primaryEnd:      pEnd,
-		secondaryEnd:    sEnd,
-		systemBigEndian: systemBigEndian,
-	}
-}
-
-// Evaluate reads memory for each entry, checks conditions, and returns rumble events.
-func (re *RumbleEngine) Evaluate(mi coreif.MemoryInspector) []RumbleEvent {
-	if re.initialized < 30 {
-		// Warmup: read values to populate prevValues without triggering
-		for i := range re.entries {
-			swap := re.entries[i].BigEndian != re.systemBigEndian
-			re.prevValues[i] = readMemoryValue(mi, re.entries[i].Address, re.entries[i].MemorySearchSize, swap)
-		}
-		re.initialized++
 		return nil
 	}
-
-	now := time.Now()
-	var events []RumbleEvent
-
-	for i := range re.entries {
-		e := &re.entries[i]
-		swap := e.BigEndian != re.systemBigEndian
-		current := readMemoryValue(mi, e.Address, e.MemorySearchSize, swap)
-		prev := re.prevValues[i]
-		re.prevValues[i] = current
-
-		if !evaluateCondition(e.RumbleType, current, prev, e.RumbleValue) {
-			continue
-		}
-
-		// Check if primary motor timer has expired
-		firePrimary := e.PrimaryStrength > 0 && e.PrimaryDuration > 0 && now.After(re.primaryEnd[i])
-		fireSecondary := e.SecondaryStrength > 0 && e.SecondaryDuration > 0 && now.After(re.secondaryEnd[i])
-
-		if !firePrimary && !fireSecondary {
-			continue
-		}
-
-		event := RumbleEvent{
-			Port: e.RumblePort,
-		}
-
-		if firePrimary {
-			event.StrongMagnitude = float64(e.PrimaryStrength) / 65535.0
-			event.StrongDurationMs = e.PrimaryDuration
-			re.primaryEnd[i] = now.Add(time.Duration(e.PrimaryDuration) * time.Millisecond)
-		}
-		if fireSecondary {
-			event.WeakMagnitude = float64(e.SecondaryStrength) / 65535.0
-			event.WeakDurationMs = e.SecondaryDuration
-			re.secondaryEnd[i] = now.Add(time.Duration(e.SecondaryDuration) * time.Millisecond)
-		}
-
-		events = append(events, event)
+	src, err := os.ReadFile(path)
+	if err != nil {
+		return nil
 	}
-
-	return events
+	rs, err := rumble.Parse(src)
+	if err != nil {
+		log.Printf("Rumble file %s: %v", path, err)
+		return nil
+	}
+	sys := rumble.System{BigEndian: gm.systemInfo.BigEndianMemory}
+	for _, r := range mem.Regions() {
+		sys.Regions = append(sys.Regions, rumble.Region{
+			Name: r.Name, Start: r.Start, Size: r.Size})
+	}
+	eng, err := rumble.NewEngine(rs, sys, gm.systemInfo.Players)
+	if err != nil {
+		log.Printf("Rumble file %s: %v", path, err)
+		return nil
+	}
+	return eng
 }
 
-// Reset clears engine state (for save state loads or rewind).
-func (re *RumbleEngine) Reset() {
-	re.initialized = 0
-	now := time.Now()
-	for i := range re.prevValues {
-		re.prevValues[i] = 0
-		re.primaryEnd[i] = now
-		re.secondaryEnd[i] = now
+// motorRefresh is how long each per-frame motor level plays. It
+// outlasts the frame gap so held levels stay seamless, and bounds the
+// tail after the engine goes silent for a player.
+const motorRefresh = 50 * time.Millisecond
+
+// playerRumbleScales returns the per-player rumble intensity from each
+// player slot's assigned controller profile, indexed by 0-based player.
+func (gm *GameplayManager) playerRumbleScales() [maxPlayers]float64 {
+	var scales [maxPlayers]float64
+	for p := 0; p < maxPlayers; p++ {
+		scales[p] = gm.config.Input.PlayerRumbleScale(p)
 	}
+	return scales
 }
 
-// evaluateCondition checks if a rumble condition is met.
-func evaluateCondition(rumbleType int, current, prev, rumbleValue uint32) bool {
-	switch rumbleType {
-	case 0, 1: // changes
-		return current != prev
-	case 2: // does not change
-		return current == prev
-	case 3: // increases
-		return current > prev
-	case 4: // decreases
-		return current < prev
-	case 5: // equals value
-		return current == rumbleValue
-	case 6: // not equals value
-		return current != rumbleValue
-	case 7: // less than value
-		return current < rumbleValue
-	case 8: // greater than value
-		return current > rumbleValue
-	case 9: // increased by value
-		return current == prev+rumbleValue
-	case 10: // decreased by value
-		return current == prev-rumbleValue
-	default:
-		return false
-	}
-}
-
-// readMemoryValue reads a value from memory at the given address with the
-// appropriate width based on MemorySearchSize.
-// byteSwap is true when the CHT entry's endianness differs from the system's,
-// requiring address and byte order adjustments.
-func readMemoryValue(mi coreif.MemoryInspector, addr uint32, searchSize int, byteSwap bool) uint32 {
-	var buf [4]byte
-
-	switch searchSize {
-	case 0, 1, 2, 3: // 1bit, 2bit, 4bit, 8bit - read 1 byte
-		readAddr := addr
-		if byteSwap {
-			readAddr ^= 1
-		}
-		mi.ReadMemory(readAddr, buf[:1])
-		val := uint32(buf[0])
-		switch searchSize {
-		case 0: // 1-bit
-			return val & 1
-		case 1: // 2-bit
-			return val & 3
-		case 2: // 4-bit
-			return val & 0x0F
-		default: // 8-bit
-			return val
-		}
-	case 4: // 16-bit - read 2 bytes
-		mi.ReadMemory(addr, buf[:2])
-		if byteSwap {
-			return uint32(buf[0])<<8 | uint32(buf[1])
-		}
-		return uint32(buf[0]) | uint32(buf[1])<<8
-	case 5: // 32-bit - read 4 bytes
-		mi.ReadMemory(addr, buf[:4])
-		if byteSwap {
-			return uint32(buf[0])<<24 | uint32(buf[1])<<16 | uint32(buf[2])<<8 | uint32(buf[3])
-		}
-		return uint32(buf[0]) | uint32(buf[1])<<8 | uint32(buf[2])<<16 | uint32(buf[3])<<24
-	default:
-		readAddr := addr
-		if byteSwap {
-			readAddr ^= 1
-		}
-		mi.ReadMemory(readAddr, buf[:1])
-		return uint32(buf[0])
-	}
-}
-
-// FireRumbleEvents sends rumble events to gamepads via Ebiten.
-// Levels 1-3 scale CHT intensity and duration by that multiplier.
-// Level 4 scales intensity by 4x but caps duration at 2x.
-// Level 5 (Max) uses maximum intensity with 2x duration.
-// Minimum thresholds ensure any non-zero rumble is perceptible.
-func FireRumbleEvents(events []RumbleEvent, level int) {
-	if len(events) == 0 || level <= 0 {
-		return
-	}
-
+// FireMotorStates applies the rumble engine's per-frame motor levels
+// to the gamepads, scaled by each player's profile rumble scale. Levels
+// are applied as authored with no minimum floors. A player whose scale
+// is 0 (or who has no profile) gets no rumble. active is the set of
+// players vibrating from the previous frame; players absent from states
+// are stopped. Returns the new active set. Must run on the Ebiten thread.
+func FireMotorStates(states []rumble.MotorState, scales [maxPlayers]float64, active map[int]bool) map[int]bool {
 	gamepadIDs := ebiten.AppendGamepadIDs(nil)
-	if len(gamepadIDs) == 0 {
-		return
+	next := make(map[int]bool)
+	for _, ms := range states {
+		if ms.Player < 1 || ms.Player > len(gamepadIDs) || ms.Player > maxPlayers {
+			continue
+		}
+		scale := scales[ms.Player-1]
+		if scale <= 0 {
+			continue
+		}
+		ebiten.VibrateGamepad(gamepadIDs[ms.Player-1], &ebiten.VibrateGamepadOptions{
+			Duration:        motorRefresh,
+			StrongMagnitude: scaleMotor(ms.Strong, scale),
+			WeakMagnitude:   scaleMotor(ms.Weak, scale),
+		})
+		next[ms.Player] = true
 	}
-
-	maxMode := level == 5
-	mult := float64(level)
-	durationMult := level
-	if level >= 4 {
-		durationMult = 2
+	for p := range active {
+		if next[p] || p < 1 || p > len(gamepadIDs) {
+			continue
+		}
+		ebiten.VibrateGamepad(gamepadIDs[p-1], &ebiten.VibrateGamepadOptions{
+			Duration: time.Millisecond,
+		})
 	}
+	return next
+}
 
-	for _, ev := range events {
-		// Determine which gamepads to vibrate
-		var targets []ebiten.GamepadID
-		if ev.Port >= 0 && ev.Port < 16 && ev.Port < len(gamepadIDs) {
-			targets = []ebiten.GamepadID{gamepadIDs[ev.Port]}
-		} else {
-			targets = gamepadIDs
-		}
-
-		var strong, weak float64
-		if maxMode {
-			// Max: full intensity if the CHT entry has any strength at all
-			if ev.StrongMagnitude > 0 {
-				strong = 1.0
-			}
-			if ev.WeakMagnitude > 0 {
-				weak = 1.0
-			}
-		} else {
-			// Scale by multiplier, clamp to 1.0, apply minimum floor
-			strong = ev.StrongMagnitude * mult
-			if strong > 1.0 {
-				strong = 1.0
-			} else if strong > 0 && strong < minRumbleMagnitude {
-				strong = minRumbleMagnitude
-			}
-			weak = ev.WeakMagnitude * mult
-			if weak > 1.0 {
-				weak = 1.0
-			} else if weak > 0 && weak < minRumbleMagnitude {
-				weak = minRumbleMagnitude
-			}
-		}
-
-		durationMs := ev.StrongDurationMs
-		if ev.WeakDurationMs > durationMs {
-			durationMs = ev.WeakDurationMs
-		}
-		durationMs *= durationMult
-		if durationMs < minRumbleDurationMs {
-			durationMs = minRumbleDurationMs
-		}
-
-		for _, gpID := range targets {
-			ebiten.VibrateGamepad(gpID, &ebiten.VibrateGamepadOptions{
-				Duration:        time.Duration(durationMs) * time.Millisecond,
-				StrongMagnitude: strong,
-				WeakMagnitude:   weak,
-			})
-		}
+// scaleMotor multiplies the authored motor value by the user rumble
+// scale, clamped to 1.0, the maximum magnitude the gamepad API accepts.
+func scaleMotor(v, scale float64) float64 {
+	if v <= 0 || scale <= 0 {
+		return 0
 	}
+	v *= scale
+	if v > 1 {
+		return 1
+	}
+	return v
 }

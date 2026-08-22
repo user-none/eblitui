@@ -15,12 +15,12 @@ import (
 // ScanProgress represents progress updates from the scanner
 // This mirrors the ui.ScanProgress type
 type ScanProgress struct {
-	Phase           int
-	Progress        float64
-	GamesFound      int
-	ArtworkTotal    int
-	ArtworkComplete int
-	StatusText      string
+	Phase            int
+	Progress         float64
+	GamesFound       int
+	DownloadTotal    int
+	DownloadComplete int
+	StatusText       string
 }
 
 // Scanner interface for decoupling
@@ -30,16 +30,16 @@ type Scanner interface {
 
 // ScanProgressScreen displays ROM scanning progress
 type ScanProgressScreen struct {
-	callback        ScreenCallback
-	scanner         Scanner
-	phase           int
-	progress        float64
-	gamesFound      int
-	artworkTotal    int
-	artworkComplete int
-	statusText      string
-	cancelPending   bool
-	cancelled       bool
+	callback         ScreenCallback
+	scanner          Scanner
+	phase            int
+	progress         float64
+	gamesFound       int
+	downloadTotal    int
+	downloadComplete int
+	statusText       string
+	cancelPending    bool
+	cancelled        bool
 }
 
 // NewScanProgressScreen creates a new scan progress screen
@@ -60,8 +60,8 @@ func (s *ScanProgressScreen) UpdateProgress(p ScanProgress) {
 	s.phase = p.Phase
 	s.progress = p.Progress
 	s.gamesFound = p.GamesFound
-	s.artworkTotal = p.ArtworkTotal
-	s.artworkComplete = p.ArtworkComplete
+	s.downloadTotal = p.DownloadTotal
+	s.downloadComplete = p.DownloadComplete
 	s.statusText = p.StatusText
 }
 
@@ -132,14 +132,14 @@ func (s *ScanProgressScreen) Build() *widget.Container {
 	)
 	centerContent.AddChild(foundLabel)
 
-	// Download status (during download phase - phase 2)
-	if s.phase == 2 && s.artworkTotal > 0 {
-		artworkText := fmt.Sprintf("Checking: %d/%d", s.artworkComplete, s.artworkTotal)
-		artworkLabel := widget.NewText(
-			widget.TextOpts.Text(artworkText, style.FontFace(), style.Text),
+	// Download status (during the artwork and rumble download phases)
+	if s.phase >= 2 && s.downloadTotal > 0 {
+		downloadText := fmt.Sprintf("Checking: %d/%d", s.downloadComplete, s.downloadTotal)
+		downloadLabel := widget.NewText(
+			widget.TextOpts.Text(downloadText, style.FontFace(), style.Text),
 			widget.TextOpts.Position(widget.TextPositionCenter, widget.TextPositionCenter),
 		)
-		centerContent.AddChild(artworkLabel)
+		centerContent.AddChild(downloadLabel)
 	}
 
 	// Cancel button
@@ -175,8 +175,8 @@ func (s *ScanProgressScreen) OnEnter() {
 	s.cancelled = false
 	s.progress = 0
 	s.gamesFound = 0
-	s.artworkTotal = 0
-	s.artworkComplete = 0
+	s.downloadTotal = 0
+	s.downloadComplete = 0
 	s.statusText = "Initializing..."
 }
 

@@ -716,6 +716,20 @@ func TestValidateInputConfig(t *testing.T) {
 			t.Errorf("expected 2 errors, got %d: %v", len(errs), errs)
 		}
 	})
+
+	t.Run("profile rumbleScale out of range detected", func(t *testing.T) {
+		config := DefaultConfig()
+		config.Input.Profiles = []ControllerProfile{
+			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "one", RumbleScale: -0.05},
+			{ID: "p2", SDLID: "sdl1", Controller: "Pad", Name: "two", RumbleScale: 3.05},
+			{ID: "p3", SDLID: "sdl1", Controller: "Pad", Name: "three", RumbleScale: 3.0},
+			{ID: "p4", SDLID: "sdl1", Controller: "Pad", Name: "four", RumbleScale: 0.0},
+		}
+		errs := ValidateInputConfig(config, validKey, validPad)
+		if len(errs) != 2 {
+			t.Errorf("expected 2 errors, got %d: %v", len(errs), errs)
+		}
+	})
 }
 
 func TestCorrectInputConfig(t *testing.T) {
@@ -795,9 +809,132 @@ func TestCorrectInputConfig(t *testing.T) {
 		}
 	})
 
+	t.Run("resets out-of-range rumbleScale to default", func(t *testing.T) {
+		config := DefaultConfig()
+		config.Input.Profiles = []ControllerProfile{
+			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "one", RumbleScale: 5.0},
+			{ID: "p2", SDLID: "sdl1", Controller: "Pad", Name: "two", RumbleScale: 0.5},
+			{ID: "p3", SDLID: "sdl1", Controller: "Pad", Name: "three"},
+		}
+
+		CorrectInputConfig(config, validKey, validPad)
+
+		if config.Input.Profiles[0].RumbleScale != DefaultRumbleScale {
+			t.Errorf("out-of-range rumbleScale should reset to default, got %f", config.Input.Profiles[0].RumbleScale)
+		}
+		if config.Input.Profiles[1].RumbleScale != 0.5 {
+			t.Errorf("valid rumbleScale should be preserved, got %f", config.Input.Profiles[1].RumbleScale)
+		}
+		if config.Input.Profiles[2].RumbleScale != 0 {
+			t.Errorf("zero (off) rumbleScale should be preserved, got %f", config.Input.Profiles[2].RumbleScale)
+		}
+	})
+
 	t.Run("nil maps are safe", func(t *testing.T) {
 		config := DefaultConfig()
 		CorrectInputConfig(config, validKey, validPad) // Should not panic
+	})
+}
+
+func TestProfileRumbleScaleUnmarshal(t *testing.T) {
+	t.Run("absent key defaults", func(t *testing.T) {
+		jsonBytes := []byte(`{"input": {"profiles": [
+			{"id": "p1", "sdlId": "sdl1", "controller": "Pad", "name": "one"}
+		]}}`)
+		config := &Config{}
+		if err := json.Unmarshal(jsonBytes, config); err != nil {
+			t.Fatal(err)
+		}
+		if got := config.Input.Profiles[0].RumbleScale; got != DefaultRumbleScale {
+			t.Errorf("absent rumbleScale should default to %f, got %f", DefaultRumbleScale, got)
+		}
+	})
+
+	t.Run("explicit 0 preserved", func(t *testing.T) {
+		jsonBytes := []byte(`{"input": {"profiles": [
+			{"id": "p1", "sdlId": "sdl1", "controller": "Pad", "name": "one", "rumbleScale": 0}
+		]}}`)
+		config := &Config{}
+		if err := json.Unmarshal(jsonBytes, config); err != nil {
+			t.Fatal(err)
+		}
+		if got := config.Input.Profiles[0].RumbleScale; got != 0.0 {
+			t.Errorf("explicit rumbleScale=0 should be preserved, got %f", got)
+		}
+	})
+
+	t.Run("explicit value preserved", func(t *testing.T) {
+		jsonBytes := []byte(`{"input": {"profiles": [
+			{"id": "p1", "sdlId": "sdl1", "controller": "Pad", "name": "one", "rumbleScale": 0.5}
+		]}}`)
+		config := &Config{}
+		if err := json.Unmarshal(jsonBytes, config); err != nil {
+			t.Fatal(err)
+		}
+		if got := config.Input.Profiles[0].RumbleScale; got != 0.5 {
+			t.Errorf("explicit rumbleScale should be preserved, got %f", got)
+		}
+	})
+}
+
+func TestPlayerRumbleScale(t *testing.T) {
+	input := &InputConfig{
+		Profiles: []ControllerProfile{
+			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "one", RumbleScale: 0.5},
+			{ID: "p2", SDLID: "sdl1", Controller: "Pad", Name: "two", RumbleScale: 0.0},
+		},
+		Players: []PlayerConfig{{Profile: "p1"}, {Profile: "p2"}},
+	}
+
+	if got := input.PlayerRumbleScale(0); got != 0.5 {
+		t.Errorf("player 0 scale: got %f, want 0.5", got)
+	}
+	if got := input.PlayerRumbleScale(1); got != 0.0 {
+		t.Errorf("player 1 scale: got %f, want 0.0", got)
+	}
+	if got := input.PlayerRumbleScale(2); got != 0.0 {
+		t.Errorf("unassigned slot scale: got %f, want 0.0", got)
+	}
+	if got := input.PlayerRumbleScale(-1); got != 0.0 {
+		t.Errorf("negative slot scale: got %f, want 0.0", got)
+	}
+}
+
+func TestRumbleEnabled(t *testing.T) {
+	t.Run("enabled when any assigned profile has non-zero scale", func(t *testing.T) {
+		input := &InputConfig{
+			Profiles: []ControllerProfile{
+				{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "one", RumbleScale: 0.0},
+				{ID: "p2", SDLID: "sdl1", Controller: "Pad", Name: "two", RumbleScale: 1.0},
+			},
+			Players: []PlayerConfig{{Profile: "p1"}, {Profile: "p2"}},
+		}
+		if !input.RumbleEnabled() {
+			t.Error("expected rumble enabled")
+		}
+	})
+
+	t.Run("disabled when assigned profiles are all off", func(t *testing.T) {
+		input := &InputConfig{
+			Profiles: []ControllerProfile{
+				{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "one", RumbleScale: 0.0},
+			},
+			Players: []PlayerConfig{{Profile: "p1"}},
+		}
+		if input.RumbleEnabled() {
+			t.Error("expected rumble disabled")
+		}
+	})
+
+	t.Run("disabled when unassigned profile has non-zero scale", func(t *testing.T) {
+		input := &InputConfig{
+			Profiles: []ControllerProfile{
+				{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "one", RumbleScale: 1.0},
+			},
+		}
+		if input.RumbleEnabled() {
+			t.Error("expected rumble disabled with no player assignment")
+		}
 	})
 }
 

@@ -155,10 +155,11 @@ func AutoCreateFirstProfile(input *storage.InputConfig, pads []PadInfo) bool {
 	pad := pads[0]
 	id := input.NewProfileID()
 	input.Profiles = append(input.Profiles, storage.ControllerProfile{
-		ID:         id,
-		SDLID:      pad.SDLID,
-		Controller: pad.Name,
-		Name:       "default",
+		ID:          id,
+		SDLID:       pad.SDLID,
+		Controller:  pad.Name,
+		Name:        "default",
+		RumbleScale: storage.DefaultRumbleScale,
 	})
 	if len(input.Players) == 0 {
 		input.Players = append(input.Players, storage.PlayerConfig{})

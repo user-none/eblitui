@@ -7,9 +7,10 @@ require (
 	github.com/ebitenui/ebitenui v0.7.3
 	github.com/hajimehoshi/ebiten/v2 v2.9.9
 	github.com/sqweek/dialog v0.0.0-20240226140203-065105509627
-	github.com/user-none/eblitui/coreif v0.7.0
+	github.com/user-none/eblitui/coreif v0.8.0
 	github.com/user-none/eblitui/rdb v0.2.0
 	github.com/user-none/eblitui/romloader v0.4.1
+	github.com/user-none/eblitui/rumble v1.0.0
 	github.com/user-none/go-rcheevos v0.1.0
 	golang.design/x/clipboard v0.7.1
 	golang.org/x/image v0.35.0

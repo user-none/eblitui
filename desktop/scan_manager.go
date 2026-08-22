@@ -109,12 +109,12 @@ func (sm *ScanManager) Update() {
 	case progress := <-sm.activeScanner.Progress():
 		// Convert scanner.ScanProgress to screens.ScanProgress
 		sm.scanScreen.UpdateProgress(screens.ScanProgress{
-			Phase:           int(progress.Phase),
-			Progress:        progress.Progress,
-			GamesFound:      progress.GamesFound,
-			ArtworkTotal:    progress.ArtworkTotal,
-			ArtworkComplete: progress.ArtworkComplete,
-			StatusText:      progress.StatusText,
+			Phase:            int(progress.Phase),
+			Progress:         progress.Progress,
+			GamesFound:       progress.GamesFound,
+			DownloadTotal:    progress.DownloadTotal,
+			DownloadComplete: progress.DownloadComplete,
+			StatusText:       progress.StatusText,
 		})
 		// Notify App to rebuild UI
 		if sm.onProgress != nil {

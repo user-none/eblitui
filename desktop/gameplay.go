@@ -19,6 +19,7 @@ import (
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/romloader"
+	"github.com/user-none/eblitui/rumble"
 )
 
 // GameplayManager handles all gameplay-related state and logic.
@@ -84,10 +85,16 @@ type GameplayManager struct {
 	achievementScreenshotMu      sync.Mutex
 
 	// Rumble
-	rumbleEngine    *RumbleEngine
-	memoryInspector coreif.MemoryInspector
-	pendingRumble   []RumbleEvent
-	pendingRumbleMu sync.Mutex
+	// Rumble. Exactly one engine is active per game: rumbleEngine
+	// serves the game's .erumble file, rumbleCHT is the CHT fallback.
+	rumbleEngine     *rumble.Engine
+	rumbleCHT        *CHTRumbleEngine
+	memoryInspector  coreif.Memory
+	pendingCHTRumble []CHTRumbleEvent
+	pendingMotor     []rumble.MotorState
+	pendingMotorSet  bool
+	pendingRumbleMu  sync.Mutex
+	rumbleActivePads map[int]bool // Ebiten thread only: players vibrating last frame
 
 	// Turbo (fast-forward)
 	turboState    *TurboState
@@ -418,7 +425,7 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bo
 			gm.achievementScreenshotMu.Unlock()
 		})
 
-		if mi, ok := gm.emulator.(coreif.MemoryInspector); ok {
+		if mi, ok := gm.emulator.(coreif.Memory); ok {
 			gm.achievementManager.SetEmulator(mi)
 		}
 		// Resolve per-game console ID for achievements
@@ -445,14 +452,18 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bo
 		}
 	}
 
-	// Initialize rumble engine if enabled and emulator supports memory inspection
-	if gm.config.Input.RumbleLevel > 0 {
-		if mi, ok := gm.emulator.(coreif.MemoryInspector); ok {
-			rumblePath, err := storage.GetGameRumblePath(game.CRC32)
-			if err == nil {
-				entries, err := ParseRumbleFile(rumblePath)
+	// Initialize rumble if any assigned controller profile has a non-zero
+	// rumble intensity and the emulator exposes memory. An .erumble file is
+	// preferred; the CHT database file is the fallback.
+	if gm.config.Input.RumbleEnabled() {
+		if mi, ok := gm.emulator.(coreif.Memory); ok {
+			if eng := gm.loadRumbleRuleset(game.CRC32, mi); eng != nil {
+				gm.rumbleEngine = eng
+				gm.memoryInspector = mi
+			} else if rumblePath, err := storage.GetGameCHTRumblePath(game.CRC32); err == nil {
+				entries, err := ParseCHTRumbleFile(rumblePath)
 				if err == nil && len(entries) > 0 {
-					gm.rumbleEngine = NewRumbleEngine(entries, gm.systemInfo.BigEndianMemory)
+					gm.rumbleCHT = NewCHTRumbleEngine(entries, gm.systemInfo.BigEndianMemory)
 					gm.memoryInspector = mi
 				}
 			}
@@ -530,10 +541,16 @@ func (gm *GameplayManager) emulationLoop() {
 
 		// Evaluate rumble conditions (fire on Ebiten thread via Update)
 		if gm.rumbleEngine != nil {
-			events := gm.rumbleEngine.Evaluate(gm.memoryInspector)
+			states := gm.rumbleEngine.Evaluate(gm.memoryInspector, time.Now())
+			gm.pendingRumbleMu.Lock()
+			gm.pendingMotor = states
+			gm.pendingMotorSet = true
+			gm.pendingRumbleMu.Unlock()
+		} else if gm.rumbleCHT != nil {
+			events := gm.rumbleCHT.Evaluate(gm.memoryInspector)
 			if len(events) > 0 {
 				gm.pendingRumbleMu.Lock()
-				gm.pendingRumble = append(gm.pendingRumble, events...)
+				gm.pendingCHTRumble = append(gm.pendingCHTRumble, events...)
 				gm.pendingRumbleMu.Unlock()
 			}
 		}
@@ -653,12 +670,20 @@ func (gm *GameplayManager) Update() (pauseMenuOpened bool, err error) {
 		return false, nil
 	}
 
-	// Fire pending rumble events (must be on Ebiten thread)
+	// Fire pending rumble output (must be on Ebiten thread)
 	gm.pendingRumbleMu.Lock()
-	rumbleEvents := gm.pendingRumble
-	gm.pendingRumble = nil
+	rumbleEvents := gm.pendingCHTRumble
+	gm.pendingCHTRumble = nil
+	motorStates := gm.pendingMotor
+	motorSet := gm.pendingMotorSet
+	gm.pendingMotor = nil
+	gm.pendingMotorSet = false
 	gm.pendingRumbleMu.Unlock()
-	FireRumbleEvents(rumbleEvents, gm.config.Input.RumbleLevel)
+	scales := gm.playerRumbleScales()
+	FireCHTRumbleEvents(rumbleEvents, scales)
+	if motorSet {
+		gm.rumbleActivePads = FireMotorStates(motorStates, scales, gm.rumbleActivePads)
+	}
 
 	// Poll input and write to shared state (emu goroutine reads it). After
 	// resuming from an overlay (pause menu or achievement overlay), hold all
@@ -878,8 +903,12 @@ func (gm *GameplayManager) Exit(saveResume bool) {
 	gm.renderer = nil
 	gm.currentGame = nil
 	gm.rumbleEngine = nil
+	gm.rumbleCHT = nil
 	gm.memoryInspector = nil
-	gm.pendingRumble = nil
+	gm.pendingCHTRumble = nil
+	gm.pendingMotor = nil
+	gm.pendingMotorSet = false
+	gm.rumbleActivePads = nil
 
 	// Reset TPS to 60 for UI
 	ebiten.SetTPS(60)
@@ -960,6 +989,9 @@ func (gm *GameplayManager) handleSaveStateKeys() {
 			}
 			if gm.rumbleEngine != nil {
 				gm.rumbleEngine.Reset()
+			}
+			if gm.rumbleCHT != nil {
+				gm.rumbleCHT.Reset()
 			}
 			// Update shared framebuffer after load
 			gm.sharedFramebuffer.Update(

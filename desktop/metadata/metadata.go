@@ -25,6 +25,7 @@ type metadataVariant struct {
 	name          string   // Display name
 	rdbName       string   // e.g. "SNK - Neo Geo Pocket Color"
 	thumbnailRepo string   // e.g. "SNK_-_Neo_Geo_Pocket_Color"
+	rumbleRepoDir string   // e.g. "ngp"
 	consoleID     int      // RetroAchievements console ID override; 0 = use default
 	rdb           *rdb.RDB // Loaded RDB, nil if not loaded
 }
@@ -43,6 +44,7 @@ func NewMetadataManager(variants []coreif.MetadataVariant) *MetadataManager {
 			name:          v.Name,
 			rdbName:       v.RDBName,
 			thumbnailRepo: v.ThumbnailRepo,
+			rumbleRepoDir: v.RumbleRepoDir,
 			consoleID:     v.ConsoleID,
 		}
 	}
@@ -216,6 +218,15 @@ func (m *MetadataManager) VariantThumbnailRepo(idx int) string {
 		return ""
 	}
 	return m.variants[idx].thumbnailRepo
+}
+
+// VariantRumbleRepoDir returns the rumble repo directory for a variant
+// index. Empty when the core declares none for the variant.
+func (m *MetadataManager) VariantRumbleRepoDir(idx int) string {
+	if idx < 0 || idx >= len(m.variants) {
+		return ""
+	}
+	return m.variants[idx].rumbleRepoDir
 }
 
 // VariantRDBName returns the RDB name for a variant index.

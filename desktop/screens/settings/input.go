@@ -70,6 +70,8 @@ type InputSection struct {
 	view      inputView
 	profileID string // profile being edited in inputViewProfile
 
+	rumbleValueText *widget.Text
+
 	// Capture state
 	capturing  bool
 	captureBtn string // button name being captured (e.g. "Up", "A")
@@ -501,7 +503,7 @@ func (s *InputSection) FirstNavZone() string {
 	case inputViewKeyboard:
 		return "input-kb-bindings"
 	case inputViewProfile:
-		return "input-pad-bindings"
+		return "input-profile-rumble"
 	case inputViewNewProfile:
 		if len(connectedModels()) > 0 {
 			return "input-models"
@@ -523,12 +525,12 @@ func (s *InputSection) NavZones() []string {
 	case inputViewKeyboard:
 		return []string{"input-kb-bindings", "input-kb-actions"}
 	case inputViewProfile:
-		return []string{"input-pad-bindings", "input-profile-actions"}
+		return []string{"input-profile-rumble", "input-pad-bindings", "input-profile-actions"}
 	case inputViewNewProfile:
 		return []string{"input-models", "input-newp-actions"}
 	}
 	return []string{
-		"input-core-opts", "input-analog-stick", "input-rumble",
+		"input-core-opts", "input-analog-stick",
 		"input-players", "input-kb-edit", "input-profiles", "input-new-profile",
 	}
 }

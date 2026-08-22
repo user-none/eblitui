@@ -137,13 +137,22 @@ func GetRumbleDir() (string, error) {
 	return filepath.Join(baseDir, rumbleDir), nil
 }
 
-// GetGameRumblePath returns the path to a game's rumble CHT file
-func GetGameRumblePath(gameCRC string) (string, error) {
+// GetGameCHTRumblePath returns the path to a game's rumble CHT file
+func GetGameCHTRumblePath(gameCRC string) (string, error) {
 	rumbleDir, err := GetRumbleDir()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(rumbleDir, gameCRC+".cht"), nil
+}
+
+// GetGameRumblePath returns the path to a game's .erumble file
+func GetGameRumblePath(gameID string) (string, error) {
+	rumbleDir, err := GetRumbleDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(rumbleDir, gameID+".erumble"), nil
 }
 
 // GetSavesDir returns the full path to the saves directory

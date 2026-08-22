@@ -6,6 +6,7 @@ package storage
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"strings"
 )
 
@@ -37,7 +38,6 @@ type BIOSConfig struct {
 type InputConfig struct {
 	P1Keyboard         map[string]string   `json:"p1Keyboard,omitempty"`         // button name -> key name override
 	DisableAnalogStick bool                `json:"disableAnalogStick,omitempty"` // disable analog stick mirroring d-pad
-	RumbleLevel        int                 `json:"rumbleLevel,omitempty"`        // 0=off, 1=1x, 2=2x, 3=3x, 4=4x, 5=Max. Intensity/duration multiplier
 	Profiles           []ControllerProfile `json:"profiles,omitempty"`           // named controller mappings, in creation order
 	Players            []PlayerConfig      `json:"players,omitempty"`            // player slot -> profile assignment
 	PadMappings        map[string]string   `json:"padMappings,omitempty"`        // SDL GUID -> generated standard-layout mapping line
@@ -49,17 +49,34 @@ type InputConfig struct {
 // device). ID is immutable and referenced by PlayerConfig; Name is the
 // user-editable display name, unique per model.
 type ControllerProfile struct {
-	ID         string            `json:"id"`
-	SDLID      string            `json:"sdlId"`
-	Controller string            `json:"controller"`
-	Name       string            `json:"name"`
-	Bindings   map[string]string `json:"bindings,omitempty"` // button name -> pad button name override
+	ID          string            `json:"id"`
+	SDLID       string            `json:"sdlId"`
+	Controller  string            `json:"controller"`
+	Name        string            `json:"name"`
+	RumbleScale float64           `json:"rumbleScale"`        // intensity multiplier 0.0-3.0 in 0.05 steps, 0=off
+	Bindings    map[string]string `json:"bindings,omitempty"` // button name -> pad button name override
 }
 
 // PlayerConfig holds the controller assignment for one player slot.
 // An empty Profile means no controller is assigned to that player.
 type PlayerConfig struct {
 	Profile string `json:"profile,omitempty"` // ControllerProfile.ID
+}
+
+// DefaultRumbleScale is the rumble intensity assigned to new profiles.
+const DefaultRumbleScale = 1.0
+
+// UnmarshalJSON decodes a profile with RumbleScale pre-set to the
+// default, so a profile saved without the key loads at the default
+// intensity instead of 0 (off). An explicit 0 in the file is preserved.
+func (p *ControllerProfile) UnmarshalJSON(data []byte) error {
+	type profileAlias ControllerProfile
+	a := profileAlias{RumbleScale: DefaultRumbleScale}
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	*p = ControllerProfile(a)
+	return nil
 }
 
 // MatchesPad reports whether this profile's controller model matches the
@@ -106,6 +123,27 @@ func (c *InputConfig) PlayerProfile(player int) *ControllerProfile {
 		return nil
 	}
 	return c.ProfileByID(c.Players[player].Profile)
+}
+
+// PlayerRumbleScale returns the rumble intensity for the given player slot
+// from the assigned profile, or 0 (off) when the slot has no profile.
+func (c *InputConfig) PlayerRumbleScale(player int) float64 {
+	prof := c.PlayerProfile(player)
+	if prof == nil {
+		return 0
+	}
+	return prof.RumbleScale
+}
+
+// RumbleEnabled reports whether any player slot has a profile with a
+// non-zero rumble intensity.
+func (c *InputConfig) RumbleEnabled() bool {
+	for i := range c.Players {
+		if c.PlayerRumbleScale(i) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // NewProfileID returns a random 8-hex-char profile ID unique within this
@@ -308,7 +346,6 @@ func DefaultConfig() *Config {
 			BufferSizeMB: 40,
 			FrameStep:    1,
 		},
-		Input: InputConfig{},
 		RetroAchievements: RetroAchievementsConfig{
 			Enabled:          false,
 			EncoreMode:       false,

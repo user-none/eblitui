@@ -465,7 +465,8 @@ func (m *Manager) Destroy() {
 }
 
 // readMemory is the memory callback for rcheevos. It delegates to the core
-// adapter's ReadMemory, which maps flat addresses to internal memory regions.
+// adapter's ReadMemoryFlat, which maps flat addresses to internal memory
+// regions.
 //
 // RetroAchievements memory is always little-endian (the reference environment
 // normalizes big-endian cores to host order before sets are authored). A core
@@ -477,12 +478,12 @@ func (m *Manager) readMemory(address uint32, buffer []byte) uint32 {
 		return 0
 	}
 	if !m.bigEndian {
-		return m.emulator.ReadMemory(address, buffer)
+		return m.emulator.ReadMemoryFlat(address, buffer)
 	}
 	var one [1]byte
 	var n uint32
 	for i := range buffer {
-		if m.emulator.ReadMemory((address+uint32(i))^1, one[:]) != 1 {
+		if m.emulator.ReadMemoryFlat((address+uint32(i))^1, one[:]) != 1 {
 			return n
 		}
 		buffer[i] = one[0]

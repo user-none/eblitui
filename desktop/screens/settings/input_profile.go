@@ -5,6 +5,7 @@ package settings
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/ebitenui/ebitenui/widget"
@@ -34,6 +35,7 @@ func (s *InputSection) buildProfileView(focus types.FocusManager, section *widge
 			widget.TextOpts.Text(s.nameError, style.FontFace(), style.Accent),
 		))
 	}
+	section.AddChild(s.buildProfileRumbleRow(focus, prof))
 
 	matching := len(matchingPadIDs(prof))
 	hasPad := matching > 0
@@ -68,9 +70,120 @@ func (s *InputSection) buildProfileView(focus types.FocusManager, section *widge
 	))
 
 	bindingKeys := s.bindingFocusKeys("input-pad-")
+	focus.RegisterNavZone("input-profile-rumble", types.NavZoneGrid, []string{"input-profile-rumble-dec", "input-profile-rumble-inc"}, 2)
 	focus.RegisterNavZone("input-pad-bindings", types.NavZoneVertical, bindingKeys, 0)
 	focus.RegisterNavZone("input-profile-actions", types.NavZoneHorizontal, []string{"input-reset-pad", "input-profile-done"}, 0)
-	chainZones(focus, []string{"input-pad-bindings", "input-profile-actions"})
+	chainZones(focus, []string{"input-profile-rumble", "input-pad-bindings", "input-profile-actions"})
+}
+
+const (
+	rumbleScaleMin  = 0.0
+	rumbleScaleMax  = 3.0
+	rumbleScaleStep = 0.05
+)
+
+// rumbleLabel returns a rumble scale as a percentage string, or "Off"
+// when the scale is 0.
+func rumbleLabel(scale float64) string {
+	if scale <= 0 {
+		return "Off"
+	}
+	return fmt.Sprintf("%d%%", int(math.Round(scale*100)))
+}
+
+// updateRumbleLabel updates the rumble text label in-place without
+// triggering a full UI rebuild, preserving keyboard/gamepad focus.
+func (s *InputSection) updateRumbleLabel(scale float64) {
+	if s.rumbleValueText != nil {
+		s.rumbleValueText.Label = rumbleLabel(scale)
+	}
+}
+
+// adjustProfileRumble steps the edited profile's rumble scale by delta,
+// snapped to the step grid and clamped to the valid range, then saves.
+func (s *InputSection) adjustProfileRumble(delta float64) {
+	prof := s.config.Input.ProfileByID(s.profileID)
+	if prof == nil {
+		return
+	}
+	scale := math.Round((prof.RumbleScale+delta)*20) / 20
+	if scale < rumbleScaleMin {
+		scale = rumbleScaleMin
+	}
+	if scale > rumbleScaleMax {
+		scale = rumbleScaleMax
+	}
+	prof.RumbleScale = scale
+	storage.SaveConfig(s.config)
+	s.updateRumbleLabel(scale)
+}
+
+// buildProfileRumbleRow creates the profile rumble intensity row with
+// [-] value [+] buttons.
+func (s *InputSection) buildProfileRumbleRow(focus types.FocusManager, prof *storage.ControllerProfile) *widget.Container {
+	row := widgets.SettingsRow(2)
+
+	row.AddChild(widget.NewText(
+		widget.TextOpts.Text("Rumble", style.FontFace(), style.Text),
+		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
+	))
+
+	// Controls group: [-] value [+]
+	controls := widget.NewContainer(
+		widget.ContainerOpts.Layout(widget.NewRowLayout(
+			widget.RowLayoutOpts.Direction(widget.DirectionHorizontal),
+			widget.RowLayoutOpts.Spacing(style.SmallSpacing),
+		)),
+	)
+
+	// Value display (created first so click handlers can reference it)
+	s.rumbleValueText = widget.NewText(
+		widget.TextOpts.Text(rumbleLabel(prof.RumbleScale), style.FontFace(), style.Text),
+		widget.TextOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.RowLayoutData{
+				Position: widget.RowLayoutPositionCenter,
+			}),
+			widget.WidgetOpts.MinSize(style.Px(50), 0),
+		),
+	)
+
+	decBtn := widget.NewButton(
+		widget.ButtonOpts.Image(style.ButtonImage()),
+		widget.ButtonOpts.Text("-", style.FontFace(), style.ButtonTextColor()),
+		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
+		widget.ButtonOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.RowLayoutData{
+				Position: widget.RowLayoutPositionCenter,
+			}),
+		),
+		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
+			s.adjustProfileRumble(-rumbleScaleStep)
+		}),
+	)
+	focus.RegisterFocusButton("input-profile-rumble-dec", decBtn)
+	controls.AddChild(decBtn)
+
+	controls.AddChild(s.rumbleValueText)
+
+	incBtn := widget.NewButton(
+		widget.ButtonOpts.Image(style.ButtonImage()),
+		widget.ButtonOpts.Text("+", style.FontFace(), style.ButtonTextColor()),
+		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
+		widget.ButtonOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.RowLayoutData{
+				Position: widget.RowLayoutPositionCenter,
+			}),
+		),
+		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
+			s.adjustProfileRumble(rumbleScaleStep)
+		}),
+	)
+	focus.RegisterFocusButton("input-profile-rumble-inc", incBtn)
+	controls.AddChild(incBtn)
+
+	row.AddChild(controls)
+
+	return row
 }
 
 // updateProfileCapture reads the next button press from a controller

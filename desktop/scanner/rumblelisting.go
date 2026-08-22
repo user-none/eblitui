@@ -89,8 +89,9 @@ func resolveRumbleName(listing *RumbleListing, gameName string) (string, bool) {
 // Contents API caps a directory at 1000 entries, which is acceptable
 // here: a per-system cht directory holds far fewer files.
 type contentsEntry struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	DownloadURL string `json:"download_url"`
 }
 
 // fetchContentsListing fetches a directory listing from the GitHub

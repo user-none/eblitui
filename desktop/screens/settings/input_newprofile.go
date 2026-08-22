@@ -113,10 +113,11 @@ func (s *InputSection) createProfile() {
 
 	id := s.config.Input.NewProfileID()
 	s.config.Input.Profiles = append(s.config.Input.Profiles, storage.ControllerProfile{
-		ID:         id,
-		SDLID:      s.newSDLID,
-		Controller: s.newController,
-		Name:       name,
+		ID:          id,
+		SDLID:       s.newSDLID,
+		Controller:  s.newController,
+		Name:        name,
+		RumbleScale: storage.DefaultRumbleScale,
 	})
 	storage.SaveConfig(s.config)
 	s.switchView(inputViewMain, "input-profile-"+id+"-edit")

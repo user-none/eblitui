@@ -254,6 +254,9 @@ func ValidateInputConfig(config *Config, isValidKey, isValidPad func(string) boo
 			errors = append(errors, fmt.Sprintf("input.profiles[%d]: duplicate name %q", i, p.Name))
 		}
 		seenNames[nameKey] = true
+		if p.RumbleScale < 0 || p.RumbleScale > 3.0 {
+			errors = append(errors, fmt.Sprintf("input.profiles[%d].rumbleScale: %.2f (valid: 0.0-3.0)", i, p.RumbleScale))
+		}
 		for btn, padName := range p.Bindings {
 			if !isValidPad(padName) {
 				errors = append(errors, fmt.Sprintf("input.profiles[%d].bindings[%q]: invalid pad %q", i, btn, padName))
@@ -284,8 +287,9 @@ func ValidateInputConfig(config *Config, isValidKey, isValidPad func(string) boo
 // CorrectInputConfig removes invalid entries from input override maps and
 // profile/player configuration. Profiles missing identity fields are dropped,
 // duplicate IDs and duplicate names per controller model are dropped, invalid
-// bindings are removed, the players list is clamped, and dangling player
-// profile references are cleared.
+// bindings are removed, out-of-range rumble scales are reset to the default,
+// the players list is clamped, and dangling player profile references are
+// cleared.
 // isValidKey checks if a key name is valid, isValidPad checks if a pad name is valid.
 func CorrectInputConfig(config *Config, isValidKey, isValidPad func(string) bool) {
 	for btn, keyName := range config.Input.P1Keyboard {
@@ -311,6 +315,9 @@ func CorrectInputConfig(config *Config, isValidKey, isValidPad func(string) bool
 		}
 		seenIDs[p.ID] = true
 		seenNames[nameKey] = true
+		if p.RumbleScale < 0 || p.RumbleScale > 3.0 {
+			p.RumbleScale = DefaultRumbleScale
+		}
 		for btn, padName := range p.Bindings {
 			if !isValidPad(padName) {
 				delete(p.Bindings, btn)
