@@ -79,29 +79,33 @@ Enables SRAM persistence for battery-backed saves.
 - `GetSRAM() []byte` - Copy of the current SRAM contents.
 - `SetSRAM(data []byte)` - Load SRAM contents into the emulator.
 
-### MemoryInspector (optional)
+### Memory (optional)
 
-Flat address-based memory reads. Used by RetroAchievements to inspect
-emulator memory without knowing the internal memory map.
+Canonical native bus address based access to the console's emulated
+RAM. The region table is the access boundary: only the listed
+canonical ranges are reachable, and accesses outside them transfer
+nothing. Bus decode detail (mirrors, CPU partitions) is the core's
+alone and never surfaces here. Calls happen between `RunFrame`
+invocations.
 
-- `ReadMemory(addr uint32, buf []byte) uint32` - Read from a flat address
-  into buf. Returns the number of bytes actually read. The core adapter
-  is responsible for mapping flat addresses to internal memory regions.
+- `ReadMemory(addr uint32, buf []byte) uint32` - Read from a native bus
+  address into buf. Returns the number of bytes actually read.
+- `WriteMemory(addr uint32, data []byte) uint32` - Write data to a
+  native bus address. Returns the number of bytes actually written.
+- `Regions() []BusRegion` - The accessible bus regions in canonical
+  addresses. Static per machine.
+- `ReadMemoryFlat(off uint32, buf []byte) uint32` - Read from the
+  console's flat memory convention (the RetroAchievements layout).
+  Reads are contiguous across region boundaries within the flat
+  space. The layout is the core's alone; consumers needing the flat
+  view (RetroAchievements, cht files) read through this and hold no
+  layout knowledge.
+- `WriteMemoryFlat(off uint32, data []byte) uint32` - Write data to
+  the console's flat memory convention, matching `ReadMemoryFlat`'s
+  layout and boundary behavior.
 
-### MemoryMapper (optional)
-
-Named memory region access following the libretro memory model.
-
-- `MemoryMap() []MemoryRegion` - List available memory regions with sizes.
-- `ReadRegion(regionType int) []byte` - Read a copy of the specified region.
-- `WriteRegion(regionType int, data []byte)` - Write to the specified region.
-
-Region type constants:
-
-| Constant | Description |
-|---|---|
-| `MemorySaveRAM` | Battery-backed save RAM (RETRO\_MEMORY\_SAVE\_RAM) |
-| `MemorySystemRAM` | Main system RAM (RETRO\_MEMORY\_SYSTEM\_RAM) |
+`BusRegion` carries the region's name, canonical native start, and
+size.
 
 ### DiscReader
 
@@ -198,6 +202,7 @@ RetroAchievements integration.
 | `CoreOptions` | `[]CoreOption` | Configurable core settings |
 | `RDBName` | `string` | RetroAchievements database name |
 | `ThumbnailRepo` | `string` | Thumbnail repository name |
+| `RumbleRepoDir` | `string` | Console directory in the rumble repository |
 | `DataDirName` | `string` | Data directory name for saves and config |
 | `ConsoleID` | `int` | Console identifier for RetroAchievements |
 | `CoreName` | `string` | Core implementation name |

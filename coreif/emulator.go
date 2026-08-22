@@ -83,33 +83,37 @@ type BatterySaver interface {
 	SetSRAM(data []byte)
 }
 
-// MemoryInspector enables flat address-based memory reads for RetroAchievements.
-type MemoryInspector interface {
-	// ReadMemory reads from a flat address into buf and returns the number
-	// of bytes read. The core adapter maps flat addresses to internal memory.
+// Memory provides canonical native bus address based access to the
+// console's emulated RAM.
+type Memory interface {
+	// ReadMemory reads from a native bus address into buf and returns
+	// the number of bytes read.
 	ReadMemory(addr uint32, buf []byte) uint32
+
+	// WriteMemory writes data to a native bus address and returns the
+	// number of bytes written.
+	WriteMemory(addr uint32, data []byte) uint32
+
+	// Regions describes the accessible bus regions in canonical
+	// addresses. The table is static per machine.
+	Regions() []BusRegion
+
+	// ReadMemoryFlat reads from the console's flat memory convention
+	// (the RetroAchievements layout) into buf and returns the number
+	// of bytes read. Reads are contiguous across region boundaries
+	// within the flat space.
+	ReadMemoryFlat(off uint32, buf []byte) uint32
+
+	// WriteMemoryFlat writes data to the console's flat memory
+	// convention and returns the number of bytes written, matching
+	// ReadMemoryFlat's layout and boundary behavior.
+	WriteMemoryFlat(off uint32, data []byte) uint32
 }
 
-// Memory region type constants for MemoryMapper.
-const (
-	MemorySaveRAM   = iota // Maps to RETRO_MEMORY_SAVE_RAM
-	MemorySystemRAM        // Maps to RETRO_MEMORY_SYSTEM_RAM
-)
-
-// MemoryRegion describes a named memory region and its size.
-type MemoryRegion struct {
-	Type int
-	Size int
-}
-
-// MemoryMapper enables libretro-style named memory region access.
-type MemoryMapper interface {
-	// MemoryMap returns a list of available memory regions with sizes.
-	MemoryMap() []MemoryRegion
-
-	// ReadRegion returns a copy of the specified memory region.
-	ReadRegion(regionType int) []byte
-
-	// WriteRegion writes data to the specified memory region.
-	WriteRegion(regionType int, data []byte)
+// BusRegion describes one region of the console's native address bus in
+// canonical addresses.
+type BusRegion struct {
+	Name  string
+	Start uint32 // native bus address of the region's first byte
+	Size  uint32 // region size in bytes
 }
