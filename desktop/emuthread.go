@@ -47,8 +47,10 @@ type SharedFramebuffer struct {
 	par          float64 // Pixel aspect ratio for the current frame
 }
 
-// NewSharedFramebuffer creates a pre-allocated framebuffer sized for the
-// given screen dimensions (width and height in pixels, 4 bytes per pixel).
+// NewSharedFramebuffer creates a framebuffer pre-allocated for the
+// given screen dimensions (width and height in pixels, 4 bytes per
+// pixel). The dimensions are the starting size, not a limit: a larger
+// frame grows the buffers when it arrives.
 func NewSharedFramebuffer(width, height int) *SharedFramebuffer {
 	size := width * height * 4
 	return &SharedFramebuffer{
@@ -57,15 +59,19 @@ func NewSharedFramebuffer(width, height int) *SharedFramebuffer {
 	}
 }
 
-// Update copies framebuffer data from the emulation goroutine.
+// Update copies framebuffer data from the emulation goroutine, or from
+// the Ebiten thread while the emulation goroutine is paused (a state
+// load, a rewind step). A frame larger than the write buffer, such as
+// a core rendering above its native resolution or a loaded state in a
+// larger video mode, grows the write buffer to hold it.
 func (sf *SharedFramebuffer) Update(pixels []byte, stride, activeHeight int, par float64) {
 	sf.mu.Lock()
 	n := stride * activeHeight
-	if n > len(sf.writePixels) {
-		n = len(sf.writePixels)
-	}
 	if n > len(pixels) {
 		n = len(pixels)
+	}
+	if n > len(sf.writePixels) {
+		sf.writePixels = make([]byte, n)
 	}
 	copy(sf.writePixels[:n], pixels[:n])
 	sf.stride = stride
@@ -77,11 +83,16 @@ func (sf *SharedFramebuffer) Update(pixels []byte, stride, activeHeight int, par
 // Read returns a snapshot of the current framebuffer state.
 // Copies the write buffer into the read buffer under the lock,
 // then returns the read buffer which is safe to use without holding the lock.
+// The read buffer grows to the write buffer's size, so the returned
+// pixels hold the whole frame whenever Update was given all of it.
 func (sf *SharedFramebuffer) Read() (pixels []byte, stride, activeHeight int, par float64) {
 	sf.mu.Lock()
 	stride = sf.stride
 	activeHeight = sf.activeHeight
 	par = sf.par
+	if len(sf.readPixels) < len(sf.writePixels) {
+		sf.readPixels = make([]byte, len(sf.writePixels))
+	}
 	n := stride * activeHeight
 	if n > len(sf.writePixels) {
 		n = len(sf.writePixels)

@@ -71,6 +71,68 @@ func TestSharedFramebuffer_UpdateAndRead(t *testing.T) {
 	}
 }
 
+// testFrame is a frame of the given width and height whose bytes
+// identify their position, offset by seed.
+func testFrame(width, height, seed int) (pixels []byte, stride int) {
+	stride = width * 4
+	pixels = make([]byte, stride*height)
+	for i := range pixels {
+		pixels[i] = byte(i*7 + seed)
+	}
+	return pixels, stride
+}
+
+// checkFrame fails unless Read returns the frame whole.
+func checkFrame(t *testing.T, sf *SharedFramebuffer, want []byte, stride, height int) {
+	t.Helper()
+	got, gotStride, gotHeight, _ := sf.Read()
+	if gotStride != stride || gotHeight != height {
+		t.Fatalf("stride %d height %d, want %d and %d", gotStride, gotHeight, stride, height)
+	}
+	if len(got) < stride*height {
+		t.Fatalf("read %d bytes, want at least %d", len(got), stride*height)
+	}
+	for i := range stride * height {
+		if got[i] != want[i] {
+			t.Fatalf("byte %d = %d, want %d", i, got[i], want[i])
+		}
+	}
+}
+
+// TestSharedFramebuffer_GrowsForLargerFrame holds a frame larger than
+// the starting size, as a core rendering above its native resolution
+// sends, to being read whole, and a smaller frame after it to being
+// read from the front of the grown buffers.
+func TestSharedFramebuffer_GrowsForLargerFrame(t *testing.T) {
+	sf := NewSharedFramebuffer(704, 512)
+	large, largeStride := testFrame(1408, 448, 3)
+	sf.Update(large, largeStride, 448, 1.0)
+	checkFrame(t, sf, large, largeStride, 448)
+	small, smallStride := testFrame(320, 224, 9)
+	sf.Update(small, smallStride, 224, 1.0)
+	checkFrame(t, sf, small, smallStride, 224)
+}
+
+// TestSharedFramebuffer_LargerFrameBetweenFrames holds a larger frame
+// arriving between two reads, as a state loaded in a larger video
+// mode delivers it, to being read whole, and the snapshot the earlier
+// read returned to being left as it was.
+func TestSharedFramebuffer_LargerFrameBetweenFrames(t *testing.T) {
+	sf := NewSharedFramebuffer(704, 512)
+	small, smallStride := testFrame(352, 240, 1)
+	sf.Update(small, smallStride, 240, 1.0)
+	held, _, _, _ := sf.Read()
+	snapshot := append([]byte(nil), held[:smallStride*240]...)
+	large, largeStride := testFrame(1408, 1024, 5)
+	sf.Update(large, largeStride, 1024, 1.0)
+	checkFrame(t, sf, large, largeStride, 1024)
+	for i := range snapshot {
+		if held[i] != snapshot[i] {
+			t.Fatalf("held snapshot byte %d changed to %d, was %d", i, held[i], snapshot[i])
+		}
+	}
+}
+
 func TestEmuControl_PauseResume(t *testing.T) {
 	ec := NewEmuControl()
 
