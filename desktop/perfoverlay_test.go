@@ -109,12 +109,12 @@ func TestPerfOverlayLines(t *testing.T) {
 		want string
 	}{
 		{"off", perfOverlayOff, sw, ""},
-		{"basic no info", perfOverlayBasic, nil, "EFPS 60.0"},
-		{"basic", perfOverlayBasic, sw, "EFPS 60.0\nGFPS 30.0"},
-		{"extended no info", perfOverlayExtended, nil, "EFPS 60.0\n-\nFT 12.3"},
-		{"extended software native", perfOverlayExtended, sw, "EFPS 60.0\nGFPS 30.0\n-\nFT 12.3\nsoftware"},
-		{"extended software scaled", perfOverlayExtended, sw2, "EFPS 60.0\nGFPS 30.0\n-\nFT 12.3\nsoftware 2x"},
-		{"extended gpu scaled", perfOverlayExtended, gpu4, "EFPS 60.0\nGFPS 30.0\n-\nFT 12.3\nTest GPU 4x"},
+		{"basic no info", perfOverlayBasic, nil, "60.0 fps"},
+		{"basic", perfOverlayBasic, sw, "60.0 fps\n30.0 gfps"},
+		{"extended no info", perfOverlayExtended, nil, "60.0 fps\n12.3 ms"},
+		{"extended software native", perfOverlayExtended, sw, "60.0 fps\n30.0 gfps\n12.3 ms\nsoftware"},
+		{"extended software scaled", perfOverlayExtended, sw2, "60.0 fps\n30.0 gfps\n12.3 ms\nsoftware 2x"},
+		{"extended gpu scaled", perfOverlayExtended, gpu4, "60.0 fps\n30.0 gfps\n12.3 ms\nTest GPU 4x"},
 	}
 	for _, c := range cases {
 		got := strings.Join(perfOverlayLines(c.mode, 60, 30, 12.34, c.info), "\n")
