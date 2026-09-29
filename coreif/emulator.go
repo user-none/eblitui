@@ -62,6 +62,27 @@ type AspectProvider interface {
 	PixelAspectRatio() float64
 }
 
+// RenderInfo describes the renderer a core is drawing with.
+type RenderInfo struct {
+	Renderer string // renderer name, e.g. "software" or "gpu"
+	Device   string // rendering device name; empty when the renderer has none
+	Scale    int    // internal resolution multiple on each axis; 1 is native
+}
+
+// RenderInfoProvider is an optional interface a core may implement to
+// report how it renders, for diagnostic display. Both methods are
+// cheap and may be called from any goroutine between RunFrame calls.
+type RenderInfoProvider interface {
+	// RenderInfo returns the active renderer's description.
+	RenderInfo() RenderInfo
+
+	// GameFrameCount returns the monotonic count of frames the game
+	// has displayed, as the core defines display. A game may display
+	// fewer frames than the emulator runs, so the delta over elapsed
+	// time is the game's frame rate as distinct from the emulator's.
+	GameFrameCount() uint64
+}
+
 // SaveStater enables save states, rewind, and auto-save.
 type SaveStater interface {
 	// Serialize captures the complete emulator state.

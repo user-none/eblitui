@@ -51,6 +51,7 @@ type CoreOption struct {
 	Max         int                // Maximum for Range type
 	Step        int                // Step size for Range type
 	Category    CoreOptionCategory // Settings section routing
+	Group       string             // Heading the option is listed under within its section; empty for none
 	PerGame     bool               // Whether this can be overridden per game
 }
 

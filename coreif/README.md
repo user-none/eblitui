@@ -62,6 +62,20 @@ a mode change).
 
 - `PixelAspectRatio() float64` - The current pixel aspect ratio.
 
+### RenderInfoProvider (optional)
+
+Lets a core report how it renders, for diagnostic display such as a
+performance overlay. Both methods are cheap and may be called from any
+goroutine between `RunFrame` calls.
+
+- `RenderInfo() RenderInfo` - The active renderer: its name (e.g.
+  "software" or "gpu"), its device name (empty when the renderer has
+  none), and the internal resolution multiple on each axis (1 is native).
+- `GameFrameCount() uint64` - Monotonic count of frames the game has
+  displayed, as the core defines display. A game may display fewer
+  frames than the emulator runs, so the delta over elapsed time is the
+  game's frame rate as distinct from the emulator's.
+
 ### SaveStater (optional)
 
 Enables save states, rewind, and auto-save. Implement on the Emulator struct
@@ -180,6 +194,7 @@ Describes a configurable core setting for use in settings menus.
 | `Max` | `int` | Maximum (Range type only) |
 | `Step` | `int` | Step size (Range type only) |
 | `Category` | `CoreOptionCategory` | Settings section: `CoreOptionCategoryAudio`, `CoreOptionCategoryVideo`, `CoreOptionCategoryInput`, `CoreOptionCategoryCore` |
+| `Group` | `string` | Heading the option is listed under within its section; empty for none |
 | `PerGame` | `bool` | Whether the option can be overridden per game |
 
 ### SystemInfo
