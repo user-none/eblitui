@@ -2,36 +2,43 @@
 
 package main
 
-// Interlace shader - simulates 480i interlaced display
-// Alternates which field is darkened each frame
+// Interlace shader: the 480-line structure of an interlaced CRT
+// picture, drawn as the two fields of alternate frames. The lines
+// have the same count, placement, and profile as the scanlines
+// shader, and each frame the profile shifts by half a line so the
+// dimmed gaps fall where the other field's lines were, as the beam
+// alternates fields.
 
-// SourceHeight is the native vertical resolution of the emulated system
-var SourceHeight float
+// PictureTop and PictureHeight are the rows the picture covers in the
+// destination, in pixels. Rows outside the picture are left alone.
+var PictureTop float
+var PictureHeight float
 
-// Time is the frame counter used to alternate fields
+// Time is the frame counter that selects the field.
 var Time float
+
+// Lines is the number of lines of one field across the picture's
+// height.
+const Lines = 240.0
+
+// GapDepth is how far the gap between lines dims, 0 none to 1 black.
+const GapDepth = 0.25
+
+// MinLinePixels is the smallest line height in pixels the lines are
+// drawn at; below it they are narrower than a pixel and are skipped.
+const MinLinePixels = 2.0
 
 func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
 	clr := imageSrc0At(srcPos)
-
-	// 360 total scanlines, same structure as scanlines shader
-	totalLines := 360.0
-	_, size := imageSrcRegionOnTexture()
-	lineHeight := floor(size.y / totalLines)
-	if lineHeight < 1.0 {
-		lineHeight = 1.0
+	y := dstPos.y - PictureTop
+	if y < 0.0 || y >= PictureHeight || PictureHeight < Lines*MinLinePixels {
+		return clr
 	}
 
-	// Which scanline this pixel belongs to
-	scanline := floor(dstPos.y / lineHeight)
-
-	// Alternate which field is darkened each frame
+	// The odd field's lines sit half a line below the even field's.
 	field := mod(floor(Time), 2.0)
-
-	// Even frames darken even lines, odd frames darken odd lines
-	if mod(scanline + field, 2.0) < 1.0 {
-		clr.rgb *= 0.75
-	}
-
+	phase := fract(y*Lines/PictureHeight + 0.5*field)
+	dim := GapDepth * (0.5 + 0.5*cos(2.0*3.14159265*phase))
+	clr.rgb *= 1.0 - dim
 	return clr
 }

@@ -2,29 +2,42 @@
 
 package main
 
-// Scanlines shader - darkens every other source row for retro CRT effect
+// Scanlines shader: the line structure of a 240-line console picture
+// on a CRT, 240 bright lines with a dark gap between each pair. The
+// lines are laid over the picture's rows in the destination, so their
+// count and placement stay fixed whatever resolution the emulated
+// frame has and however it is scaled. Each line's brightness follows
+// a smooth profile across its height, full at the center and dimmed
+// at the gap, so a picture height that is not a whole multiple of the
+// line count shows no beat between lines of differing pixel heights.
 
-// SourceHeight is the native vertical resolution of the emulated system
-var SourceHeight float
+// PictureTop and PictureHeight are the rows the picture covers in the
+// destination, in pixels. Rows outside the picture are left alone.
+var PictureTop float
+var PictureHeight float
+
+// Lines is the number of bright lines across the picture's height.
+const Lines = 240.0
+
+// GapDepth is how far the gap between lines dims, 0 none to 1 black.
+const GapDepth = 0.25
+
+// MinLinePixels is the smallest line height in pixels the lines are
+// drawn at; below it they are narrower than a pixel and are skipped.
+const MinLinePixels = 2.0
 
 func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
 	clr := imageSrc0At(srcPos)
-
-	// 350 total scanlines (175 dark + 175 bright), all the same height
-	totalLines := 360.0
-	_, size := imageSrcRegionOnTexture()
-	lineHeight := floor(size.y / totalLines)
-	if lineHeight < 1.0 {
-		lineHeight = 1.0
+	y := dstPos.y - PictureTop
+	if y < 0.0 || y >= PictureHeight || PictureHeight < Lines*MinLinePixels {
+		return clr
 	}
 
-	// Which scanline this pixel belongs to
-	scanline := floor(dstPos.y / lineHeight)
-
-	// Alternating dark and bright
-	if mod(scanline, 2.0) < 1.0 {
-		clr.rgb *= 0.75
-	}
-
+	// Position across the line, 0 at its top edge and 1 at the next
+	// line's; the profile is full at 0.5 and dimmed by GapDepth at the
+	// edges.
+	phase := fract(y * Lines / PictureHeight)
+	dim := GapDepth * (0.5 + 0.5*cos(2.0*3.14159265*phase))
+	clr.rgb *= 1.0 - dim
 	return clr
 }

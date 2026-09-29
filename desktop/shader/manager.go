@@ -104,6 +104,9 @@ type Manager struct {
 	// Pooled buffer for the non-xBR native-to-screen scale
 	scaleBuffer *ebiten.Image
 
+	// Placement of the picture basicScale last drew
+	picture Picture
+
 	// xBR scaler for pixel art scaling
 	xbrScaler *XBRScaler
 
@@ -373,18 +376,32 @@ func (m *Manager) ensureScaleBuffer(width, height int) {
 func (m *Manager) basicScale(src *ebiten.Image, screenW, screenH int) *ebiten.Image {
 	m.ensureScaleBuffer(screenW, screenH)
 	m.scaleBuffer.Clear()
-	display.DrawScaled(m.scaleBuffer, src, m.aspectRatioMode, m.par)
+	_, m.picture.Top, _, m.picture.Height = display.DrawScaled(m.scaleBuffer, src, m.aspectRatioMode, m.par)
 	return m.scaleBuffer
 }
 
+// Picture is the vertical placement of the game picture within a
+// screen-sized image, in pixels: the rows the picture covers, with any
+// letterbox bars outside them. Shaders that draw a line structure
+// place it over the picture.
+type Picture struct {
+	Top    float64
+	Height float64
+}
+
+// FullPicture is the placement of a picture covering the whole of a
+// screen-sized image of the height.
+func FullPicture(screenH int) Picture { return Picture{Height: float64(screenH)} }
+
 // ApplyPreprocessEffects runs the native-frame effects pipeline and returns a
-// screen-sized image. src must be the native-resolution game frame and par the
-// pixel aspect ratio delivered with it. The frame is cropped (overscan),
-// promoted to screen size (xBR when enabled, otherwise a plain scale), then
-// ghosted. None of these are Kage shaders.
-func (m *Manager) ApplyPreprocessEffects(src *ebiten.Image, par float64, shaderIDs []string, screenW, screenH int) *ebiten.Image {
+// screen-sized image with the picture's placement in it. src must be the
+// native-resolution game frame and par the pixel aspect ratio delivered with
+// it. The frame is cropped (overscan), promoted to screen size (xBR when
+// enabled, otherwise a plain scale), then ghosted. None of these are Kage
+// shaders.
+func (m *Manager) ApplyPreprocessEffects(src *ebiten.Image, par float64, shaderIDs []string, screenW, screenH int) (*ebiten.Image, Picture) {
 	if src == nil {
-		return nil
+		return nil, Picture{}
 	}
 
 	// Track the frame's pixel aspect ratio (sticky on non-positive values, so a
@@ -401,10 +418,13 @@ func (m *Manager) ApplyPreprocessEffects(src *ebiten.Image, par float64, shaderI
 	}
 
 	// Promote native -> screen size: xBR (with smoothing) or a plain scale.
+	var picture Picture
 	if HasXBR(shaderIDs) {
 		effectiveInput = m.xbrScaler.Apply(effectiveInput, m.par, screenW, screenH)
+		picture = m.xbrScaler.Picture()
 	} else {
 		effectiveInput = m.basicScale(effectiveInput, screenW, screenH)
+		picture = m.picture
 	}
 
 	// Ghosting operates at screen size.
@@ -412,17 +432,17 @@ func (m *Manager) ApplyPreprocessEffects(src *ebiten.Image, par float64, shaderI
 		effectiveInput = m.applyGhosting(effectiveInput)
 	}
 
-	return effectiveInput
+	return effectiveInput, picture
 }
 
 // ApplyShaders draws src to dst with the specified shader chain applied.
-// If shaderIDs is empty, src is drawn directly to dst.
-// sourceHeight is the native vertical resolution of the emulated system
-// (used by scanline shader to align with original pixel rows).
+// If shaderIDs is empty, src is drawn directly to dst. picture is the
+// placement of the game picture within src, which the scanline shaders
+// lay their lines over.
 // Note: Preprocessing effects (xBR, ghosting) should be applied via
 // ApplyPreprocessEffects before calling this function.
 // Returns true if shaders were applied, false if direct draw was used.
-func (m *Manager) ApplyShaders(dst, src *ebiten.Image, shaderIDs []string, sourceHeight int) bool {
+func (m *Manager) ApplyShaders(dst, src *ebiten.Image, shaderIDs []string, picture Picture) bool {
 	if src == nil {
 		return false
 	}
@@ -446,8 +466,9 @@ func (m *Manager) ApplyShaders(dst, src *ebiten.Image, shaderIDs []string, sourc
 
 	// Uniforms for shaders
 	uniforms := map[string]interface{}{
-		"Time":         float32(m.frame),
-		"SourceHeight": float32(sourceHeight),
+		"Time":          float32(m.frame),
+		"PictureTop":    float32(picture.Top),
+		"PictureHeight": float32(picture.Height),
 	}
 
 	// Single shader case - draw directly to destination

@@ -885,19 +885,21 @@ func (a *App) Draw(screen *ebiten.Image) {
 		sw, sh := screen.Bounds().Dx(), screen.Bounds().Dy()
 
 		var processed *ebiten.Image
+		var picture shader.Picture
 		switch a.state {
 		case StatePlaying:
 			// Run the full native-frame pipeline: overscan crop, xBR/scale,
 			// ghosting. The frame carries its own pixel aspect ratio so
 			// variable-resolution cores scale correctly.
 			native, par := a.gameplay.DrawFramebuffer()
-			processed = a.shaderManager.ApplyPreprocessEffects(native, par, shaderIDs, sw, sh)
+			processed, picture = a.shaderManager.ApplyPreprocessEffects(native, par, shaderIDs, sw, sh)
 		default:
 			// UI: preprocessors are game-only, so draw straight to the buffer.
 			buffer := a.getOrCreateShaderBuffer(sw, sh)
 			buffer.Clear()
 			a.ui.Draw(buffer)
 			processed = buffer
+			picture = shader.FullPicture(sh)
 		}
 
 		// No frame yet (e.g. before the first emulated frame); skip this draw.
@@ -919,7 +921,7 @@ func (a *App) Draw(screen *ebiten.Image) {
 		}
 
 		// Apply shader chain to final screen (preprocess effects are skipped internally)
-		a.shaderManager.ApplyShaders(screen, processed, shaderIDs, a.systemInfo.MaxScreenHeight)
+		a.shaderManager.ApplyShaders(screen, processed, shaderIDs, picture)
 	}
 
 	// Take screenshot if pending (after everything is drawn)

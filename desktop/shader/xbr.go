@@ -25,7 +25,13 @@ type XBRScaler struct {
 	normalizedSrc *ebiten.Image
 	passBuffers   [3]*ebiten.Image // Max 3 passes for 8x
 	screenBuffer  *ebiten.Image
+
+	// Placement of the last scaled picture in the screen buffer
+	picture Picture
 }
+
+// Picture returns the placement of the picture Apply last drew.
+func (x *XBRScaler) Picture() Picture { return x.picture }
 
 // SetAspectRatioMode sets the aspect ratio scaling mode ("dar", "4:3", "1:1", "stretch").
 func (x *XBRScaler) SetAspectRatioMode(mode string) {
@@ -79,7 +85,7 @@ func (x *XBRScaler) Apply(src *ebiten.Image, par float64, screenW, screenH int) 
 	}
 
 	// Scale final xBR output to the pooled screen buffer with centering
-	display.DrawScaled(x.screenBuffer, currentInput, x.aspectRatioMode, x.par)
+	_, x.picture.Top, _, x.picture.Height = display.DrawScaled(x.screenBuffer, currentInput, x.aspectRatioMode, x.par)
 
 	return x.screenBuffer
 }
@@ -203,6 +209,6 @@ func (x *XBRScaler) runShaderPass(input, output *ebiten.Image) {
 // display aspect ratio, centered. Used as fallback when the shader fails.
 func (x *XBRScaler) scaleToScreen(src *ebiten.Image, screenW, screenH int) *ebiten.Image {
 	screenBuffer := display.NewUnmanagedImage(screenW, screenH)
-	display.DrawScaled(screenBuffer, src, x.aspectRatioMode, x.par)
+	_, x.picture.Top, _, x.picture.Height = display.DrawScaled(screenBuffer, src, x.aspectRatioMode, x.par)
 	return screenBuffer
 }
