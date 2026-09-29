@@ -67,13 +67,7 @@ func (a *AudioSection) Build(focus types.FocusManager) *widget.Container {
 	)
 
 	// Core options filtered by audio category
-	hasAudioOptions := false
-	for _, opt := range a.systemInfo.CoreOptions {
-		if opt.Category == coreif.CoreOptionCategoryAudio {
-			hasAudioOptions = true
-			section.AddChild(buildCoreOptionRow(focus, a.callback, a.config, opt, "audio"))
-		}
-	}
+	hasAudioOptions := addCoreOptionRows(section, focus, a.callback, a.config, a.systemInfo.CoreOptions, coreif.CoreOptionCategoryAudio, "audio")
 
 	if hasAudioOptions {
 		section.AddChild(widget.NewText(
@@ -108,12 +102,7 @@ func (a *AudioSection) Build(focus types.FocusManager) *widget.Container {
 // setupNavigation registers navigation zones for the audio section
 func (a *AudioSection) setupNavigation(focus types.FocusManager) {
 	// Core options zone
-	coreOptKeys := make([]string, 0)
-	for _, opt := range a.systemInfo.CoreOptions {
-		if opt.Category == coreif.CoreOptionCategoryAudio {
-			coreOptKeys = append(coreOptKeys, "audio-opt-"+opt.Key)
-		}
-	}
+	coreOptKeys := coreOptionFocusKeys(a.systemInfo.CoreOptions, coreif.CoreOptionCategoryAudio, "audio")
 	if len(coreOptKeys) > 0 {
 		focus.RegisterNavZone("audio-core-opts", types.NavZoneVertical, coreOptKeys, 0)
 	}

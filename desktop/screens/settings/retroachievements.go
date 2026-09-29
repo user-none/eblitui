@@ -89,12 +89,12 @@ func (r *RetroAchievementsSection) Build(focus types.FocusManager) *widget.Conta
 	)
 
 	// Account section
-	section.AddChild(r.buildSectionHeader("Account"))
+	section.AddChild(buildSectionHeader("Account"))
 	if r.isLoggedIn() {
 		section.AddChild(r.buildLoggedInSection(focus))
 
 		// General section
-		section.AddChild(r.buildSectionHeader("General"))
+		section.AddChild(buildSectionHeader("General"))
 		section.AddChild(r.buildToggleRow(focus, "ra-enable", "Enable RetroAchievements", "",
 			r.config.RetroAchievements.Enabled,
 			func() {
@@ -126,7 +126,7 @@ func (r *RetroAchievementsSection) Build(focus types.FocusManager) *widget.Conta
 			}))
 
 		// Notifications section
-		section.AddChild(r.buildSectionHeader("Notifications"))
+		section.AddChild(buildSectionHeader("Notifications"))
 		section.AddChild(r.buildToggleRow(focus, "ra-notification", "Show Notification", "Display popup on unlock",
 			r.config.RetroAchievements.ShowNotification,
 			func() {
@@ -149,7 +149,7 @@ func (r *RetroAchievementsSection) Build(focus types.FocusManager) *widget.Conta
 			}))
 
 		// Advanced section
-		section.AddChild(r.buildSectionHeader("Advanced"))
+		section.AddChild(buildSectionHeader("Advanced"))
 		section.AddChild(r.buildToggleRow(focus, "ra-encore", "Encore Mode", "Re-trigger unlocked achievements",
 			r.config.RetroAchievements.EncoreMode,
 			func() {
@@ -207,26 +207,6 @@ func (r *RetroAchievementsSection) maxLabelWidth() float64 {
 		available = 150
 	}
 	return float64(available)
-}
-
-// buildSectionHeader creates a section header label
-func (r *RetroAchievementsSection) buildSectionHeader(title string) *widget.Container {
-	container := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewRowLayout(
-			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
-			widget.RowLayoutOpts.Spacing(style.TinySpacing),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
-
-	label := widget.NewText(
-		widget.TextOpts.Text(title, style.FontFace(), style.Accent),
-	)
-	container.AddChild(label)
-
-	return container
 }
 
 // buildToggleRow creates a toggle row with background, label, description, and right-aligned button

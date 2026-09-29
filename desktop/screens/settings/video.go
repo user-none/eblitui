@@ -60,12 +60,7 @@ func (v *VideoSection) Build(focus types.FocusManager) *widget.Container {
 // setupNavigation registers navigation zones for the video section
 func (v *VideoSection) setupNavigation(focus types.FocusManager) {
 	// Core options zone
-	coreOptKeys := make([]string, 0)
-	for _, opt := range v.systemInfo.CoreOptions {
-		if opt.Category == coreif.CoreOptionCategoryVideo {
-			coreOptKeys = append(coreOptKeys, "video-opt-"+opt.Key)
-		}
-	}
+	coreOptKeys := coreOptionFocusKeys(v.systemInfo.CoreOptions, coreif.CoreOptionCategoryVideo, "video")
 	if len(coreOptKeys) > 0 {
 		focus.RegisterNavZone("video-core-opts", types.NavZoneVertical, coreOptKeys, 0)
 	}
@@ -127,13 +122,7 @@ func (v *VideoSection) buildShadersList(focus types.FocusManager) widget.Preferr
 	)
 
 	// Core options filtered by video category
-	hasVideoOptions := false
-	for _, opt := range v.systemInfo.CoreOptions {
-		if opt.Category == coreif.CoreOptionCategoryVideo {
-			hasVideoOptions = true
-			listContent.AddChild(buildCoreOptionRow(focus, v.callback, v.config, opt, "video"))
-		}
-	}
+	hasVideoOptions := addCoreOptionRows(listContent, focus, v.callback, v.config, v.systemInfo.CoreOptions, coreif.CoreOptionCategoryVideo, "video")
 
 	if hasVideoOptions {
 		listContent.AddChild(widget.NewText(
@@ -150,10 +139,7 @@ func (v *VideoSection) buildShadersList(focus types.FocusManager) widget.Preferr
 	))
 
 	// Shaders header
-	shadersLabel := widget.NewText(
-		widget.TextOpts.Text("Shader Effects", style.FontFace(), style.Accent),
-	)
-	listContent.AddChild(shadersLabel)
+	listContent.AddChild(buildSectionHeader("Shader Effects"))
 
 	for _, shaderInfo := range shader.AvailableShaders {
 		listContent.AddChild(v.buildShaderRow(shaderInfo, focus))

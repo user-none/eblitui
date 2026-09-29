@@ -70,11 +70,7 @@ func (c *CoreSection) Build(focus types.FocusManager) *widget.Container {
 		)),
 	)
 
-	for _, opt := range c.systemInfo.CoreOptions {
-		if opt.Category == coreif.CoreOptionCategoryCore {
-			section.AddChild(buildCoreOptionRow(focus, c.callback, c.config, opt, "core"))
-		}
-	}
+	addCoreOptionRows(section, focus, c.callback, c.config, c.systemInfo.CoreOptions, coreif.CoreOptionCategoryCore, "core")
 
 	// BIOS section
 	if len(c.systemInfo.BIOSOptions) > 0 {
@@ -301,12 +297,7 @@ func (c *CoreSection) setBIOSConfig(key string, bc storage.BIOSConfig) {
 
 // setupNavigation registers navigation zones for the core options section
 func (c *CoreSection) setupNavigation(focus types.FocusManager) {
-	coreOptKeys := make([]string, 0)
-	for _, opt := range c.systemInfo.CoreOptions {
-		if opt.Category == coreif.CoreOptionCategoryCore {
-			coreOptKeys = append(coreOptKeys, "core-opt-"+opt.Key)
-		}
-	}
+	coreOptKeys := coreOptionFocusKeys(c.systemInfo.CoreOptions, coreif.CoreOptionCategoryCore, "core")
 	if len(coreOptKeys) > 0 {
 		focus.RegisterNavZone("core-core-opts", types.NavZoneVertical, coreOptKeys, 0)
 	}
@@ -334,24 +325,6 @@ func (c *CoreSection) setupNavigation(focus types.FocusManager) {
 		focus.SetNavTransition("core-core-opts", types.DirDown, "core-bios", types.NavIndexFirst)
 		focus.SetNavTransition("core-bios", types.DirUp, "core-core-opts", types.NavIndexFirst)
 	}
-}
-
-// buildSectionHeader creates a section header label with accent color.
-func buildSectionHeader(title string) *widget.Container {
-	container := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewRowLayout(
-			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
-			widget.RowLayoutOpts.Spacing(style.TinySpacing),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
-	label := widget.NewText(
-		widget.TextOpts.Text(title, style.FontFace(), style.Accent),
-	)
-	container.AddChild(label)
-	return container
 }
 
 // computeSHA256 returns the hex-encoded SHA256 hash of data.

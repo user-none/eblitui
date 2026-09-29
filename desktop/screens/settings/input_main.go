@@ -18,13 +18,7 @@ import (
 // the players block, and the controller profile list.
 func (s *InputSection) buildMainView(focus types.FocusManager, section *widget.Container) {
 	// Core options section (options with Category == "Input")
-	hasInputOptions := false
-	for _, opt := range s.systemInfo.CoreOptions {
-		if opt.Category == coreif.CoreOptionCategoryInput {
-			hasInputOptions = true
-			section.AddChild(buildCoreOptionRow(focus, s.callback, s.config, opt, "input"))
-		}
-	}
+	hasInputOptions := addCoreOptionRows(section, focus, s.callback, s.config, s.systemInfo.CoreOptions, coreif.CoreOptionCategoryInput, "input")
 
 	if hasInputOptions {
 		// Spacer between core options and the rest
@@ -227,12 +221,7 @@ func (s *InputSection) buildNewProfileRow(focus types.FocusManager) *widget.Cont
 func (s *InputSection) setupMainNavigation(focus types.FocusManager) {
 	var zones []string
 
-	coreOptKeys := make([]string, 0)
-	for _, opt := range s.systemInfo.CoreOptions {
-		if opt.Category == coreif.CoreOptionCategoryInput {
-			coreOptKeys = append(coreOptKeys, "input-opt-"+opt.Key)
-		}
-	}
+	coreOptKeys := coreOptionFocusKeys(s.systemInfo.CoreOptions, coreif.CoreOptionCategoryInput, "input")
 	if len(coreOptKeys) > 0 {
 		focus.RegisterNavZone("input-core-opts", types.NavZoneVertical, coreOptKeys, 0)
 		zones = append(zones, "input-core-opts")
