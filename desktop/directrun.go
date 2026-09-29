@@ -123,12 +123,12 @@ func RunDirect(factory coreif.CoreFactory, romPath string, options map[string]st
 		aspectProvider: aspectProvider,
 		systemInfo:     systemInfo,
 		inputMapping:   BuildDefaultMapping(systemInfo.Buttons),
-		renderer:       NewFramebufferRenderer(systemInfo.ScreenWidth, systemInfo.PixelAspectRatio),
+		renderer:       NewFramebufferRenderer(systemInfo.PixelAspectRatio),
 		audioPlayer:    audioPlayer,
 		framePacer:     pacer,
 		emuControl:     NewEmuControl(),
 		sharedInput:    &SharedInput{},
-		sharedFB:       NewSharedFramebuffer(systemInfo.ScreenWidth, systemInfo.MaxScreenHeight),
+		sharedFB:       NewSharedFramebuffer(systemInfo.ScreenWidth, systemInfo.ScreenHeight),
 		emuDone:        make(chan struct{}),
 	}
 

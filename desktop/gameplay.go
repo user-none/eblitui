@@ -370,10 +370,10 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bo
 	gm.perfOverlay.Reset(gm.renderInfo)
 
 	// Create renderer and shared structures for the emulation goroutine
-	gm.renderer = NewFramebufferRenderer(gm.systemInfo.ScreenWidth, gm.systemInfo.PixelAspectRatio)
+	gm.renderer = NewFramebufferRenderer(gm.systemInfo.PixelAspectRatio)
 	gm.renderer.SetAspectRatioMode(gm.config.Video.AspectRatio)
 	gm.sharedInput = &SharedInput{}
-	gm.sharedFramebuffer = NewSharedFramebuffer(gm.systemInfo.ScreenWidth, gm.systemInfo.MaxScreenHeight)
+	gm.sharedFramebuffer = NewSharedFramebuffer(gm.systemInfo.ScreenWidth, gm.systemInfo.ScreenHeight)
 	gm.emuControl = NewEmuControl()
 	gm.emuDone = make(chan struct{})
 

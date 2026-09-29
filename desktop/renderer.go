@@ -13,7 +13,6 @@ import (
 // DrawCachedFramebuffer/GetCachedFramebufferImage methods that were
 // previously on the bridge emulator.
 type FramebufferRenderer struct {
-	screenWidth     int
 	par             float64
 	aspectRatioMode string
 	offscreen       *ebiten.Image
@@ -35,10 +34,9 @@ func (r *FramebufferRenderer) SetPAR(par float64) {
 
 // NewFramebufferRenderer creates a renderer for the given native screen width
 // and pixel aspect ratio.
-func NewFramebufferRenderer(screenWidth int, par float64) *FramebufferRenderer {
+func NewFramebufferRenderer(par float64) *FramebufferRenderer {
 	return &FramebufferRenderer{
-		screenWidth: screenWidth,
-		par:         par,
+		par: par,
 	}
 }
 
