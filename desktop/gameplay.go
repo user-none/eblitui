@@ -38,9 +38,10 @@ type GameplayManager struct {
 
 	// Emulation state
 	emulator       coreif.Emulator
-	saveStater     coreif.SaveStater     // Detected at launch (may be nil)
-	batterySaver   coreif.BatterySaver   // Detected at launch (may be nil)
-	aspectProvider coreif.AspectProvider // Detected at launch (may be nil)
+	saveStater     coreif.SaveStater         // Detected at launch (may be nil)
+	batterySaver   coreif.BatterySaver       // Detected at launch (may be nil)
+	aspectProvider coreif.AspectProvider     // Detected at launch (may be nil)
+	renderInfo     coreif.RenderInfoProvider // Detected at launch (may be nil)
 	renderer       *FramebufferRenderer
 	audioPlayer    *AudioPlayer
 	framePacer     *framePacer
@@ -100,6 +101,10 @@ type GameplayManager struct {
 	turboState    *TurboState
 	turboAudioBuf []int16 // Pre-allocated buffer for collecting multi-frame audio
 
+	// Performance overlay: mode persists across games, statistics
+	// reset per game and are fed by the emulation goroutine.
+	perfOverlay *PerfOverlay
+
 	// External dependencies (not owned by GameplayManager)
 	inputManager       *InputManager
 	assignment         *PlayerAssignment
@@ -145,6 +150,7 @@ func NewGameplayManager(
 		mappings:           buildPlayerMappings(systemInfo, &config.Input),
 		autoSaveInterval:   style.AutoSaveInterval,
 		turboState:         &TurboState{multiplier: 1},
+		perfOverlay:        &PerfOverlay{},
 		inputManager:       inputManager,
 		assignment:         assignment,
 		saveStateManager:   saveStateManager,
@@ -360,6 +366,8 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bo
 	gm.saveStater, _ = emu.(coreif.SaveStater)
 	gm.batterySaver, _ = emu.(coreif.BatterySaver)
 	gm.aspectProvider, _ = emu.(coreif.AspectProvider)
+	gm.renderInfo, _ = emu.(coreif.RenderInfoProvider)
+	gm.perfOverlay.Reset(gm.renderInfo)
 
 	// Create renderer and shared structures for the emulation goroutine
 	gm.renderer = NewFramebufferRenderer(gm.systemInfo.ScreenWidth, gm.systemInfo.PixelAspectRatio)
@@ -487,10 +495,18 @@ func (gm *GameplayManager) currentPAR() float64 {
 	return gm.systemInfo.PixelAspectRatio
 }
 
-// runEmulatorFrame advances the emulator by one frame and processes achievements.
+// runEmulatorFrame advances the emulator by one frame, records the
+// frame for the performance overlay, and processes achievements.
 // Called from the emulation goroutine.
 func (gm *GameplayManager) runEmulatorFrame() {
+	start := time.Now()
 	gm.emulator.RunFrame()
+	now := time.Now()
+	var gameFrames uint64
+	if gm.renderInfo != nil {
+		gameFrames = gm.renderInfo.GameFrameCount()
+	}
+	gm.perfOverlay.Stats().AddFrame(now.Sub(start), gameFrames, now)
 	if gm.achievementManager != nil {
 		gm.achievementManager.DoFrame()
 	}
@@ -703,6 +719,9 @@ func (gm *GameplayManager) Update() (pauseMenuOpened bool, err error) {
 	// Handle turbo key input (F4 cycles speed)
 	gm.handleTurboKey()
 
+	// Handle the performance overlay key (grave accent cycles the mode)
+	gm.handlePerfOverlayKey()
+
 	// Check rewind input (R key)
 	if gm.rewindBuffer != nil {
 		holdDuration := inpututil.KeyPressDuration(ebiten.KeyR)
@@ -799,6 +818,14 @@ func (gm *GameplayManager) DrawPauseMenu(screen *ebiten.Image) {
 // DrawAchievementOverlay draws the achievement overlay
 func (gm *GameplayManager) DrawAchievementOverlay(screen *ebiten.Image) {
 	gm.achievementOverlay.Draw(screen)
+}
+
+// DrawPerfOverlay draws the performance overlay when it is on.
+func (gm *GameplayManager) DrawPerfOverlay(screen *ebiten.Image) {
+	if gm.emulator == nil {
+		return
+	}
+	gm.perfOverlay.Draw(screen)
 }
 
 // IsPaused returns whether the pause menu is visible
@@ -950,6 +977,14 @@ func (gm *GameplayManager) handleTurboKey() {
 		case 3:
 			gm.notification.ShowShort("Turbo: 3x")
 		}
+	}
+}
+
+// handlePerfOverlayKey checks the grave accent key to cycle the
+// performance overlay: off, basic, extended, off.
+func (gm *GameplayManager) handlePerfOverlayKey() {
+	if inpututil.IsKeyJustPressed(ebiten.KeyGraveAccent) {
+		gm.perfOverlay.Cycle()
 	}
 }
 

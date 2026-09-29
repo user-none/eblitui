@@ -130,7 +130,7 @@ var reservedKeys = map[ebiten.Key]bool{
 	ebiten.KeyControl:     true,
 	ebiten.KeyAlt:         true,
 	ebiten.KeyMeta:        true,
-	ebiten.KeyGraveAccent: true, // ~ key
+	ebiten.KeyGraveAccent: true, // Performance overlay
 }
 
 // Reverse lookup maps (built from keyNameMap/padNameMap at init).

@@ -872,6 +872,7 @@ func (a *App) Draw(screen *ebiten.Image) {
 			a.gameplay.Draw(screen)
 			a.gameplay.DrawPauseMenu(screen)
 			a.gameplay.DrawAchievementOverlay(screen)
+			a.gameplay.DrawPerfOverlay(screen)
 		default:
 			a.ui.Draw(screen)
 		}
@@ -908,6 +909,7 @@ func (a *App) Draw(screen *ebiten.Image) {
 		if a.state == StatePlaying {
 			a.gameplay.DrawPauseMenu(processed)
 			a.gameplay.DrawAchievementOverlay(processed)
+			a.gameplay.DrawPerfOverlay(processed)
 		}
 
 		// Notification drawn after effects, before shaders
