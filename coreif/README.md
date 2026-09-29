@@ -208,8 +208,8 @@ RetroAchievements integration.
 | `Name` | `string` | Emulator name (e.g. "emmd") |
 | `ConsoleName` | `string` | Full console name (e.g. "Sega Genesis") |
 | `Extensions` | `[]string` | Supported ROM file extensions |
-| `ScreenWidth` | `int` | Native screen width in pixels |
-| `MaxScreenHeight` | `int` | Maximum screen height in pixels |
+| `ScreenWidth` | `int` | Native frame width the UI assumes before the first frame; a hint for the initial window and any preallocation, not a bound |
+| `ScreenHeight` | `int` | Native frame height the UI assumes before the first frame; a hint, not a bound. Each frame's size comes from `GetFramebufferStride` and `GetActiveHeight` and may exceed both hints |
 | `AspectRatio` | `float64` | Display aspect ratio |
 | `SampleRate` | `int` | Audio sample rate in Hz |
 | `Buttons` | `[]Button` | System-specific buttons |

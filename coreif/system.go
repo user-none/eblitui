@@ -97,8 +97,8 @@ type SystemInfo struct {
 	Name             string
 	ConsoleName      string
 	Extensions       []string
-	ScreenWidth      int
-	MaxScreenHeight  int
+	ScreenWidth      int // Native frame width the UI assumes before the first frame (see ScreenHeight)
+	ScreenHeight     int // Native frame height the UI assumes before the first frame: a hint for the initial window and any preallocation, not a bound; each frame's size comes from GetFramebufferStride and GetActiveHeight and may exceed it
 	PixelAspectRatio float64
 	SampleRate       int
 	Buttons          []Button
