@@ -68,9 +68,10 @@ Lets a core report how it renders, for diagnostic display such as a
 performance overlay. Both methods are cheap and may be called from any
 goroutine between `RunFrame` calls.
 
-- `RenderInfo() RenderInfo` - The active renderer: its name (e.g.
-  "software" or "gpu"), its device name (empty when the renderer has
-  none), and the internal resolution multiple on each axis (1 is native).
+- `RenderInfo() RenderInfo` - How the core draws: the backend
+  ("Software", or the GPU API in use, such as "Vulkan"), the GPU's
+  name (empty for software rendering), and the internal resolution
+  multiple on each axis (1 is native).
 - `GameFrameCount() uint64` - Monotonic count of frames the game has
   displayed, as the core defines display. A game may display fewer
   frames than the emulator runs, so the delta over elapsed time is the

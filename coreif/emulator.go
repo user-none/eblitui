@@ -62,11 +62,11 @@ type AspectProvider interface {
 	PixelAspectRatio() float64
 }
 
-// RenderInfo describes the renderer a core is drawing with.
+// RenderInfo describes how a core is drawing.
 type RenderInfo struct {
-	Renderer string // renderer name, e.g. "software" or "gpu"
-	Device   string // rendering device name; empty when the renderer has none
-	Scale    int    // internal resolution multiple on each axis; 1 is native
+	Backend string // what draws the frame: "Software", or the GPU API in use, such as "Vulkan"
+	Device  string // the GPU's name; empty for software rendering
+	Scale   int    // internal resolution multiple on each axis; 1 is native
 }
 
 // RenderInfoProvider is an optional interface a core may implement to
