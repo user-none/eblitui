@@ -99,9 +99,9 @@ func TestPerfStatsReset(t *testing.T) {
 }
 
 func TestPerfOverlayLines(t *testing.T) {
-	sw := &coreif.RenderInfo{Renderer: "software", Scale: 1}
-	sw2 := &coreif.RenderInfo{Renderer: "software", Scale: 2}
-	gpu4 := &coreif.RenderInfo{Renderer: "gpu", Device: "Test GPU", Scale: 4}
+	sw := &coreif.RenderInfo{Backend: "Software", Scale: 1}
+	sw2 := &coreif.RenderInfo{Backend: "Software", Scale: 2}
+	gpu4 := &coreif.RenderInfo{Backend: "Vulkan", Device: "Test GPU", Scale: 4}
 	cases := []struct {
 		name string
 		mode perfOverlayMode
@@ -112,9 +112,9 @@ func TestPerfOverlayLines(t *testing.T) {
 		{"basic no info", perfOverlayBasic, nil, "60.0 fps"},
 		{"basic", perfOverlayBasic, sw, "60.0 fps\n30.0 gfps"},
 		{"extended no info", perfOverlayExtended, nil, "60.0 fps\n12.3 ms"},
-		{"extended software native", perfOverlayExtended, sw, "60.0 fps\n30.0 gfps\n12.3 ms\nsoftware"},
-		{"extended software scaled", perfOverlayExtended, sw2, "60.0 fps\n30.0 gfps\n12.3 ms\nsoftware 2x"},
-		{"extended gpu scaled", perfOverlayExtended, gpu4, "60.0 fps\n30.0 gfps\n12.3 ms\nTest GPU 4x"},
+		{"extended software native", perfOverlayExtended, sw, "60.0 fps\n30.0 gfps\n12.3 ms\nSoftware"},
+		{"extended software scaled", perfOverlayExtended, sw2, "60.0 fps\n30.0 gfps\n12.3 ms\nSoftware 2x"},
+		{"extended gpu scaled", perfOverlayExtended, gpu4, "60.0 fps\n30.0 gfps\n12.3 ms\nTest GPU (Vulkan) 4x"},
 	}
 	for _, c := range cases {
 		got := strings.Join(perfOverlayLines(c.mode, 60, 30, 12.34, c.info), "\n")

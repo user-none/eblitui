@@ -156,9 +156,9 @@ func perfOverlayLines(mode perfOverlayMode, emuFPS, gameFPS, frameTimeMS float64
 	}
 	lines = append(lines, fmt.Sprintf("%.1f ms", frameTimeMS))
 	if info != nil {
-		name := info.Renderer
+		name := info.Backend
 		if info.Device != "" {
-			name = info.Device
+			name = fmt.Sprintf("%s (%s)", info.Device, info.Backend)
 		}
 		if info.Scale > 1 {
 			name = fmt.Sprintf("%s %dx", name, info.Scale)
