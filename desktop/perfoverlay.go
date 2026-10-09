@@ -127,8 +127,8 @@ type perfOverlayMode int
 
 const (
 	perfOverlayOff      perfOverlayMode = iota
-	perfOverlayBasic                    // emulator and game frame rates
-	perfOverlayExtended                 // basic plus frame time and renderer
+	perfOverlayBasic                    // emulator and game frame rates and frame time
+	perfOverlayExtended                 // basic plus renderer
 )
 
 // PerfOverlay draws performance statistics in the top-left corner of
@@ -151,9 +151,9 @@ func (o *PerfOverlay) Stats() *PerfStats { return &o.stats }
 
 // perfOverlayLines lays out the overlay's text for the mode. The game
 // frame rate and renderer lines need the core's render info, and are
-// left out when info is nil. The renderer line is the device name
-// when the renderer has one, otherwise the renderer name, followed by
-// the scale when it is above native.
+// left out when info is nil. The renderer is the backend, with the
+// scale when it is above native, and the device on its own line when
+// there is one.
 func perfOverlayLines(mode perfOverlayMode, emuFPS, gameFPS, frameTimeMS float64, info *coreif.RenderInfo) []string {
 	if mode == perfOverlayOff {
 		return nil
@@ -162,19 +162,16 @@ func perfOverlayLines(mode perfOverlayMode, emuFPS, gameFPS, frameTimeMS float64
 	if info != nil {
 		lines = append(lines, fmt.Sprintf("%.1f gfps", gameFPS))
 	}
-	if mode != perfOverlayExtended {
-		return lines
-	}
 	lines = append(lines, fmt.Sprintf("%.1f ms", frameTimeMS))
-	if info != nil {
-		name := info.Backend
-		if info.Device != "" {
-			name = fmt.Sprintf("%s (%s)", info.Device, info.Backend)
-		}
+	if mode == perfOverlayExtended && info != nil {
+		backend := info.Backend
 		if info.Scale > 1 {
-			name = fmt.Sprintf("%s %dx", name, info.Scale)
+			backend = fmt.Sprintf("%s (%dx)", backend, info.Scale)
 		}
-		lines = append(lines, name)
+		lines = append(lines, backend)
+		if info.Device != "" {
+			lines = append(lines, info.Device)
+		}
 	}
 	return lines
 }
