@@ -36,13 +36,13 @@ func TestPerfStatsPublishesAfterWindow(t *testing.T) {
 
 	// 49 frames at 20 ms: 980 ms elapsed, nothing published yet.
 	last, games := feedFrames(&p, t0, 49, 20*time.Millisecond, 5*time.Millisecond, 0)
-	if e, g, f := p.Snapshot(); e != 0 || g != 0 || f != 0 {
+	if e, g, f, _ := p.Snapshot(); e != 0 || g != 0 || f != 0 {
 		t.Fatalf("published before the window elapsed: %v %v %v", e, g, f)
 	}
 
 	// The 50th frame reaches 1000 ms: 50 frames, 25 game frames, 5 ms each.
 	p.AddFrame(5*time.Millisecond, games+1, last.Add(20*time.Millisecond))
-	e, g, f := p.Snapshot()
+	e, g, f, _ := p.Snapshot()
 	if !near(e, 50) || !near(g, 25) || !near(f, 5) {
 		t.Fatalf("published %v %v %v, want 50 25 5", e, g, f)
 	}
@@ -53,7 +53,7 @@ func TestPerfStatsGapRestartsWindow(t *testing.T) {
 	t0 := time.Unix(1000, 0)
 	p.AddFrame(0, 0, t0)
 	last, games := feedFrames(&p, t0, 50, 20*time.Millisecond, 4*time.Millisecond, 0)
-	if e, _, _ := p.Snapshot(); !near(e, 50) {
+	if e, _, _, _ := p.Snapshot(); !near(e, 50) {
 		t.Fatalf("first window published %v, want 50", e)
 	}
 
@@ -62,7 +62,7 @@ func TestPerfStatsGapRestartsWindow(t *testing.T) {
 	resume := last.Add(2 * time.Second)
 	p.AddFrame(4*time.Millisecond, games, resume)
 	feedFrames(&p, resume, 50, 20*time.Millisecond, 4*time.Millisecond, games)
-	e, g, f := p.Snapshot()
+	e, g, f, _ := p.Snapshot()
 	if !near(e, 50) || !near(g, 25) || !near(f, 4) {
 		t.Fatalf("window after the gap published %v %v %v, want 50 25 4", e, g, f)
 	}
@@ -77,8 +77,67 @@ func TestPerfStatsGameCountFallingBack(t *testing.T) {
 	for i := 1; i <= 50; i++ {
 		p.AddFrame(time.Millisecond, 40, t0.Add(time.Duration(i)*20*time.Millisecond))
 	}
-	if _, g, _ := p.Snapshot(); g != 0 {
+	if _, g, _, _ := p.Snapshot(); g != 0 {
 		t.Fatalf("game fps with a falling count %v, want 0", g)
+	}
+}
+
+// fakeRenderInfo is a render info provider that counts its reads.
+type fakeRenderInfo struct {
+	info  coreif.RenderInfo
+	reads int
+}
+
+func (f *fakeRenderInfo) RenderInfo() coreif.RenderInfo {
+	f.reads++
+	return f.info
+}
+
+func (f *fakeRenderInfo) GameFrameCount() uint64 { return 0 }
+
+func TestPerfStatsRenderInfo(t *testing.T) {
+	var p PerfStats
+	t0 := time.Unix(1000, 0)
+
+	// Without a provider no render info is published.
+	p.Reset(nil)
+	p.AddFrame(0, 0, t0)
+	feedFrames(&p, t0, 50, 20*time.Millisecond, time.Millisecond, 0)
+	if _, _, _, info := p.Snapshot(); info != nil {
+		t.Fatalf("render info without a provider %v", info)
+	}
+
+	// With a provider, nothing is read or published until a window
+	// publishes.
+	fake := &fakeRenderInfo{info: coreif.RenderInfo{Backend: "Vulkan", Device: "Test GPU", Scale: 2}}
+	p.Reset(fake)
+	t1 := t0.Add(time.Hour)
+	p.AddFrame(0, 0, t1)
+	last, games := feedFrames(&p, t1, 49, 20*time.Millisecond, time.Millisecond, 0)
+	if _, _, _, info := p.Snapshot(); fake.reads != 0 || info != nil {
+		t.Fatalf("before the window: reads %d, render info %v", fake.reads, info)
+	}
+	p.AddFrame(time.Millisecond, games, last.Add(20*time.Millisecond))
+	if _, _, _, info := p.Snapshot(); fake.reads != 1 || info == nil || *info != fake.info {
+		t.Fatalf("after the window: reads %d, render info %v, want %v", fake.reads, info, fake.info)
+	}
+
+	// A renderer change shows at the next publish; the earlier
+	// snapshot is unchanged.
+	_, _, _, before := p.Snapshot()
+	fake.info = coreif.RenderInfo{Backend: "Software", Scale: 2}
+	feedFrames(&p, last.Add(20*time.Millisecond), 50, 20*time.Millisecond, time.Millisecond, games)
+	if _, _, _, info := p.Snapshot(); fake.reads != 2 || info == nil || *info != fake.info {
+		t.Fatalf("next window: reads %d, render info %v, want %v", fake.reads, info, fake.info)
+	}
+	if before.Backend != "Vulkan" {
+		t.Fatalf("earlier snapshot changed to %v", before)
+	}
+
+	// Reset clears the published render info.
+	p.Reset(fake)
+	if _, _, _, info := p.Snapshot(); info != nil {
+		t.Fatalf("render info after reset %v", info)
 	}
 }
 
@@ -87,8 +146,8 @@ func TestPerfStatsReset(t *testing.T) {
 	t0 := time.Unix(1000, 0)
 	p.AddFrame(0, 0, t0)
 	feedFrames(&p, t0, 50, 20*time.Millisecond, time.Millisecond, 0)
-	p.Reset()
-	if e, g, f := p.Snapshot(); e != 0 || g != 0 || f != 0 {
+	p.Reset(nil)
+	if e, g, f, _ := p.Snapshot(); e != 0 || g != 0 || f != 0 {
 		t.Fatalf("values after reset %v %v %v", e, g, f)
 	}
 	// The first frame after a reset starts a window and is not counted.

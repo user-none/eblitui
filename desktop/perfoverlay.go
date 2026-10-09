@@ -33,6 +33,12 @@ type PerfStats struct {
 	emuFPS      float64
 	gameFPS     float64
 	frameTimeMS float64
+	info        *coreif.RenderInfo // nil when the core does not report; never modified once published
+
+	// The core's render info provider, or nil. Set by Reset before the
+	// emulation goroutine starts; read only by AddFrame, between RunFrame
+	// calls.
+	provider coreif.RenderInfoProvider
 
 	// Window accumulation, emulation goroutine only.
 	windowStart     time.Time
@@ -47,7 +53,8 @@ type PerfStats struct {
 // frame that starts a window, the first or one after a gap, is not
 // counted, so the window's counts and its game frame count start
 // together. When the window has elapsed the averages are published
-// and a new window starts at this frame.
+// and a new window starts at this frame. The core's render info is
+// read with each publish, so a renderer change shows by the next one.
 func (p *PerfStats) AddFrame(d time.Duration, gameFrames uint64, now time.Time) {
 	if p.windowStart.IsZero() || now.Sub(p.lastFrame) > perfGap {
 		p.startWindow(now, gameFrames)
@@ -65,10 +72,16 @@ func (p *PerfStats) AddFrame(d time.Duration, gameFrames uint64, now time.Time) 
 	if gameFrames > p.gameFramesStart {
 		gameDelta = gameFrames - p.gameFramesStart
 	}
+	var info *coreif.RenderInfo
+	if p.provider != nil {
+		ri := p.provider.RenderInfo()
+		info = &ri
+	}
 	p.mu.Lock()
 	p.emuFPS = float64(p.frames) / sec
 	p.gameFPS = float64(gameDelta) / sec
 	p.frameTimeMS = float64(p.runTime.Microseconds()) / 1000 / float64(p.frames)
+	p.info = info
 	p.mu.Unlock()
 	p.startWindow(now, gameFrames)
 }
@@ -84,17 +97,23 @@ func (p *PerfStats) startWindow(now time.Time, gameFrames uint64) {
 }
 
 // Snapshot returns the last published emulator frames per second,
-// game frames per second, and average frame time in milliseconds.
-func (p *PerfStats) Snapshot() (emuFPS, gameFPS, frameTimeMS float64) {
+// game frames per second, average frame time in milliseconds, and
+// render info, nil when the core does not report it.
+func (p *PerfStats) Snapshot() (emuFPS, gameFPS, frameTimeMS float64, info *coreif.RenderInfo) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.emuFPS, p.gameFPS, p.frameTimeMS
+	return p.emuFPS, p.gameFPS, p.frameTimeMS, p.info
 }
 
-// Reset clears the published values and the window, for a new game.
-func (p *PerfStats) Reset() {
+// Reset clears the published values and the window for a new game
+// and takes the core's render info provider, or nil. The render info
+// is first published with the first window. Called before the
+// emulation goroutine starts.
+func (p *PerfStats) Reset(provider coreif.RenderInfoProvider) {
+	p.provider = provider
 	p.mu.Lock()
 	p.emuFPS, p.gameFPS, p.frameTimeMS = 0, 0, 0
+	p.info = nil
 	p.mu.Unlock()
 	p.windowStart = time.Time{}
 	p.lastFrame = time.Time{}
@@ -112,13 +131,12 @@ const (
 	perfOverlayExtended                 // basic plus frame time and renderer
 )
 
-// PerfOverlay draws performance statistics in the top-right corner of
+// PerfOverlay draws performance statistics in the top-left corner of
 // the screen. Its mode cycles off, basic, extended, off, and persists
 // across games; its statistics reset per game.
 type PerfOverlay struct {
 	mode  perfOverlayMode
 	stats PerfStats
-	info  coreif.RenderInfoProvider // nil when the core does not report
 	bg    *ebiten.Image
 }
 
@@ -127,15 +145,8 @@ func (o *PerfOverlay) Cycle() {
 	o.mode = (o.mode + 1) % (perfOverlayExtended + 1)
 }
 
-// Reset prepares the overlay for a new game: the statistics restart
-// and the core's render info provider, or nil, is taken. Called before
-// the game's emulation goroutine starts.
-func (o *PerfOverlay) Reset(info coreif.RenderInfoProvider) {
-	o.stats.Reset()
-	o.info = info
-}
-
-// Stats is the accumulator the emulation goroutine feeds.
+// Stats is the overlay's statistics, reset for each game and fed by
+// the emulation goroutine.
 func (o *PerfOverlay) Stats() *PerfStats { return &o.stats }
 
 // perfOverlayLines lays out the overlay's text for the mode. The game
@@ -173,12 +184,7 @@ func (o *PerfOverlay) Draw(screen *ebiten.Image) {
 	if o.mode == perfOverlayOff {
 		return
 	}
-	emuFPS, gameFPS, frameTimeMS := o.stats.Snapshot()
-	var info *coreif.RenderInfo
-	if o.info != nil {
-		ri := o.info.RenderInfo()
-		info = &ri
-	}
+	emuFPS, gameFPS, frameTimeMS, info := o.stats.Snapshot()
 	body := strings.Join(perfOverlayLines(o.mode, emuFPS, gameFPS, frameTimeMS, info), "\n")
 
 	face := *style.FontFace()
@@ -190,7 +196,6 @@ func (o *PerfOverlay) Draw(screen *ebiten.Image) {
 	bgWidth := int(textWidth) + padding*2
 	bgHeight := int(textHeight) + padding*2
 	margin := style.OverlayMargin
-	//bgX := screen.Bounds().Dx() - bgWidth - margin
 	bgX := margin
 	bgY := margin
 

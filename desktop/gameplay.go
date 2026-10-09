@@ -367,7 +367,7 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bo
 	gm.batterySaver, _ = emu.(coreif.BatterySaver)
 	gm.aspectProvider, _ = emu.(coreif.AspectProvider)
 	gm.renderInfo, _ = emu.(coreif.RenderInfoProvider)
-	gm.perfOverlay.Reset(gm.renderInfo)
+	gm.perfOverlay.Stats().Reset(gm.renderInfo)
 
 	// Create renderer and shared structures for the emulation goroutine
 	gm.renderer = NewFramebufferRenderer(gm.systemInfo.PixelAspectRatio)
