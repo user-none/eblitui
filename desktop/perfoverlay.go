@@ -17,17 +17,31 @@ import (
 )
 
 // perfWindow is the interval the performance statistics are averaged
-// over and published at.
-const perfWindow = time.Second
+// over. It is split into perfBuckets buckets, and the statistics are
+// published each time a bucket completes, so the window rolls forward
+// one bucket at a time.
+const (
+	perfWindow     = time.Second
+	perfBuckets    = 4
+	perfBucketSpan = perfWindow / perfBuckets
+)
 
 // perfGap is the pause between two frames beyond which the window
 // restarts rather than counting the pause as elapsed time, such as
 // after the pause menu closes.
 const perfGap = 500 * time.Millisecond
 
+// perfBucket accumulates the frames of one bucket of the window.
+type perfBucket struct {
+	start      time.Time
+	frames     int
+	runTime    time.Duration
+	gameFrames uint64 // the core's game frame count at start
+}
+
 // PerfStats accumulates per-frame measurements on the emulation
-// goroutine and publishes their averages once per window for the
-// Ebiten thread to read.
+// goroutine and publishes their averages over the window once per
+// bucket for the Ebiten thread to read.
 type PerfStats struct {
 	mu          sync.Mutex
 	emuFPS      float64
@@ -40,37 +54,49 @@ type PerfStats struct {
 	// calls.
 	provider coreif.RenderInfoProvider
 
-	// Window accumulation, emulation goroutine only.
-	windowStart     time.Time
-	lastFrame       time.Time
-	frames          int
-	runTime         time.Duration
-	gameFramesStart uint64
+	// Window accumulation, emulation goroutine only. buckets is a ring:
+	// cur is the bucket being filled and filled the number in use,
+	// counting cur. filled is 0 when no window has started.
+	buckets   [perfBuckets]perfBucket
+	cur       int
+	filled    int
+	lastFrame time.Time
 }
 
 // AddFrame records one emulator frame that took d to run and finished
 // at now, with gameFrames the core's game frame count after it. A
 // frame that starts a window, the first or one after a gap, is not
 // counted, so the window's counts and its game frame count start
-// together. When the window has elapsed the averages are published
-// and a new window starts at this frame. The core's render info is
-// read with each publish, so a renderer change shows by the next one.
+// together. When the current bucket has spanned perfBucketSpan, the
+// averages over the buckets in use are published and a new bucket
+// starts at this frame, replacing the oldest once the window is full.
+// The core's render info is read with each publish, so a renderer
+// change shows by the next one.
 func (p *PerfStats) AddFrame(d time.Duration, gameFrames uint64, now time.Time) {
-	if p.windowStart.IsZero() || now.Sub(p.lastFrame) > perfGap {
+	if p.filled == 0 || now.Sub(p.lastFrame) > perfGap {
 		p.startWindow(now, gameFrames)
 		return
 	}
 	p.lastFrame = now
-	p.frames++
-	p.runTime += d
-	elapsed := now.Sub(p.windowStart)
-	if elapsed < perfWindow {
+	b := &p.buckets[p.cur]
+	b.frames++
+	b.runTime += d
+	if now.Sub(b.start) < perfBucketSpan {
 		return
 	}
-	sec := elapsed.Seconds()
+
+	var frames int
+	var runTime time.Duration
+	for i := range p.filled {
+		bucket := &p.buckets[(p.cur-i+perfBuckets)%perfBuckets]
+		frames += bucket.frames
+		runTime += bucket.runTime
+	}
+	oldest := &p.buckets[(p.cur-p.filled+1+perfBuckets)%perfBuckets]
+	sec := now.Sub(oldest.start).Seconds()
 	var gameDelta uint64
-	if gameFrames > p.gameFramesStart {
-		gameDelta = gameFrames - p.gameFramesStart
+	if gameFrames > oldest.gameFrames {
+		gameDelta = gameFrames - oldest.gameFrames
 	}
 	var info *coreif.RenderInfo
 	if p.provider != nil {
@@ -78,22 +104,27 @@ func (p *PerfStats) AddFrame(d time.Duration, gameFrames uint64, now time.Time) 
 		info = &ri
 	}
 	p.mu.Lock()
-	p.emuFPS = float64(p.frames) / sec
+	p.emuFPS = float64(frames) / sec
 	p.gameFPS = float64(gameDelta) / sec
-	p.frameTimeMS = float64(p.runTime.Microseconds()) / 1000 / float64(p.frames)
+	p.frameTimeMS = float64(runTime.Microseconds()) / 1000 / float64(frames)
 	p.info = info
 	p.mu.Unlock()
-	p.startWindow(now, gameFrames)
+
+	p.cur = (p.cur + 1) % perfBuckets
+	if p.filled < perfBuckets {
+		p.filled++
+	}
+	p.buckets[p.cur] = perfBucket{start: now, gameFrames: gameFrames}
 }
 
-// startWindow begins a window at now with the game frame count as it
-// stands.
+// startWindow begins a window of one bucket at now with the game frame
+// count as it stands.
 func (p *PerfStats) startWindow(now time.Time, gameFrames uint64) {
-	p.windowStart = now
+	p.buckets = [perfBuckets]perfBucket{}
+	p.buckets[0] = perfBucket{start: now, gameFrames: gameFrames}
+	p.cur = 0
+	p.filled = 1
 	p.lastFrame = now
-	p.frames = 0
-	p.runTime = 0
-	p.gameFramesStart = gameFrames
 }
 
 // Snapshot returns the last published emulator frames per second,
@@ -107,7 +138,7 @@ func (p *PerfStats) Snapshot() (emuFPS, gameFPS, frameTimeMS float64, info *core
 
 // Reset clears the published values and the window for a new game
 // and takes the core's render info provider, or nil. The render info
-// is first published with the first window. Called before the
+// is first published with the first bucket. Called before the
 // emulation goroutine starts.
 func (p *PerfStats) Reset(provider coreif.RenderInfoProvider) {
 	p.provider = provider
@@ -115,11 +146,10 @@ func (p *PerfStats) Reset(provider coreif.RenderInfoProvider) {
 	p.emuFPS, p.gameFPS, p.frameTimeMS = 0, 0, 0
 	p.info = nil
 	p.mu.Unlock()
-	p.windowStart = time.Time{}
+	p.buckets = [perfBuckets]perfBucket{}
+	p.cur = 0
+	p.filled = 0
 	p.lastFrame = time.Time{}
-	p.frames = 0
-	p.runTime = 0
-	p.gameFramesStart = 0
 }
 
 // perfOverlayMode is what the performance overlay shows.

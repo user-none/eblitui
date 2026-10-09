@@ -12,39 +12,60 @@ import (
 	"github.com/user-none/eblitui/coreif"
 )
 
-// feedFrames adds n frames to p at interval spacing starting after
-// start, each taking d, with the game frame count rising every other
-// frame from gameBase, and returns the time of the last frame and the
-// game count after it.
-func feedFrames(p *PerfStats, start time.Time, n int, interval, d time.Duration, gameBase uint64) (time.Time, uint64) {
-	now := start
-	games := gameBase
-	for i := 1; i <= n; i++ {
-		now = start.Add(time.Duration(i) * interval)
-		games = gameBase + uint64(i/2)
-		p.AddFrame(d, games, now)
+// perfInterval is the spacing of fed frames: 10 frames fill a bucket.
+const perfInterval = 25 * time.Millisecond
+
+// feedFrames adds frames from through to to p, frame i finishing at
+// start plus i intervals after taking d, with the game frame count
+// gameBase plus i/2.
+func feedFrames(p *PerfStats, start time.Time, from, to int, d time.Duration, gameBase uint64) {
+	for i := from; i <= to; i++ {
+		p.AddFrame(d, gameBase+uint64(i/2), start.Add(time.Duration(i)*perfInterval))
 	}
-	return now, games
 }
 
 func near(a, b float64) bool { return math.Abs(a-b) < 1e-6 }
 
-func TestPerfStatsPublishesAfterWindow(t *testing.T) {
+func TestPerfStatsPublishesEachBucket(t *testing.T) {
 	var p PerfStats
 	t0 := time.Unix(1000, 0)
 	p.AddFrame(5*time.Millisecond, 0, t0) // starts the window, not counted
 
-	// 49 frames at 20 ms: 980 ms elapsed, nothing published yet.
-	last, games := feedFrames(&p, t0, 49, 20*time.Millisecond, 5*time.Millisecond, 0)
+	// 9 frames: 225 ms elapsed, nothing published yet.
+	feedFrames(&p, t0, 1, 9, 5*time.Millisecond, 0)
 	if e, g, f, _ := p.Snapshot(); e != 0 || g != 0 || f != 0 {
-		t.Fatalf("published before the window elapsed: %v %v %v", e, g, f)
+		t.Fatalf("published before the bucket completed: %v %v %v", e, g, f)
 	}
 
-	// The 50th frame reaches 1000 ms: 50 frames, 25 game frames, 5 ms each.
-	p.AddFrame(5*time.Millisecond, games+1, last.Add(20*time.Millisecond))
+	// The 10th frame completes the bucket at 250 ms: 10 frames, 5 game
+	// frames, 5 ms each.
+	feedFrames(&p, t0, 10, 10, 5*time.Millisecond, 0)
 	e, g, f, _ := p.Snapshot()
-	if !near(e, 50) || !near(g, 25) || !near(f, 5) {
-		t.Fatalf("published %v %v %v, want 50 25 5", e, g, f)
+	if !near(e, 40) || !near(g, 20) || !near(f, 5) {
+		t.Fatalf("published %v %v %v, want 40 20 5", e, g, f)
+	}
+}
+
+func TestPerfStatsRollingWindow(t *testing.T) {
+	var p PerfStats
+	t0 := time.Unix(1000, 0)
+	p.AddFrame(5*time.Millisecond, 0, t0)
+
+	// Two buckets: averaged over the 500 ms they span.
+	feedFrames(&p, t0, 1, 20, 5*time.Millisecond, 0)
+	e, g, f, _ := p.Snapshot()
+	if !near(e, 40) || !near(g, 20) || !near(f, 5) {
+		t.Fatalf("two buckets published %v %v %v, want 40 20 5", e, g, f)
+	}
+
+	// The window fills at frame 40. Frames 41-50 take 15 ms: the
+	// published window drops the first bucket and spans frames 11-50,
+	// so the frame time is (30*5 + 10*15) / 40 = 7.5 ms.
+	feedFrames(&p, t0, 21, 40, 5*time.Millisecond, 0)
+	feedFrames(&p, t0, 41, 50, 15*time.Millisecond, 0)
+	e, g, f, _ = p.Snapshot()
+	if !near(e, 40) || !near(g, 20) || !near(f, 7.5) {
+		t.Fatalf("rolled window published %v %v %v, want 40 20 7.5", e, g, f)
 	}
 }
 
@@ -52,19 +73,19 @@ func TestPerfStatsGapRestartsWindow(t *testing.T) {
 	var p PerfStats
 	t0 := time.Unix(1000, 0)
 	p.AddFrame(0, 0, t0)
-	last, games := feedFrames(&p, t0, 50, 20*time.Millisecond, 4*time.Millisecond, 0)
-	if e, _, _, _ := p.Snapshot(); !near(e, 50) {
-		t.Fatalf("first window published %v, want 50", e)
+	feedFrames(&p, t0, 1, 40, 4*time.Millisecond, 0)
+	if e, _, _, _ := p.Snapshot(); !near(e, 40) {
+		t.Fatalf("before the gap published %v, want 40", e)
 	}
 
-	// A 2 s pause, then a full window of frames: the pause is not
-	// counted as elapsed time, so the rate stays 50.
-	resume := last.Add(2 * time.Second)
-	p.AddFrame(4*time.Millisecond, games, resume)
-	feedFrames(&p, resume, 50, 20*time.Millisecond, 4*time.Millisecond, games)
+	// A 2 s pause, then a bucket of frames: the pause and the buckets
+	// before it are not counted, so the rate stays 40.
+	resume := t0.Add(40*perfInterval + 2*time.Second)
+	p.AddFrame(4*time.Millisecond, 20, resume)
+	feedFrames(&p, resume, 1, 10, 4*time.Millisecond, 20)
 	e, g, f, _ := p.Snapshot()
-	if !near(e, 50) || !near(g, 25) || !near(f, 4) {
-		t.Fatalf("window after the gap published %v %v %v, want 50 25 4", e, g, f)
+	if !near(e, 40) || !near(g, 20) || !near(f, 4) {
+		t.Fatalf("after the gap published %v %v %v, want 40 20 4", e, g, f)
 	}
 }
 
@@ -74,8 +95,8 @@ func TestPerfStatsGameCountFallingBack(t *testing.T) {
 	p.AddFrame(0, 100, t0)
 	// The game count starts the window at 100 and reports 40 after, as
 	// after a core reset: the rate is 0, not a wrapped value.
-	for i := 1; i <= 50; i++ {
-		p.AddFrame(time.Millisecond, 40, t0.Add(time.Duration(i)*20*time.Millisecond))
+	for i := 1; i <= 10; i++ {
+		p.AddFrame(time.Millisecond, 40, t0.Add(time.Duration(i)*perfInterval))
 	}
 	if _, g, _, _ := p.Snapshot(); g != 0 {
 		t.Fatalf("game fps with a falling count %v, want 0", g)
@@ -102,33 +123,33 @@ func TestPerfStatsRenderInfo(t *testing.T) {
 	// Without a provider no render info is published.
 	p.Reset(nil)
 	p.AddFrame(0, 0, t0)
-	feedFrames(&p, t0, 50, 20*time.Millisecond, time.Millisecond, 0)
+	feedFrames(&p, t0, 1, 10, time.Millisecond, 0)
 	if _, _, _, info := p.Snapshot(); info != nil {
 		t.Fatalf("render info without a provider %v", info)
 	}
 
-	// With a provider, nothing is read or published until a window
-	// publishes.
+	// With a provider, nothing is read or published until a bucket
+	// completes.
 	fake := &fakeRenderInfo{info: coreif.RenderInfo{Backend: "Vulkan", Device: "Test GPU", Scale: 2}}
 	p.Reset(fake)
 	t1 := t0.Add(time.Hour)
 	p.AddFrame(0, 0, t1)
-	last, games := feedFrames(&p, t1, 49, 20*time.Millisecond, time.Millisecond, 0)
+	feedFrames(&p, t1, 1, 9, time.Millisecond, 0)
 	if _, _, _, info := p.Snapshot(); fake.reads != 0 || info != nil {
-		t.Fatalf("before the window: reads %d, render info %v", fake.reads, info)
+		t.Fatalf("before the bucket: reads %d, render info %v", fake.reads, info)
 	}
-	p.AddFrame(time.Millisecond, games, last.Add(20*time.Millisecond))
+	feedFrames(&p, t1, 10, 10, time.Millisecond, 0)
 	if _, _, _, info := p.Snapshot(); fake.reads != 1 || info == nil || *info != fake.info {
-		t.Fatalf("after the window: reads %d, render info %v, want %v", fake.reads, info, fake.info)
+		t.Fatalf("after the bucket: reads %d, render info %v, want %v", fake.reads, info, fake.info)
 	}
 
 	// A renderer change shows at the next publish; the earlier
 	// snapshot is unchanged.
 	_, _, _, before := p.Snapshot()
 	fake.info = coreif.RenderInfo{Backend: "Software", Scale: 2}
-	feedFrames(&p, last.Add(20*time.Millisecond), 50, 20*time.Millisecond, time.Millisecond, games)
+	feedFrames(&p, t1, 11, 20, time.Millisecond, 0)
 	if _, _, _, info := p.Snapshot(); fake.reads != 2 || info == nil || *info != fake.info {
-		t.Fatalf("next window: reads %d, render info %v, want %v", fake.reads, info, fake.info)
+		t.Fatalf("next bucket: reads %d, render info %v, want %v", fake.reads, info, fake.info)
 	}
 	if before.Backend != "Vulkan" {
 		t.Fatalf("earlier snapshot changed to %v", before)
@@ -145,15 +166,16 @@ func TestPerfStatsReset(t *testing.T) {
 	var p PerfStats
 	t0 := time.Unix(1000, 0)
 	p.AddFrame(0, 0, t0)
-	feedFrames(&p, t0, 50, 20*time.Millisecond, time.Millisecond, 0)
+	feedFrames(&p, t0, 1, 30, time.Millisecond, 0)
 	p.Reset(nil)
 	if e, g, f, _ := p.Snapshot(); e != 0 || g != 0 || f != 0 {
 		t.Fatalf("values after reset %v %v %v", e, g, f)
 	}
-	// The first frame after a reset starts a window and is not counted.
+	// The first frame after a reset starts a window of one bucket and
+	// is not counted.
 	p.AddFrame(0, 7, t0.Add(time.Hour))
-	if p.frames != 0 || p.gameFramesStart != 7 {
-		t.Fatalf("window after reset: frames %d, game start %d", p.frames, p.gameFramesStart)
+	if b := p.buckets[p.cur]; p.filled != 1 || b.frames != 0 || b.gameFrames != 7 {
+		t.Fatalf("window after reset: filled %d, frames %d, game start %d", p.filled, b.frames, b.gameFrames)
 	}
 }
 
