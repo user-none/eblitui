@@ -83,8 +83,8 @@ type App struct {
 	windowX, windowY   int
 	windowWidth        int
 	windowHeight       int
-	lastWindowedWidth  int // Last non-fullscreen width (physical pixels)
-	lastWindowedHeight int // Last non-fullscreen height (physical pixels)
+	lastWindowedWidth  int // Last non-fullscreen width (logical pixels)
+	lastWindowedHeight int // Last non-fullscreen height (logical pixels)
 	lastBuildWidth     int // Track width used for last UI build
 
 	// Screenshot pending flag (set in Update, processed in Draw)
@@ -425,9 +425,8 @@ func (a *App) saveWindowState() {
 	// in fullscreen saves the windowed size, not the fullscreen resolution.
 	// ebiten.WindowSize() cannot be used here because it returns 0,0 during
 	// window close on some platforms.
-	s := style.DPIScale()
-	a.config.Window.Width = int(float64(a.lastWindowedWidth) / s)
-	a.config.Window.Height = int(float64(a.lastWindowedHeight) / s)
+	a.config.Window.Width = a.lastWindowedWidth
+	a.config.Window.Height = a.lastWindowedHeight
 	a.config.Window.X = &a.windowX
 	a.config.Window.Y = &a.windowY
 	a.config.Window.Fullscreen = a.lastFullscreenState
@@ -951,9 +950,12 @@ func (a *App) Layout(outsideWidth, outsideHeight int) (int, int) {
 	a.windowHeight = h
 	// Track windowed dimensions separately so fullscreen doesn't overwrite them.
 	// These are used by saveWindowState to persist the pre-fullscreen size.
+	// Store the logical size as given so it round-trips exactly through
+	// SetWindowSize; converting the physical size back truncates at
+	// fractional scale factors.
 	if !ebiten.IsFullscreen() {
-		a.lastWindowedWidth = w
-		a.lastWindowedHeight = h
+		a.lastWindowedWidth = outsideWidth
+		a.lastWindowedHeight = outsideHeight
 	}
 	return w, h
 }
