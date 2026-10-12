@@ -15,6 +15,9 @@ import (
 	"github.com/user-none/eblitui/desktop/widgets"
 )
 
+// SettingsSectionLibrary is the focus key of the Library settings section
+const SettingsSectionLibrary = "section-library"
+
 // sectionDescriptor describes a settings sidebar section
 type sectionDescriptor struct {
 	label    string
@@ -65,7 +68,7 @@ func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config
 		{label: "Video", focusKey: "section-video", build: s.video.Build, setupNav: s.setupVideoNav},
 		{label: "Audio", focusKey: "section-audio", build: s.audio.Build, setupNav: s.setupAudioNav},
 		{label: "Input", focusKey: "section-input", build: s.input.Build, setupNav: s.setupInputNav},
-		{label: "Library", focusKey: "section-library", build: s.library.Build, setupNav: s.setupLibraryNav},
+		{label: "Library", focusKey: SettingsSectionLibrary, build: s.library.Build, setupNav: s.setupLibraryNav},
 		{label: "Appearance", focusKey: "section-appearance", build: s.appearance.Build, setupNav: s.setupAppearanceNav},
 		{label: "Rewind", focusKey: "section-rewind", build: s.rewind.Build, setupNav: s.setupRewindNav},
 		{label: "Achievements", focusKey: "section-achievements", build: s.retroAchievements.Build, setupNav: s.setupAchievementsNav},
@@ -330,6 +333,18 @@ func (s *SettingsScreen) setupCoreNav() {
 func (s *SettingsScreen) OnEnter() {
 	if len(s.sections) > 0 {
 		s.SetPendingFocus(s.sections[0].focusKey)
+	}
+}
+
+// SelectSection makes the section with the given focus key active and
+// focuses its sidebar button. Unknown keys are ignored.
+func (s *SettingsScreen) SelectSection(focusKey string) {
+	for i, sec := range s.sections {
+		if sec.focusKey == focusKey {
+			s.selectedSection = i
+			s.SetPendingFocus(focusKey)
+			return
+		}
 	}
 }
 

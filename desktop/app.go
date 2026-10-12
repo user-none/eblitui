@@ -998,6 +998,17 @@ func (a *App) SwitchToSettings() {
 	a.rebuildCurrentScreen()
 }
 
+// SwitchToSettingsSection transitions to the settings screen with the
+// given section selected
+func (a *App) SwitchToSettingsSection(focusKey string) {
+	a.notification.Clear()
+	a.previousState = a.state
+	a.state = StateSettings
+	a.settingsScreen.OnEnter()
+	a.settingsScreen.SelectSection(focusKey)
+	a.rebuildCurrentScreen()
+}
+
 // SwitchToScanProgress transitions to the scan progress screen
 func (a *App) SwitchToScanProgress(rescanAll bool) {
 	a.notification.Clear()

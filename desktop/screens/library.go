@@ -178,7 +178,7 @@ func (s *LibraryScreen) Build() *widget.Container {
 // buildEmptyState creates the empty library display
 func (s *LibraryScreen) buildEmptyState() *widget.Container {
 	button := widgets.TextButton("Open Settings", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
-		s.callback.SwitchToSettings()
+		s.callback.SwitchToSettingsSection(SettingsSectionLibrary)
 	})
 	return widgets.EmptyState("No games in library", "Add a ROM folder in Settings", button)
 }

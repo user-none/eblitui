@@ -38,6 +38,9 @@ type ScreenCallback interface {
 	SwitchToLibrary()
 	SwitchToDetail(gameCRC string)
 	SwitchToSettings()
+	// SwitchToSettingsSection opens settings with the section identified
+	// by focusKey selected.
+	SwitchToSettingsSection(focusKey string)
 	SwitchToScanProgress(rescanAll bool)
 	// LaunchGame starts a game. discIndex selects which disc of a
 	// multi-disc game to launch; -1 uses the entry's remembered
