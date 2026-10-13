@@ -3,11 +3,53 @@
 
 package storage
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
+
+// CleanGameKey removes path separators and control characters from a game
+// key so it is safe to use as a file or directory name. Returns "" when
+// nothing usable remains or the result is a traversal name.
+func CleanGameKey(key string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		if r == '/' || r == '\\' || r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, key)
+	if cleaned == "." || cleaned == ".." {
+		return ""
+	}
+	return cleaned
+}
 
 // SanitizeLibraryEntries silently corrects invalid game entry fields.
 // This runs on load so invalid values never reach the UI or emulator.
 func SanitizeLibraryEntries(lib *Library) {
+	// Game keys are used in file paths. Re-key entries whose key needs
+	// cleaning, and drop entries with no usable key or whose cleaned key
+	// collides with an existing entry.
+	for key, game := range lib.Games {
+		if game == nil {
+			delete(lib.Games, key)
+			continue
+		}
+		cleaned := CleanGameKey(key)
+		if cleaned == key && game.CRC32 == key {
+			continue
+		}
+		delete(lib.Games, key)
+		if cleaned == "" {
+			continue
+		}
+		if _, exists := lib.Games[cleaned]; exists {
+			continue
+		}
+		game.CRC32 = cleaned
+		lib.Games[cleaned] = game
+	}
+
 	for _, game := range lib.Games {
 		if game.PlayTimeSeconds < 0 {
 			game.PlayTimeSeconds = 0

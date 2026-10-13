@@ -415,6 +415,9 @@ func (s *Scanner) processDisc(path string) {
 	}
 	di, ok := s.discID.DiscInfo(d)
 	d.Close()
+	// The product number comes from the disc header and becomes the game
+	// key used in file paths, so clean it before any use.
+	di.ProductNumber = storage.CleanGameKey(di.ProductNumber)
 	if !ok || di.ProductNumber == "" {
 		return
 	}

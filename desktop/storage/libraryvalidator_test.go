@@ -231,3 +231,55 @@ func TestCorrectLibrary(t *testing.T) {
 		}
 	})
 }
+
+func TestCleanGameKey(t *testing.T) {
+	tests := map[string]string{
+		"1A2B3C4D":    "1A2B3C4D",
+		"MK-81009":    "MK-81009",
+		"T-1234G V1":  "T-1234G V1",
+		"../../evil":  "....evil",
+		"..\\evil":    "..evil",
+		"a/b\\c":      "abc",
+		"a\x00b\nc":   "abc",
+		"..":          "",
+		".":           "",
+		"/../":        "",
+		"":            "",
+		"\x01\x02/\\": "",
+	}
+	for in, want := range tests {
+		if got := CleanGameKey(in); got != want {
+			t.Errorf("CleanGameKey(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestSanitizeLibraryEntriesGameKeys(t *testing.T) {
+	lib := &Library{Games: map[string]*GameEntry{
+		"1A2B3C4D":   {CRC32: "1A2B3C4D"},
+		"../evil":    {CRC32: "../evil"},
+		"..":         {CRC32: ".."},
+		"GOOD-KEY":   {CRC32: "../mismatch"},
+		"NIL-ENTRY":  nil,
+		"DUP/":       {CRC32: "DUP/"},
+		"DUP":        {CRC32: "DUP"},
+		"MK-81009\n": {CRC32: "MK-81009\n"},
+	}}
+
+	SanitizeLibraryEntries(lib)
+
+	want := []string{"1A2B3C4D", "..evil", "GOOD-KEY", "DUP", "MK-81009"}
+	if len(lib.Games) != len(want) {
+		t.Errorf("got %d games, want %d: %v", len(lib.Games), len(want), lib.Games)
+	}
+	for _, key := range want {
+		game, ok := lib.Games[key]
+		if !ok {
+			t.Errorf("missing key %q", key)
+			continue
+		}
+		if game.CRC32 != key {
+			t.Errorf("game %q has CRC32 %q, want %q", key, game.CRC32, key)
+		}
+	}
+}
