@@ -37,16 +37,17 @@ type GameplayManager struct {
 	mappings   [maxPlayers]InputMapping // per-player input mappings
 
 	// Emulation state
-	emulator       coreif.Emulator
-	saveStater     coreif.SaveStater         // Detected at launch (may be nil)
-	batterySaver   coreif.BatterySaver       // Detected at launch (may be nil)
-	aspectProvider coreif.AspectProvider     // Detected at launch (may be nil)
-	renderInfo     coreif.RenderInfoProvider // Detected at launch (may be nil)
-	renderer       *FramebufferRenderer
-	audioPlayer    *AudioPlayer
-	framePacer     *framePacer
-	currentGame    *storage.GameEntry
-	disc           *romloader.Disc // open streaming disc (disc-based systems)
+	emulator        coreif.Emulator
+	saveStater      coreif.SaveStater         // Detected at launch (may be nil)
+	batterySaver    coreif.BatterySaver       // Detected at launch (may be nil)
+	aspectProvider  coreif.AspectProvider     // Detected at launch (may be nil)
+	renderInfo      coreif.RenderInfoProvider // Detected at launch (may be nil)
+	memoryInspector coreif.Memory             // Detected at launch (may be nil)
+	renderer        *FramebufferRenderer
+	audioPlayer     *AudioPlayer
+	framePacer      *framePacer
+	currentGame     *storage.GameEntry
+	disc            *romloader.Disc // open streaming disc (disc-based systems)
 
 	// Emulation goroutine control
 	emuControl        *EmuControl
@@ -90,7 +91,6 @@ type GameplayManager struct {
 	// serves the game's .erumble file, rumbleCHT is the CHT fallback.
 	rumbleEngine     *rumble.Engine
 	rumbleCHT        *CHTRumbleEngine
-	memoryInspector  coreif.Memory
 	pendingCHTRumble []CHTRumbleEvent
 	pendingMotor     []rumble.MotorState
 	pendingMotorSet  bool
@@ -367,6 +367,7 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bo
 	gm.batterySaver, _ = emu.(coreif.BatterySaver)
 	gm.aspectProvider, _ = emu.(coreif.AspectProvider)
 	gm.renderInfo, _ = emu.(coreif.RenderInfoProvider)
+	gm.memoryInspector, _ = emu.(coreif.Memory)
 	gm.perfOverlay.Stats().Reset(gm.renderInfo)
 
 	// Create renderer and shared structures for the emulation goroutine
@@ -433,8 +434,8 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bo
 			gm.achievementScreenshotMu.Unlock()
 		})
 
-		if mi, ok := gm.emulator.(coreif.Memory); ok {
-			gm.achievementManager.SetEmulator(mi)
+		if gm.memoryInspector != nil {
+			gm.achievementManager.SetEmulator(gm.memoryInspector)
 		}
 		// Resolve per-game console ID for achievements
 		gameConsoleID := uint32(gm.systemInfo.ConsoleID)
@@ -463,17 +464,13 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bo
 	// Initialize rumble if any assigned controller profile has a non-zero
 	// rumble intensity and the emulator exposes memory. An .erumble file is
 	// preferred; the CHT database file is the fallback.
-	if gm.config.Input.RumbleEnabled() {
-		if mi, ok := gm.emulator.(coreif.Memory); ok {
-			if eng := gm.loadRumbleRuleset(game.CRC32, mi); eng != nil {
-				gm.rumbleEngine = eng
-				gm.memoryInspector = mi
-			} else if rumblePath, err := storage.GetGameCHTRumblePath(game.CRC32); err == nil {
-				entries, err := ParseCHTRumbleFile(rumblePath)
-				if err == nil && len(entries) > 0 {
-					gm.rumbleCHT = NewCHTRumbleEngine(entries, gm.systemInfo.BigEndianMemory)
-					gm.memoryInspector = mi
-				}
+	if gm.config.Input.RumbleEnabled() && gm.memoryInspector != nil {
+		if eng := gm.loadRumbleRuleset(game.CRC32, gm.memoryInspector); eng != nil {
+			gm.rumbleEngine = eng
+		} else if rumblePath, err := storage.GetGameCHTRumblePath(game.CRC32); err == nil {
+			entries, err := ParseCHTRumbleFile(rumblePath)
+			if err == nil && len(entries) > 0 {
+				gm.rumbleCHT = NewCHTRumbleEngine(entries, gm.systemInfo.BigEndianMemory)
 			}
 		}
 	}
@@ -927,11 +924,11 @@ func (gm *GameplayManager) Exit(saveResume bool) {
 	gm.emulator = nil
 	gm.saveStater = nil
 	gm.batterySaver = nil
+	gm.memoryInspector = nil
 	gm.renderer = nil
 	gm.currentGame = nil
 	gm.rumbleEngine = nil
 	gm.rumbleCHT = nil
-	gm.memoryInspector = nil
 	gm.pendingCHTRumble = nil
 	gm.pendingMotor = nil
 	gm.pendingMotorSet = false
