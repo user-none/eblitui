@@ -60,16 +60,6 @@ func NewScanManager(
 	}
 }
 
-// SetLibrary updates the library reference
-func (sm *ScanManager) SetLibrary(library *storage.Library) {
-	sm.library = library
-}
-
-// SetScanScreen updates the scan screen reference
-func (sm *ScanManager) SetScanScreen(screen *screens.ScanProgressScreen) {
-	sm.scanScreen = screen
-}
-
 // IsScanning returns true if a scan is in progress
 func (sm *ScanManager) IsScanning() bool {
 	return sm.activeScanner != nil

@@ -2,8 +2,6 @@ package desktop
 
 import (
 	"testing"
-
-	"github.com/user-none/eblitui/desktop/storage"
 )
 
 func TestScanManagerIsScanning(t *testing.T) {
@@ -18,16 +16,6 @@ func TestScanManagerCancelNilScanner(t *testing.T) {
 	sm := &ScanManager{}
 	// Should not panic
 	sm.Cancel()
-}
-
-func TestScanManagerSetLibrary(t *testing.T) {
-	sm := &ScanManager{}
-	lib := storage.DefaultLibrary()
-
-	sm.SetLibrary(lib)
-	if sm.library != lib {
-		t.Error("library should be set")
-	}
 }
 
 func TestScanManagerUpdateNilScanner(t *testing.T) {

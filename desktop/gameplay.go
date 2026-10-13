@@ -189,17 +189,6 @@ func NewGameplayManager(
 	return gm
 }
 
-// SetLibrary updates the library reference
-func (gm *GameplayManager) SetLibrary(library *storage.Library) {
-	gm.library = library
-}
-
-// SetConfig updates the config reference and rebuilds the input mappings
-func (gm *GameplayManager) SetConfig(config *storage.Config) {
-	gm.config = config
-	gm.mappings = buildPlayerMappings(gm.systemInfo, &config.Input)
-}
-
 // IsPlaying returns true if a game is currently being played
 func (gm *GameplayManager) IsPlaying() bool {
 	return gm.emulator != nil

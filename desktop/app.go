@@ -79,6 +79,7 @@ type App struct {
 	errorFile        string
 	errorPath        string
 	configLoadFailed bool // True if config.json failed to load (don't overwrite on exit)
+	libraryLoaded    bool // True once library.json loaded and validated (safe to save on exit)
 
 	// SDL GUIDs already given a baseline mapping attempt this session
 	padMappingTried map[string]bool
@@ -205,202 +206,245 @@ func newApp(factory coreif.CoreFactory, info coreif.SystemInfo) (*App, error) {
 		padMappingTried: make(map[string]bool),
 	}
 
-	// Ensure directory structure exists
-	if err := storage.EnsureDirectories(); err != nil {
-		return nil, fmt.Errorf("failed to create directories: %w", err)
+	if err := app.initStorage(); err != nil {
+		return nil, err
 	}
+	app.initMetadata()
+	app.initManagers()
 
-	// Create config/library files if missing
+	// A config or library file that fails to load or validate shows the
+	// error screen; its handlers continue startup once the file is fixed.
+	if !app.loadConfig() {
+		return app, nil
+	}
+	app.applyConfig()
+
+	if !app.loadLibrary() {
+		return app, nil
+	}
+	app.finishStartup()
+
+	return app, nil
+}
+
+// initStorage creates the data directories and any missing config or
+// library file.
+func (a *App) initStorage() error {
+	if err := storage.EnsureDirectories(); err != nil {
+		return fmt.Errorf("failed to create directories: %w", err)
+	}
 	if err := storage.CreateConfigIfMissing(); err != nil {
 		log.Printf("Warning: failed to create config: %v", err)
 	}
 	if err := storage.CreateLibraryIfMissing(); err != nil {
 		log.Printf("Warning: failed to create library: %v", err)
 	}
+	return nil
+}
 
-	// Start RDB download in background if missing (non-blocking)
-	app.metadata = metadata.NewMetadataManager(info.MetadataVariants)
-	if !app.metadata.RDBExists() {
+// initMetadata creates the metadata manager, starts a background RDB
+// download when the RDB is missing, and loads the RDB for achievement MD5
+// lookups.
+func (a *App) initMetadata() {
+	a.metadata = metadata.NewMetadataManager(a.systemInfo.MetadataVariants)
+	if !a.metadata.RDBExists() {
 		go func() {
-			if err := app.metadata.DownloadRDB(); err != nil {
+			if err := a.metadata.DownloadRDB(); err != nil {
 				log.Printf("Background RDB download failed: %v", err)
 			}
 		}()
 	}
-
-	// Initialize UI managers
-	app.notification = NewNotification()
-	app.saveStateManager = NewSaveStateManager(app.notification)
-	app.screenshotManager = NewScreenshotManager(app.notification)
-	app.inputManager = NewInputManager()
-	app.assignment = NewPlayerAssignment(info.Players)
-	app.shaderManager = shader.NewManager(info.PixelAspectRatio)
-	app.searchOverlay = NewSearchOverlay(func(text string) {
-		if app.state == StateLibrary {
-			app.libraryScreen.SetSearchText(text)
-			app.rebuildCurrentScreen()
-		}
-	})
-
-	// Load RDB (for achievement MD5 lookups)
-	if err := app.metadata.LoadRDB(); err != nil {
+	if err := a.metadata.LoadRDB(); err != nil {
 		log.Printf("Failed to load RDB: %v", err)
 	}
+}
 
-	// Load config
+// initManagers creates the managers that do not depend on config or
+// library.
+func (a *App) initManagers() {
+	a.notification = NewNotification()
+	a.saveStateManager = NewSaveStateManager(a.notification)
+	a.screenshotManager = NewScreenshotManager(a.notification)
+	a.inputManager = NewInputManager()
+	a.assignment = NewPlayerAssignment(a.systemInfo.Players)
+	a.shaderManager = shader.NewManager(a.systemInfo.PixelAspectRatio)
+	a.searchOverlay = NewSearchOverlay(func(text string) {
+		if a.state == StateLibrary {
+			a.libraryScreen.SetSearchText(text)
+			a.rebuildCurrentScreen()
+		}
+	})
+}
+
+// loadConfig loads and validates config.json. On failure it shows the
+// error screen and returns false.
+func (a *App) loadConfig() bool {
+	configPath, _ := storage.GetConfigPath()
 	config, err := storage.LoadConfig()
 	if err != nil {
-		// JSON parse error - show error screen
-		configPath, _ := storage.GetConfigPath()
-		app.state = StateError
-		app.errorFile = "config.json"
-		app.errorPath = configPath
-		app.configLoadFailed = true // Don't overwrite the file on exit
-		app.config = storage.DefaultConfig()
-		app.achievementManager = achievements.NewManager(app.notification, app.config, app.systemInfo.Name, Version, uint32(app.systemInfo.ConsoleID), app.systemInfo.BigEndianMemory, audioSampleRate)
-		app.library = storage.DefaultLibrary()
-		app.preloadConfiguredShaders()
-		app.initScreens()
-		app.rebuildCurrentScreen()
-		return app, nil
+		a.config = storage.DefaultConfig()
+		a.showStartupError("config.json", configPath, nil)
+		return false
 	}
-	app.config = config
+	a.config = config
 
-	// Validate config values against allowed ranges
-	themeNames := style.ThemeNames()
-	validationErrors := storage.ValidateConfig(app.config, themeNames)
-	if len(validationErrors) > 0 {
-		configPath, _ := storage.GetConfigPath()
-		app.state = StateError
-		app.errorFile = "config.json"
-		app.errorPath = configPath
-		app.configLoadFailed = true
-		// Use default theme/font for the error screen display
-		app.achievementManager = achievements.NewManager(app.notification, app.config, app.systemInfo.Name, Version, uint32(app.systemInfo.ConsoleID), app.systemInfo.BigEndianMemory, audioSampleRate)
-		app.library = storage.DefaultLibrary()
-		app.preloadConfiguredShaders()
-		app.initScreens()
-		app.errorScreen.SetValidationError("config.json", configPath, validationErrors, app.handleResetAndContinue)
-		app.rebuildCurrentScreen()
-		return app, nil
+	if errs := storage.ValidateConfig(a.config, style.ThemeNames()); len(errs) > 0 {
+		a.showStartupError("config.json", configPath, errs)
+		return false
 	}
+	return true
+}
 
-	// Create achievement manager with config
-	app.achievementManager = achievements.NewManager(app.notification, app.config, app.systemInfo.Name, Version, uint32(app.systemInfo.ConsoleID), app.systemInfo.BigEndianMemory, audioSampleRate)
+// applyConfig applies a loaded, valid config: the achievement manager,
+// theme, font size, and saved controller mappings.
+func (a *App) applyConfig() {
+	a.configLoadFailed = false
+	a.newAchievementManager()
+	style.ApplyThemeByName(a.config.Theme)
+	style.ApplyFontSize(storage.ValidFontSize(a.config.FontSize))
+	applySavedPadMappings(a.config.Input.PadMappings)
+}
 
-	// Apply theme and font size
-	style.ApplyThemeByName(app.config.Theme)
-	style.ApplyFontSize(storage.ValidFontSize(app.config.FontSize))
+// newAchievementManager creates the achievement manager for the current
+// config. A previous manager is destroyed so none keeps a replaced config.
+func (a *App) newAchievementManager() {
+	if a.achievementManager != nil {
+		a.achievementManager.Destroy()
+	}
+	a.achievementManager = achievements.NewManager(a.notification, a.config, a.systemInfo.Name, Version, uint32(a.systemInfo.ConsoleID), a.systemInfo.BigEndianMemory, audioSampleRate)
+}
 
-	// Apply persisted controller mappings before any gamepad is polled
-	applySavedPadMappings(app.config.Input.PadMappings)
-
-	// Load library
+// loadLibrary loads and validates library.json. On failure it shows the
+// error screen and returns false.
+func (a *App) loadLibrary() bool {
+	libraryPath, _ := storage.GetLibraryPath()
 	library, err := storage.LoadLibrary()
 	if err != nil {
-		// JSON parse error - show error screen
-		libraryPath, _ := storage.GetLibraryPath()
-		app.state = StateError
-		app.errorFile = "library.json"
-		app.errorPath = libraryPath
-		app.preloadConfiguredShaders()
-		app.initScreens()
-		app.rebuildCurrentScreen()
-		return app, nil
+		a.showStartupError("library.json", libraryPath, nil)
+		return false
+	}
+	a.library = library
+
+	if errs := storage.ValidateLibrary(library); len(errs) > 0 {
+		a.showStartupError("library.json", libraryPath, errs)
+		return false
+	}
+	return true
+}
+
+// showStartupError shows the error screen for a config or library file
+// that failed to load (details nil) or validate. Screens are built on the
+// first error so the error screen can show before startup finishes.
+func (a *App) showStartupError(file, path string, details []string) {
+	a.state = StateError
+	a.errorFile = file
+	a.errorPath = path
+	if file == "config.json" {
+		a.configLoadFailed = true // Don't overwrite the file on exit
 	}
 
-	// Validate library-level fields
-	libraryErrors := storage.ValidateLibrary(library)
-	if len(libraryErrors) > 0 {
-		libraryPath, _ := storage.GetLibraryPath()
-		app.state = StateError
-		app.errorFile = "library.json"
-		app.errorPath = libraryPath
-		app.library = library
-		app.preloadConfiguredShaders()
-		app.initScreens()
-		app.errorScreen.SetValidationError("library.json", libraryPath, libraryErrors, app.handleLibraryResetAndContinue)
-		app.rebuildCurrentScreen()
-		return app, nil
+	if a.errorScreen == nil {
+		if a.achievementManager == nil {
+			a.newAchievementManager()
+		}
+		if a.library == nil {
+			a.library = storage.DefaultLibrary()
+		}
+		a.preloadConfiguredShaders()
+		a.initScreens()
 	}
-	app.library = library
 
-	// Set library on save state manager for slot persistence
-	app.saveStateManager.SetLibrary(library)
+	switch {
+	case details == nil:
+		a.errorScreen.SetError(file, path)
+	case file == "config.json":
+		a.errorScreen.SetValidationError(file, path, details, a.handleResetAndContinue)
+	default:
+		a.errorScreen.SetValidationError(file, path, details, a.handleLibraryResetAndContinue)
+	}
+	a.rebuildCurrentScreen()
+}
 
-	// Initialize gameplay manager with callbacks
-	app.gameplay = NewGameplayManager(
-		app.factory,
-		app.systemInfo,
-		app.inputManager,
-		app.assignment,
-		app.saveStateManager,
-		app.screenshotManager,
-		app.notification,
-		app.library,
-		app.config,
-		app.achievementManager,
-		app.metadata,
-		func() { app.SwitchToLibrary() }, // onExitToLibrary
-		func() { app.Exit() },            // onExitApp
+// finishStartup completes startup once config and library are loaded and
+// valid. It runs once, from newApp or from an error screen handler.
+func (a *App) finishStartup() {
+	a.libraryLoaded = true
+	a.saveStateManager.SetLibrary(a.library)
+
+	a.gameplay = NewGameplayManager(
+		a.factory,
+		a.systemInfo,
+		a.inputManager,
+		a.assignment,
+		a.saveStateManager,
+		a.screenshotManager,
+		a.notification,
+		a.library,
+		a.config,
+		a.achievementManager,
+		a.metadata,
+		func() { a.SwitchToLibrary() }, // onExitToLibrary
+		func() { a.Exit() },            // onExitApp
 	)
 
-	// Auto-login with stored token if available
-	if app.config.RetroAchievements.Enabled &&
-		app.config.RetroAchievements.Username != "" &&
-		app.config.RetroAchievements.Token != "" {
-		go func() {
-			app.achievementManager.LoginWithToken(
-				app.config.RetroAchievements.Username,
-				app.config.RetroAchievements.Token,
-				func(success bool, result int, err error) {
-					if !success {
-						log.Printf("RetroAchievements auto-login failed: %v", err)
-						// Only clear token for credential errors, not transient failures
-						if result == rcheevos.InvalidCredentials ||
-							result == rcheevos.ExpiredToken ||
-							result == rcheevos.AccessDenied {
-							app.config.RetroAchievements.Token = ""
-							storage.SaveConfig(app.config)
-						}
-					}
-				},
-			)
-		}()
-	}
+	a.startAchievementAutoLogin()
+	a.preloadConfiguredShaders()
 
-	// Preload configured shaders
-	app.preloadConfiguredShaders()
-
-	// Initialize screens and build initial UI
 	// Window dimensions are set by main before RunGame, so they're already correct
-	app.initScreens()
+	a.initScreens()
+	a.scanManager = a.newScanManager()
 
-	// Initialize scan manager (needs scanScreen reference)
-	app.scanManager = NewScanManager(
-		app.library,
-		app.scanScreen,
-		contentExtensions(app.systemInfo),
-		app.metadata,
-		app.systemInfo.ConsoleID,
-		app.systemInfo.Disc,
-		discIdentifier(app.factory),
-		func() { app.rebuildCurrentScreen() }, // onProgress
+	a.state = StateLibrary
+	a.libraryScreen.OnEnter()
+	a.rebuildCurrentScreen()
+}
+
+// startAchievementAutoLogin logs in to RetroAchievements in the background
+// with the stored token, when achievements are enabled and a token exists.
+func (a *App) startAchievementAutoLogin() {
+	ra := a.config.RetroAchievements
+	if !ra.Enabled || ra.Username == "" || ra.Token == "" {
+		return
+	}
+	go func() {
+		a.achievementManager.LoginWithToken(ra.Username, ra.Token,
+			func(success bool, result int, err error) {
+				if !success {
+					log.Printf("RetroAchievements auto-login failed: %v", err)
+					// Only clear token for credential errors, not transient failures
+					if result == rcheevos.InvalidCredentials ||
+						result == rcheevos.ExpiredToken ||
+						result == rcheevos.AccessDenied {
+						a.config.RetroAchievements.Token = ""
+						storage.SaveConfig(a.config)
+					}
+				}
+			},
+		)
+	}()
+}
+
+// newScanManager creates the scan manager. It needs the scan screen, so it
+// is created after initScreens.
+func (a *App) newScanManager() *ScanManager {
+	return NewScanManager(
+		a.library,
+		a.scanScreen,
+		contentExtensions(a.systemInfo),
+		a.metadata,
+		a.systemInfo.ConsoleID,
+		a.systemInfo.Disc,
+		discIdentifier(a.factory),
+		func() { a.rebuildCurrentScreen() }, // onProgress
 		func(msg string) { // onComplete
-			app.libraryScreen.ClearArtworkCache()
-			app.state = StateSettings
-			app.rebuildCurrentScreen()
+			a.libraryScreen.ClearArtworkCache()
+			a.state = StateSettings
+			a.rebuildCurrentScreen()
 			if msg != "" {
-				app.notification.ShowDefault(msg)
+				a.notification.ShowDefault(msg)
 			}
 		},
 	)
-
-	// Call OnEnter for initial screen (sets default focus)
-	app.libraryScreen.OnEnter()
-	app.rebuildCurrentScreen()
-
-	return app, nil
 }
 
 // GetWindowConfig returns the saved window dimensions, position, and fullscreen state from config.
@@ -1171,105 +1215,30 @@ func (a *App) ShowNotification(msg string) {
 
 // handleDeleteAndContinue handles the delete and continue button
 func (a *App) handleDeleteAndContinue() {
-	var err error
-
-	if a.errorFile == "config.json" {
-		if err = storage.DeleteConfig(); err != nil {
+	switch a.errorFile {
+	case "config.json":
+		if err := storage.DeleteConfig(); err != nil {
 			log.Printf("Failed to delete config: %v", err)
 		}
 		a.config = storage.DefaultConfig()
-		if err = storage.SaveConfig(a.config); err != nil {
+		if err := storage.SaveConfig(a.config); err != nil {
 			log.Printf("Failed to save config: %v", err)
 		}
-
-		// Now try loading library
-		library, err := storage.LoadLibrary()
-		if err != nil {
-			// Library is also corrupt
-			libraryPath, _ := storage.GetLibraryPath()
-			a.errorFile = "library.json"
-			a.errorPath = libraryPath
-			a.errorScreen.SetError("library.json", libraryPath)
-			a.rebuildCurrentScreen()
+		a.applyConfig()
+		if !a.loadLibrary() {
 			return
 		}
-		// Validate library-level fields
-		libraryErrors := storage.ValidateLibrary(library)
-		if len(libraryErrors) > 0 {
-			libraryPath, _ := storage.GetLibraryPath()
-			a.errorFile = "library.json"
-			a.errorPath = libraryPath
-			a.library = library
-			a.errorScreen.SetValidationError("library.json", libraryPath, libraryErrors, a.handleLibraryResetAndContinue)
-			a.rebuildCurrentScreen()
-			return
-		}
-		a.library = library
-	} else if a.errorFile == "library.json" {
-		if err = storage.DeleteLibrary(); err != nil {
+	case "library.json":
+		if err := storage.DeleteLibrary(); err != nil {
 			log.Printf("Failed to delete library: %v", err)
 		}
 		a.library = storage.DefaultLibrary()
-		if err = storage.SaveLibrary(a.library); err != nil {
+		if err := storage.SaveLibrary(a.library); err != nil {
 			log.Printf("Failed to save library: %v", err)
 		}
 	}
 
-	// Update save state manager with new library
-	a.saveStateManager.SetLibrary(a.library)
-
-	// Initialize or update gameplay manager
-	if a.gameplay == nil {
-		a.gameplay = NewGameplayManager(
-			a.factory,
-			a.systemInfo,
-			a.inputManager,
-			a.assignment,
-			a.saveStateManager,
-			a.screenshotManager,
-			a.notification,
-			a.library,
-			a.config,
-			a.achievementManager,
-			a.metadata,
-			func() { a.SwitchToLibrary() },
-			func() { a.Exit() },
-		)
-	} else {
-		a.gameplay.SetLibrary(a.library)
-		a.gameplay.SetConfig(a.config)
-	}
-
-	// Reinitialize screens with fresh data
-	a.initScreens()
-
-	// Initialize or update scan manager (needs scanScreen reference)
-	if a.scanManager == nil {
-		a.scanManager = NewScanManager(
-			a.library,
-			a.scanScreen,
-			contentExtensions(a.systemInfo),
-			a.metadata,
-			a.systemInfo.ConsoleID,
-			a.systemInfo.Disc,
-			discIdentifier(a.factory),
-			func() { a.rebuildCurrentScreen() },
-			func(msg string) {
-				a.state = StateSettings
-				a.rebuildCurrentScreen()
-				if msg != "" {
-					a.notification.ShowDefault(msg)
-				}
-			},
-		)
-	} else {
-		a.scanManager.SetLibrary(a.library)
-		a.scanManager.SetScanScreen(a.scanScreen)
-	}
-
-	// Proceed to library screen
-	a.state = StateLibrary
-	a.rebuildCurrentScreen()
+	a.finishStartup()
 }
 
 // handleResetAndContinue handles the reset and continue button for validation errors.
@@ -1284,91 +1253,11 @@ func (a *App) handleResetAndContinue() {
 		log.Printf("Failed to save corrected config: %v", err)
 	}
 
-	// Apply corrected theme and font
-	style.ApplyThemeByName(a.config.Theme)
-	style.ApplyFontSize(storage.ValidFontSize(a.config.FontSize))
-
-	a.configLoadFailed = false
-
-	// Load library
-	library, err := storage.LoadLibrary()
-	if err != nil {
-		// Library is also corrupt
-		libraryPath, _ := storage.GetLibraryPath()
-		a.errorFile = "library.json"
-		a.errorPath = libraryPath
-		a.errorScreen.SetError("library.json", libraryPath)
-		a.rebuildCurrentScreen()
+	a.applyConfig()
+	if !a.loadLibrary() {
 		return
 	}
-	// Validate library-level fields
-	libraryErrors := storage.ValidateLibrary(library)
-	if len(libraryErrors) > 0 {
-		libraryPath, _ := storage.GetLibraryPath()
-		a.errorFile = "library.json"
-		a.errorPath = libraryPath
-		a.library = library
-		a.errorScreen.SetValidationError("library.json", libraryPath, libraryErrors, a.handleLibraryResetAndContinue)
-		a.rebuildCurrentScreen()
-		return
-	}
-	a.library = library
-
-	// Update save state manager with library
-	a.saveStateManager.SetLibrary(a.library)
-
-	// Initialize or update gameplay manager
-	if a.gameplay == nil {
-		a.gameplay = NewGameplayManager(
-			a.factory,
-			a.systemInfo,
-			a.inputManager,
-			a.assignment,
-			a.saveStateManager,
-			a.screenshotManager,
-			a.notification,
-			a.library,
-			a.config,
-			a.achievementManager,
-			a.metadata,
-			func() { a.SwitchToLibrary() },
-			func() { a.Exit() },
-		)
-	} else {
-		a.gameplay.SetLibrary(a.library)
-		a.gameplay.SetConfig(a.config)
-	}
-
-	// Reinitialize screens with corrected config
-	a.initScreens()
-
-	// Initialize or update scan manager
-	if a.scanManager == nil {
-		a.scanManager = NewScanManager(
-			a.library,
-			a.scanScreen,
-			contentExtensions(a.systemInfo),
-			a.metadata,
-			a.systemInfo.ConsoleID,
-			a.systemInfo.Disc,
-			discIdentifier(a.factory),
-			func() { a.rebuildCurrentScreen() },
-			func(msg string) {
-				a.state = StateSettings
-				a.rebuildCurrentScreen()
-				if msg != "" {
-					a.notification.ShowDefault(msg)
-				}
-			},
-		)
-	} else {
-		a.scanManager.SetLibrary(a.library)
-		a.scanManager.SetScanScreen(a.scanScreen)
-	}
-
-	// Proceed to library screen
-	a.state = StateLibrary
-	a.rebuildCurrentScreen()
+	a.finishStartup()
 }
 
 // handleLibraryResetAndContinue handles the reset and continue button for
@@ -1381,62 +1270,7 @@ func (a *App) handleLibraryResetAndContinue() {
 		log.Printf("Failed to save corrected library: %v", err)
 	}
 
-	a.configLoadFailed = false
-
-	// Update save state manager with library
-	a.saveStateManager.SetLibrary(a.library)
-
-	// Initialize or update gameplay manager
-	if a.gameplay == nil {
-		a.gameplay = NewGameplayManager(
-			a.factory,
-			a.systemInfo,
-			a.inputManager,
-			a.assignment,
-			a.saveStateManager,
-			a.screenshotManager,
-			a.notification,
-			a.library,
-			a.config,
-			a.achievementManager,
-			a.metadata,
-			func() { a.SwitchToLibrary() },
-			func() { a.Exit() },
-		)
-	} else {
-		a.gameplay.SetLibrary(a.library)
-	}
-
-	// Reinitialize screens
-	a.initScreens()
-
-	// Initialize or update scan manager
-	if a.scanManager == nil {
-		a.scanManager = NewScanManager(
-			a.library,
-			a.scanScreen,
-			contentExtensions(a.systemInfo),
-			a.metadata,
-			a.systemInfo.ConsoleID,
-			a.systemInfo.Disc,
-			discIdentifier(a.factory),
-			func() { a.rebuildCurrentScreen() },
-			func(msg string) {
-				a.state = StateSettings
-				a.rebuildCurrentScreen()
-				if msg != "" {
-					a.notification.ShowDefault(msg)
-				}
-			},
-		)
-	} else {
-		a.scanManager.SetLibrary(a.library)
-		a.scanManager.SetScanScreen(a.scanScreen)
-	}
-
-	// Proceed to library screen
-	a.state = StateLibrary
-	a.rebuildCurrentScreen()
+	a.finishStartup()
 }
 
 // SaveAndClose saves config and library before exit
@@ -1444,6 +1278,11 @@ func (a *App) SaveAndClose() {
 	// Capture current window state before saving
 	a.saveWindowState()
 
+	// Don't overwrite a library that failed to load or validate, or replace
+	// it with the placeholder used by the error screen
+	if !a.libraryLoaded {
+		return
+	}
 	if err := storage.SaveLibrary(a.library); err != nil {
 		log.Printf("Failed to save library: %v", err)
 	}
