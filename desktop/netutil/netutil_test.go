@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -46,6 +47,42 @@ func TestDownloadToMemory404(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for 404")
 	}
+}
+
+func TestDownloadToMemorySizeLimit(t *testing.T) {
+	for _, tc := range []struct {
+		size    int64
+		wantErr bool
+	}{
+		{MaxDownloadSize, false},
+		{MaxDownloadSize + 1, true},
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			io.Copy(w, io.LimitReader(zeroReader{}, tc.size))
+		}))
+
+		origClient := HTTPClient
+		HTTPClient = server.Client()
+
+		data, err := DownloadToMemory(server.URL)
+		if tc.wantErr && err == nil {
+			t.Errorf("size %d: expected error", tc.size)
+		}
+		if !tc.wantErr && (err != nil || int64(len(data)) != tc.size) {
+			t.Errorf("size %d: got %d bytes, err %v", tc.size, len(data), err)
+		}
+
+		HTTPClient = origClient
+		server.Close()
+	}
+}
+
+// zeroReader is an endless source of zero bytes.
+type zeroReader struct{}
+
+func (zeroReader) Read(p []byte) (int, error) {
+	clear(p)
+	return len(p), nil
 }
 
 func TestDownloadToFile(t *testing.T) {

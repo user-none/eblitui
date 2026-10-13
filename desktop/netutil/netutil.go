@@ -27,7 +27,12 @@ var HTTPClient = &http.Client{
 	Timeout: HTTPTimeout,
 }
 
+// MaxDownloadSize is the largest response body DownloadToMemory accepts:
+// 64 MiB.
+const MaxDownloadSize = 64 * 1024 * 1024
+
 // DownloadToMemory performs a GET request and returns the response body.
+// Bodies larger than MaxDownloadSize return an error.
 func DownloadToMemory(url string) ([]byte, error) {
 	resp, err := HTTPClient.Get(url)
 	if err != nil {
@@ -39,7 +44,14 @@ func DownloadToMemory(url string) ([]byte, error) {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	return io.ReadAll(resp.Body)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, MaxDownloadSize+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > MaxDownloadSize {
+		return nil, fmt.Errorf("download from %s exceeds %d bytes", url, MaxDownloadSize)
+	}
+	return data, nil
 }
 
 // writeToFile creates parent directories as needed and writes data to savePath.
