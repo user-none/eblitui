@@ -19,6 +19,8 @@ const (
 	StateError
 	// StatePlaying is active gameplay
 	StatePlaying
+	// StateFilePicker shows the full-screen file and folder picker
+	StateFilePicker
 )
 
 // String returns the string representation of the state
@@ -36,6 +38,8 @@ func (s AppState) String() string {
 		return "Error"
 	case StatePlaying:
 		return "Playing"
+	case StateFilePicker:
+		return "FilePicker"
 	default:
 		return "Unknown"
 	}

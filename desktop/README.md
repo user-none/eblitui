@@ -46,6 +46,7 @@ The app is a state machine that transitions between screens:
 | `StateScanProgress` | Scan Progress | ROM scanning with discovery and artwork phases |
 | `StateError` | Error | Startup error handling (corrupted config recovery) |
 | `StatePlaying` | Gameplay | Active emulation with pause menu overlay |
+| `StateFilePicker` | File Picker | Full-screen file and folder selection |
 
 
 ## Features
@@ -213,12 +214,13 @@ corruption.
 
 | Package | Description |
 |---|---|
-| `screens` | UI screens (library, detail, settings, scan, error) |
+| `screens` | UI screens (library, detail, settings, scan, error, file picker) |
 | `storage` | Config and library persistence with validation |
 | `shader` | Shader registry, compilation, and effect pipeline |
 | `style` | Themes, DPI-aware layout constants, widget builders |
 | `types` | Shared interfaces for cross-package use |
 | `achievements` | RetroAchievements manager and unlock sounds |
+| `filebrowser` | Directory listing, path input parsing and sidebar places for the file picker |
 | `rdb` | RetroArch database (RDB) binary parser |
 
 
@@ -229,12 +231,12 @@ Key external dependencies:
 - `github.com/hajimehoshi/ebiten/v2` - Game engine and rendering
 - `github.com/ebitenui/ebitenui` - UI widget framework
 - `github.com/ebitengine/oto/v3` - Audio output
-- `github.com/sqweek/dialog` - Native file dialogs
 - `github.com/user-none/eblitui/coreif` - Core interfaces
 - `github.com/user-none/eblitui/romloader` - ROM loading
 - `github.com/user-none/go-rcheevos` - RetroAchievements client
 - `golang.design/x/clipboard` - Clipboard access
 - `golang.org/x/image` - Font rendering
+- `golang.org/x/sys` - Windows drive and known folder lookup for the file picker
 
 
 ## Testing

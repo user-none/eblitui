@@ -7,6 +7,7 @@ package types
 
 import (
 	"github.com/ebitenui/ebitenui/widget"
+	"github.com/user-none/eblitui/desktop/filebrowser"
 	"github.com/user-none/eblitui/desktop/widgets"
 )
 
@@ -33,6 +34,14 @@ const (
 	NavIndexLast     = -3 // Go to last item
 )
 
+// FilePickerRequest describes a file or folder pick. OnSelect runs on the UI
+// thread with the chosen absolute path; it is not called on cancel.
+type FilePickerRequest struct {
+	Title    string
+	Mode     filebrowser.Mode
+	OnSelect func(path string)
+}
+
 // ScreenCallback provides callbacks for screen navigation
 type ScreenCallback interface {
 	SwitchToLibrary()
@@ -42,6 +51,9 @@ type ScreenCallback interface {
 	// by focusKey selected.
 	SwitchToSettingsSection(focusKey string)
 	SwitchToScanProgress(rescanAll bool)
+	// OpenFilePicker shows the full-screen file/folder picker. The current
+	// screen is restored when the picker closes.
+	OpenFilePicker(req FilePickerRequest)
 	// LaunchGame starts a game. discIndex selects which disc of a
 	// multi-disc game to launch; -1 uses the entry's remembered
 	// SelectedDisc. Ignored for single-disc and cartridge games.

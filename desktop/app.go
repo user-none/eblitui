@@ -55,6 +55,10 @@ type App struct {
 	settingsScreen *screens.SettingsScreen
 	scanScreen     *screens.ScanProgressScreen
 	errorScreen    *screens.ErrorScreen
+	filePicker     *screens.FilePickerScreen
+
+	// State to return to when the file picker closes
+	pickerReturnState AppState
 
 	// Metadata for RDB lookups
 	metadata *metadata.MetadataManager
@@ -450,6 +454,7 @@ func (a *App) initScreens() {
 	a.settingsScreen = screens.NewSettingsScreen(a, a.library, a.config, a.achievementManager, a.systemInfo.SerializeSize, a.systemInfo, appIcon)
 	a.scanScreen = screens.NewScanProgressScreen(a)
 	a.errorScreen = screens.NewErrorScreen(a, a.errorFile, a.errorPath, a.handleDeleteAndContinue)
+	a.filePicker = screens.NewFilePickerScreen(a, a.closeFilePicker)
 }
 
 // rebuildCurrentScreen rebuilds the UI for the current state
@@ -481,6 +486,12 @@ func (a *App) rebuildCurrentScreen() {
 		container = a.scanScreen.Build()
 	case StateError:
 		container = a.errorScreen.Build()
+	case StateFilePicker:
+		a.filePicker.SaveScrollPosition()
+		if a.ui != nil {
+			a.filePicker.SaveFocusState(a.ui.GetFocusedWidget())
+		}
+		container = a.filePicker.Build()
 	default:
 		// For StatePlaying, no UI container needed
 		return
@@ -523,6 +534,8 @@ func (a *App) Update() error {
 				a.restorePendingFocus(a.libraryScreen)
 			case StateDetail:
 				a.restorePendingFocus(a.detailScreen)
+			case StateFilePicker:
+				a.restoreFilePickerFocus()
 			}
 		}
 	}
@@ -548,6 +561,9 @@ func (a *App) Update() error {
 		needsResizeRebuild = true
 	}
 	if a.state == StateSettings {
+		needsResizeRebuild = true
+	}
+	if a.state == StateFilePicker {
 		needsResizeRebuild = true
 	}
 	if needsResizeRebuild && a.windowWidth > 0 && a.windowWidth != a.lastBuildWidth {
@@ -665,6 +681,20 @@ func (a *App) Update() error {
 		if nav.FocusChanged {
 			a.ensureFocusedVisible()
 		}
+	case StateFilePicker:
+		nav := a.processUIInput()
+		a.filePicker.Update()
+		a.ui.Update()
+		// Check if state changed during ui.Update (Accept or Cancel)
+		if a.state != StateFilePicker {
+			return nil
+		}
+		if !a.rebuildPending {
+			a.restoreFilePickerFocus()
+		}
+		if nav.FocusChanged {
+			a.ensureFocusedVisible()
+		}
 	default:
 		// StateError only
 		nav := a.processUIInput()
@@ -678,6 +708,16 @@ func (a *App) Update() error {
 		}
 	}
 	return nil
+}
+
+// restoreFilePickerFocus focuses the picker's path field when requested,
+// otherwise restores the pending focus button.
+func (a *App) restoreFilePickerFocus() {
+	if input, ok := a.filePicker.TakePathFocusRequest(); ok {
+		a.ui.SetFocusedWidget(input)
+		return
+	}
+	a.restorePendingFocus(a.filePicker)
 }
 
 // restorePendingFocus restores focus to a pending button if one exists.
@@ -752,6 +792,15 @@ func (a *App) applySpatialNavigation(direction int) {
 	case StateSettings:
 		nextBtn = a.settingsScreen.FindFocusInDirection(focused, direction)
 		linearFallback = a.settingsScreen.FindFocusLinear
+	case StateFilePicker:
+		if target, handled := a.filePicker.NavigatePath(focused, direction); handled {
+			if target != nil {
+				a.ui.SetFocusedWidget(target)
+			}
+			return
+		}
+		nextBtn = a.filePicker.FindFocusInDirection(focused, direction)
+		linearFallback = a.filePicker.FindFocusLinear
 		// StateError and StateScanProgress use linear navigation (simple layouts)
 	}
 
@@ -836,7 +885,8 @@ func (a *App) handleGamepadBack() {
 	case StateScanProgress:
 		// Cancel scan and return to settings
 		a.scanManager.Cancel()
-		// StateError has no back action
+	case StateFilePicker:
+		a.filePicker.Cancel()
 	}
 }
 
@@ -853,6 +903,8 @@ func (a *App) ensureFocusedVisible() {
 		a.libraryScreen.EnsureFocusedVisible(focused)
 	case StateSettings:
 		a.settingsScreen.EnsureFocusedVisible(focused)
+	case StateFilePicker:
+		a.filePicker.EnsureFocusedVisible(focused)
 	}
 }
 
@@ -1006,6 +1058,24 @@ func (a *App) SwitchToSettingsSection(focusKey string) {
 	a.state = StateSettings
 	a.settingsScreen.OnEnter()
 	a.settingsScreen.SelectSection(focusKey)
+	a.rebuildCurrentScreen()
+}
+
+// OpenFilePicker shows the full-screen file/folder picker. The current state
+// is restored when the picker closes.
+func (a *App) OpenFilePicker(req types.FilePickerRequest) {
+	a.notification.Clear()
+	a.pickerReturnState = a.state
+	a.previousState = a.state
+	a.state = StateFilePicker
+	a.filePicker.Open(req)
+	a.rebuildCurrentScreen()
+}
+
+// closeFilePicker returns to the screen that opened the picker.
+func (a *App) closeFilePicker() {
+	a.previousState = a.state
+	a.state = a.pickerReturnState
 	a.rebuildCurrentScreen()
 }
 

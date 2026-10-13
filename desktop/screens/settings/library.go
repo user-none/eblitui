@@ -8,7 +8,7 @@ import (
 
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
-	"github.com/sqweek/dialog"
+	"github.com/user-none/eblitui/desktop/filebrowser"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/desktop/types"
@@ -86,7 +86,7 @@ func (l *LibrarySection) Build(focus types.FocusManager) *widget.Container {
 
 	// Add Folder button
 	addDirBtn := widgets.TextButton("Add Folder...", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
-		l.onAddDirectoryClick()
+		l.onAddDirectoryClick(focus)
 	})
 	focus.RegisterFocusButton("lib-add", addDirBtn)
 	buttonRow.AddChild(addDirBtn)
@@ -309,19 +309,18 @@ func (l *LibrarySection) buildFolderList(focus types.FocusManager) widget.Prefer
 	return wrapper
 }
 
-// onAddDirectoryClick handles adding a search directory
-func (l *LibrarySection) onAddDirectoryClick() {
-	// Run dialog in goroutine to avoid blocking Ebiten's main thread
-	go func() {
-		path, err := dialog.Directory().
-			Title("Select ROM Folder").
-			Browse()
-		if err != nil {
-			return // User cancelled or error
-		}
-		l.library.AddScanDirectory(path, true) // recursive=true by default
-		storage.SaveLibrary(l.library)
-		// Trigger auto-scan after adding directory
-		l.pendingScan = true
-	}()
+// onAddDirectoryClick opens the folder picker and adds the chosen folder
+func (l *LibrarySection) onAddDirectoryClick(focus types.FocusManager) {
+	// Return focus to the Add Folder button when the picker closes
+	focus.SetPendingFocus("lib-add")
+	l.callback.OpenFilePicker(types.FilePickerRequest{
+		Title: "Select ROM Folder",
+		Mode:  filebrowser.ModeFolder,
+		OnSelect: func(path string) {
+			l.library.AddScanDirectory(path, true) // recursive=true by default
+			storage.SaveLibrary(l.library)
+			// Trigger auto-scan after adding directory
+			l.pendingScan = true
+		},
+	})
 }

@@ -13,6 +13,7 @@ func TestAppStateString(t *testing.T) {
 		{StateScanProgress, "ScanProgress"},
 		{StateError, "Error"},
 		{StatePlaying, "Playing"},
+		{StateFilePicker, "FilePicker"},
 		{AppState(99), "Unknown"},
 	}
 

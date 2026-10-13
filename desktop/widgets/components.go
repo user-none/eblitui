@@ -361,6 +361,19 @@ func AlternatingRowColor(index int) color.Color {
 	return style.Surface
 }
 
+// ShortcutModifierPressed reports whether the platform's shortcut modifier is
+// held: Cmd on macOS, Ctrl elsewhere.
+func ShortcutModifierPressed() bool {
+	if runtime.GOOS == "darwin" {
+		return ebiten.IsKeyPressed(ebiten.KeyMeta) ||
+			ebiten.IsKeyPressed(ebiten.KeyMetaLeft) ||
+			ebiten.IsKeyPressed(ebiten.KeyMetaRight)
+	}
+	return ebiten.IsKeyPressed(ebiten.KeyControl) ||
+		ebiten.IsKeyPressed(ebiten.KeyControlLeft) ||
+		ebiten.IsKeyPressed(ebiten.KeyControlRight)
+}
+
 // TextInputGroup manages a group of text inputs with clipboard support.
 // Call Update() each frame to handle Ctrl/Cmd+A/C/V/X shortcuts.
 type TextInputGroup struct {
@@ -388,19 +401,7 @@ func (g *TextInputGroup) Update() {
 		}
 	}
 
-	// Check for modifier key (Ctrl on Windows/Linux, Cmd on macOS)
-	var modPressed bool
-	if runtime.GOOS == "darwin" {
-		modPressed = ebiten.IsKeyPressed(ebiten.KeyMeta) ||
-			ebiten.IsKeyPressed(ebiten.KeyMetaLeft) ||
-			ebiten.IsKeyPressed(ebiten.KeyMetaRight)
-	} else {
-		modPressed = ebiten.IsKeyPressed(ebiten.KeyControl) ||
-			ebiten.IsKeyPressed(ebiten.KeyControlLeft) ||
-			ebiten.IsKeyPressed(ebiten.KeyControlRight)
-	}
-
-	if !modPressed {
+	if !ShortcutModifierPressed() {
 		return
 	}
 
@@ -478,9 +479,10 @@ func LabeledText(label, subtext string) *widget.Container {
 	return c
 }
 
-// StyledTextInput creates a text input with consistent styling.
-func StyledTextInput(placeholder string, secure bool, minWidth int) *widget.TextInput {
-	return widget.NewTextInput(
+// StyledTextInput creates a text input with consistent styling. Additional
+// options, such as change and submit handlers, are applied after the styling.
+func StyledTextInput(placeholder string, secure bool, minWidth int, opts ...widget.TextInputOpt) *widget.TextInput {
+	styled := []widget.TextInputOpt{
 		widget.TextInputOpts.Image(&widget.TextInputImage{
 			Idle:     image.NewNineSliceColor(style.Surface),
 			Disabled: image.NewNineSliceColor(style.Border),
@@ -501,5 +503,6 @@ func StyledTextInput(placeholder string, secure bool, minWidth int) *widget.Text
 			}),
 			widget.WidgetOpts.MinSize(minWidth, 0),
 		),
-	)
+	}
+	return widget.NewTextInput(append(styled, opts...)...)
 }

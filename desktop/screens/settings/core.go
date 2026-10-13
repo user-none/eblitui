@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 
 	"github.com/ebitenui/ebitenui/widget"
-	"github.com/sqweek/dialog"
 	"github.com/user-none/eblitui/coreif"
+	"github.com/user-none/eblitui/desktop/filebrowser"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/desktop/types"
@@ -241,16 +241,23 @@ func (c *CoreSection) buildBIOSVariantRow(section *widget.Container, focus types
 	section.AddChild(row)
 }
 
-// onBrowseBIOS opens a file dialog for a specific BIOS variant.
+// onBrowseBIOS opens the file picker for a specific BIOS variant.
 func (c *CoreSection) onBrowseBIOS(opt coreif.BIOSOption, v coreif.BIOSVariant, focusKey string, focus types.FocusManager) {
-	go func() {
-		path, err := dialog.File().
-			Title("Select BIOS: " + v.Label).
-			Load()
-		if err != nil {
-			return
-		}
+	// Return focus to the Browse button when the picker closes
+	focus.SetPendingFocus(focusKey)
+	c.callback.OpenFilePicker(types.FilePickerRequest{
+		Title: "Select BIOS: " + v.Label,
+		Mode:  filebrowser.ModeFile,
+		OnSelect: func(path string) {
+			c.loadBIOS(opt, v, path, focusKey, focus)
+		},
+	})
+}
 
+// loadBIOS validates the chosen BIOS file and stores it for the variant.
+// Loading runs in a goroutine to keep file reads off Ebiten's main thread.
+func (c *CoreSection) loadBIOS(opt coreif.BIOSOption, v coreif.BIOSVariant, path string, focusKey string, focus types.FocusManager) {
+	go func() {
 		data, err := romloader.LoadBIOS(path)
 		if err != nil {
 			return

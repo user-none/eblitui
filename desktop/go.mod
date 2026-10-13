@@ -6,7 +6,6 @@ require (
 	github.com/ebitengine/oto/v3 v3.5.0
 	github.com/ebitenui/ebitenui v0.7.3
 	github.com/hajimehoshi/ebiten/v2 v2.10.5
-	github.com/sqweek/dialog v0.0.0-20240226140203-065105509627
 	github.com/user-none/eblitui/coreif v0.9.0
 	github.com/user-none/eblitui/rdb v0.2.0
 	github.com/user-none/eblitui/romloader v0.4.1
@@ -14,10 +13,10 @@ require (
 	github.com/user-none/go-rcheevos v0.1.0
 	golang.design/x/clipboard v0.7.1
 	golang.org/x/image v0.45.0
+	golang.org/x/sys v0.47.0
 )
 
 require (
-	github.com/TheTitanrain/w32 v0.0.0-20180517000239-4f5cfb03fabf // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/bodgit/plumbing v1.3.0 // indirect
 	github.com/bodgit/sevenzip v1.6.1 // indirect
@@ -40,6 +39,5 @@ require (
 	golang.org/x/exp/shiny v0.0.0-20250606033433-dcc06ee1d476 // indirect
 	golang.org/x/mobile v0.0.0-20250606033058-a2a15c67f36f // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 )
