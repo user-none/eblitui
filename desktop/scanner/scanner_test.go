@@ -9,6 +9,7 @@ import (
 	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/desktop/metadata"
 	"github.com/user-none/eblitui/desktop/storage"
+	"github.com/user-none/eblitui/rdb"
 )
 
 func TestDiscSerialCandidates(t *testing.T) {
@@ -231,7 +232,7 @@ func TestNewScanner(t *testing.T) {
 	}
 
 	md := metadata.NewMetadataManager(nil)
-	s := NewScanner(dirs, excluded, existing, false, []string{".sms"}, md, 0, false, nil)
+	s := NewScanner(dirs, excluded, existing, false, []string{".sms"}, md, 0, false, nil, Downloads{})
 
 	if len(s.directories) != 2 {
 		t.Errorf("expected 2 directories, got %d", len(s.directories))
@@ -349,7 +350,7 @@ func TestScanDirectoryWithExclusions(t *testing.T) {
 
 func TestScannerCancellation(t *testing.T) {
 	md := metadata.NewMetadataManager(nil)
-	s := NewScanner(nil, nil, nil, false, nil, md, 0, false, nil)
+	s := NewScanner(nil, nil, nil, false, nil, md, 0, false, nil, Downloads{})
 
 	if s.isCancelled() {
 		t.Error("new scanner should not be cancelled")
@@ -366,7 +367,7 @@ func TestScannerCancellation(t *testing.T) {
 
 func TestScannerGamesCount(t *testing.T) {
 	md := metadata.NewMetadataManager(nil)
-	s := NewScanner(nil, nil, nil, false, nil, md, 0, false, nil)
+	s := NewScanner(nil, nil, nil, false, nil, md, 0, false, nil, Downloads{})
 
 	if s.gamesCount() != 0 {
 		t.Errorf("expected 0 games, got %d", s.gamesCount())
@@ -380,8 +381,31 @@ func TestScannerGamesCount(t *testing.T) {
 
 func TestNewScannerDefaultConsoleID(t *testing.T) {
 	md := metadata.NewMetadataManager(nil)
-	s := NewScanner(nil, nil, nil, false, nil, md, 42, false, nil)
+	s := NewScanner(nil, nil, nil, false, nil, md, 42, false, nil, Downloads{})
 	if s.defaultConsoleID != 42 {
 		t.Errorf("expected defaultConsoleID 42, got %d", s.defaultConsoleID)
+	}
+}
+
+func TestRumbleDownloadsGated(t *testing.T) {
+	md := metadata.NewMetadataManager([]coreif.MetadataVariant{
+		{Name: "With", RumbleRepoDir: "md"},
+	})
+	game := &rdb.Game{Name: "Rumble Gate Test (USA)"}
+
+	for _, rumble := range []bool{false, true} {
+		s := NewScanner(nil, nil, nil, false, nil, md, 0, false, nil, Downloads{Rumble: rumble})
+		s.applyMetadata(&storage.GameEntry{}, game, 0, "RUMBLEGATETEST", "Rumble Gate Test (USA).sms")
+
+		want := 0
+		if rumble {
+			want = 1
+		}
+		if got := len(s.chtRumbleQueue); got != want {
+			t.Errorf("rumble=%v: CHT rumble jobs = %d, want %d", rumble, got, want)
+		}
+		if got := len(s.erumbleQueue); got != want {
+			t.Errorf("rumble=%v: erumble jobs = %d, want %d", rumble, got, want)
+		}
 	}
 }

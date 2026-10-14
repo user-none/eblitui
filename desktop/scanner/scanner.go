@@ -64,6 +64,12 @@ type ScanResult struct {
 	Cancelled bool
 }
 
+// Downloads selects which optional asset downloads a scan performs. The
+// app decides these from what the core supports.
+type Downloads struct {
+	Rumble bool // rumble files
+}
+
 // Scanner handles ROM scanning in the background
 type Scanner struct {
 	// Configuration
@@ -78,6 +84,9 @@ type Scanner struct {
 	// reads the disc info from an opened disc.
 	disc   bool
 	discID coreif.DiscIdentifier
+
+	// Optional asset downloads to perform
+	downloads Downloads
 
 	// Metadata
 	metadata         *metadata.MetadataManager
@@ -117,7 +126,7 @@ type resolvedJob struct {
 }
 
 // NewScanner creates a new scanner instance
-func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[string]*storage.GameEntry, rescanAll bool, extensions []string, md *metadata.MetadataManager, defaultConsoleID int, disc bool, discID coreif.DiscIdentifier) *Scanner {
+func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[string]*storage.GameEntry, rescanAll bool, extensions []string, md *metadata.MetadataManager, defaultConsoleID int, disc bool, discID coreif.DiscIdentifier, downloads Downloads) *Scanner {
 	excludedMap := make(map[string]bool)
 	for _, p := range excluded {
 		excludedMap[p] = true
@@ -131,6 +140,7 @@ func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[st
 		extensions:       extensions,
 		disc:             disc,
 		discID:           discID,
+		downloads:        downloads,
 		metadata:         md,
 		defaultConsoleID: defaultConsoleID,
 		progress:         make(chan ScanProgress, 10),
@@ -667,26 +677,29 @@ func (s *Scanner) applyMetadata(entry *storage.GameEntry, game *rdb.Game, varian
 			s.mu.Unlock()
 		}
 
-		// Queue rumble file download only if rumble file doesn't exist
-		rumblePath, _ := storage.GetGameCHTRumblePath(crcHex)
-		if _, err := os.Stat(rumblePath); os.IsNotExist(err) {
-			s.mu.Lock()
-			s.chtRumbleQueue = append(s.chtRumbleQueue, downloadJob{
-				gameCRC:    crcHex,
-				gameName:   game.Name,
-				variantIdx: variantIdx,
-			})
-			s.mu.Unlock()
+		// Queue rumble file download only if rumble downloads are enabled
+		// and the rumble file doesn't exist
+		if s.downloads.Rumble {
+			rumblePath, _ := storage.GetGameCHTRumblePath(crcHex)
+			if _, err := os.Stat(rumblePath); os.IsNotExist(err) {
+				s.mu.Lock()
+				s.chtRumbleQueue = append(s.chtRumbleQueue, downloadJob{
+					gameCRC:    crcHex,
+					gameName:   game.Name,
+					variantIdx: variantIdx,
+				})
+				s.mu.Unlock()
+			}
 		}
 	}
 
 	// Queue .erumble download when the shared <gameid>.erumble is absent.
 	// Repo files are named by game ID (CRC32 / disc serial), so no RDB
 	// match is needed; a -1 variantIdx tries every variant's repo dir.
-	// Per-disc variant files resolve alongside the shared file. A core
-	// that declares no RumbleRepoDir does not support rumble downloads,
-	// so nothing is queued for it.
-	if s.hasERumbleRepoDir(variantIdx) {
+	// Per-disc variant files resolve alongside the shared file. Nothing
+	// is queued when rumble downloads are disabled, or for a core that
+	// declares no RumbleRepoDir.
+	if s.downloads.Rumble && s.hasERumbleRepoDir(variantIdx) {
 		erumblePath, _ := storage.GetGameRumblePath(crcHex)
 		if _, err := os.Stat(erumblePath); os.IsNotExist(err) {
 			s.mu.Lock()

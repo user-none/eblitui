@@ -29,6 +29,7 @@ type ScanManager struct {
 	defaultConsoleID int
 	disc             bool                  // disc-based system (group-key identity)
 	discID           coreif.DiscIdentifier // reads disc info (may be nil)
+	downloads        scanner.Downloads     // optional asset downloads to perform
 
 	// Callbacks to App
 	onProgress func() // Called when progress updates (triggers UI rebuild)
@@ -44,6 +45,7 @@ func NewScanManager(
 	defaultConsoleID int,
 	disc bool,
 	discID coreif.DiscIdentifier,
+	downloads scanner.Downloads,
 	onProgress func(),
 	onComplete func(msg string),
 ) *ScanManager {
@@ -55,6 +57,7 @@ func NewScanManager(
 		defaultConsoleID: defaultConsoleID,
 		disc:             disc,
 		discID:           discID,
+		downloads:        downloads,
 		onProgress:       onProgress,
 		onComplete:       onComplete,
 	}
@@ -78,6 +81,7 @@ func (sm *ScanManager) Start(rescanAll bool) {
 		sm.defaultConsoleID,
 		sm.disc,
 		sm.discID,
+		sm.downloads,
 	)
 
 	// Configure scan screen

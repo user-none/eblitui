@@ -107,7 +107,7 @@ func TestHasERumbleRepoDir(t *testing.T) {
 		{Name: "With", RumbleRepoDir: "md"},
 		{Name: "Without"},
 	})
-	s := NewScanner(nil, nil, nil, false, nil, md, 0, false, nil)
+	s := NewScanner(nil, nil, nil, false, nil, md, 0, false, nil, Downloads{Rumble: true})
 
 	if !s.hasERumbleRepoDir(0) {
 		t.Errorf("variant with a repo dir should support rumble downloads")
@@ -122,7 +122,7 @@ func TestHasERumbleRepoDir(t *testing.T) {
 	none := metadata.NewMetadataManager([]coreif.MetadataVariant{
 		{Name: "Without"},
 	})
-	sn := NewScanner(nil, nil, nil, false, nil, none, 0, false, nil)
+	sn := NewScanner(nil, nil, nil, false, nil, none, 0, false, nil, Downloads{Rumble: true})
 
 	if sn.hasERumbleRepoDir(0) || sn.hasERumbleRepoDir(-1) {
 		t.Errorf("core declaring no repo dirs must not support rumble downloads")

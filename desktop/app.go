@@ -17,6 +17,7 @@ import (
 	"github.com/user-none/eblitui/desktop/achievements"
 	"github.com/user-none/eblitui/desktop/display"
 	"github.com/user-none/eblitui/desktop/metadata"
+	"github.com/user-none/eblitui/desktop/scanner"
 	"github.com/user-none/eblitui/desktop/screens"
 	"github.com/user-none/eblitui/desktop/shader"
 	"github.com/user-none/eblitui/desktop/storage"
@@ -40,6 +41,7 @@ type App struct {
 	// Core factory and system info (set by Run)
 	factory    coreif.CoreFactory
 	systemInfo coreif.SystemInfo
+	downloads  scanner.Downloads // Optional scan downloads the core supports
 
 	// State management
 	state         AppState
@@ -134,6 +136,16 @@ func discIdentifier(f coreif.CoreFactory) coreif.DiscIdentifier {
 	return d
 }
 
+// supportsMemory reports whether the core's emulator implements
+// coreif.Memory. Memory is an emulator interface, so a temporary emulator
+// is created to check it and closed without being started.
+func supportsMemory(f coreif.CoreFactory) bool {
+	emu := f.CreateEmulator()
+	defer emu.Close()
+	_, ok := emu.(coreif.Memory)
+	return ok
+}
+
 // Run is the public entry point for the standalone UI. It initializes storage,
 // configures the window, creates the app, and starts the Ebiten game loop.
 func Run(factory coreif.CoreFactory) error {
@@ -203,6 +215,7 @@ func newApp(factory coreif.CoreFactory, info coreif.SystemInfo) (*App, error) {
 		state:           StateLibrary,
 		factory:         factory,
 		systemInfo:      info,
+		downloads:       scanner.Downloads{Rumble: supportsMemory(factory)},
 		padMappingTried: make(map[string]bool),
 	}
 
@@ -435,6 +448,7 @@ func (a *App) newScanManager() *ScanManager {
 		a.systemInfo.ConsoleID,
 		a.systemInfo.Disc,
 		discIdentifier(a.factory),
+		a.downloads,
 		func() { a.rebuildCurrentScreen() }, // onProgress
 		func(msg string) { // onComplete
 			a.libraryScreen.ClearArtworkCache()
