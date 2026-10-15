@@ -33,14 +33,28 @@ type OverviewSection struct {
 	contentWidth       func() int
 	game               *storage.GameEntry
 
-	// Achievement loading state
+	// Achievement loading state. loadGen counts SetGame calls; a lookup
+	// started for an earlier game carries an older generation and its
+	// result is dropped.
 	achMu       sync.Mutex
+	loadGen     int
 	achLoading  bool
 	achLoadErr  error
 	achFound    bool
 	achProgress *rcheevos.UserProgressEntry
 
 	discKeys []string // Focus keys of the disc buttons
+}
+
+// progressRequest is what one achievement progress lookup needs, copied
+// from the game when it starts so the lookup never reads the game while
+// the UI thread may change it.
+type progressRequest struct {
+	gen       int    // loadGen when the lookup started
+	crc32     string // game key, for the RDB MD5 lookup
+	consoleID uint32 // console used to hash the game when not in the RDB
+	discFile  string // selected disc to hash, for disc games
+	romFile   string // ROM to hash, for cartridge games
 }
 
 // NewOverviewSection creates the Overview page. contentWidth returns the
@@ -60,21 +74,56 @@ func NewOverviewSection(callback types.ScreenCallback, library *storage.Library,
 func (o *OverviewSection) SetGame(game *storage.GameEntry) {
 	o.game = game
 
-	// Reset achievement state
+	// Reset achievement state and retire any lookup still running
 	o.achMu.Lock()
+	o.loadGen++
+	req := progressRequest{gen: o.loadGen}
 	o.achLoading = false
 	o.achLoadErr = nil
 	o.achFound = false
 	o.achProgress = nil
 	o.achMu.Unlock()
 
-	// Start async achievement lookup if logged in
-	if o.achievementManager != nil && o.achievementManager.IsLoggedIn() {
-		o.achMu.Lock()
-		o.achLoading = true
-		o.achMu.Unlock()
-		go o.loadAchievementProgress()
+	if game == nil || o.achievementManager == nil || !o.achievementManager.IsLoggedIn() {
+		return
 	}
+
+	// Copy what the lookup needs before handing it to the goroutine
+	req.crc32 = game.CRC32
+	req.consoleID = uint32(o.defaultConsoleID)
+	if game.ConsoleID != 0 {
+		req.consoleID = uint32(game.ConsoleID)
+	}
+	if len(game.Discs) > 0 {
+		idx := game.SelectedDisc
+		if idx < 0 || idx >= len(game.Discs) {
+			idx = 0
+		}
+		req.discFile = game.Discs[idx].File
+	} else {
+		req.romFile = game.File
+	}
+
+	o.achMu.Lock()
+	o.achLoading = true
+	o.achMu.Unlock()
+	go o.loadAchievementProgress(req)
+}
+
+// finishLoad stores a lookup's outcome and requests a rebuild, unless a
+// later SetGame has retired the lookup's generation.
+func (o *OverviewSection) finishLoad(gen int, found bool, progress *rcheevos.UserProgressEntry, err error) {
+	o.achMu.Lock()
+	if gen != o.loadGen {
+		o.achMu.Unlock()
+		return
+	}
+	o.achLoading = false
+	o.achLoadErr = err
+	o.achFound = found
+	o.achProgress = progress
+	o.achMu.Unlock()
+	o.callback.RequestRebuild()
 }
 
 // NavZones returns the page's navigation zones from the last Build
@@ -85,26 +134,16 @@ func (o *OverviewSection) NavZones() []string {
 	return []string{discsZone}
 }
 
-// loadAchievementProgress loads achievement progress for the current game
-func (o *OverviewSection) loadAchievementProgress() {
-	if o.game == nil || o.achievementManager == nil {
-		o.achMu.Lock()
-		o.achLoading = false
-		o.achMu.Unlock()
-		return
-	}
-
+// loadAchievementProgress loads the achievement progress described by
+// req on a background goroutine and stores it through finishLoad
+func (o *OverviewSection) loadAchievementProgress(req progressRequest) {
 	// Ensure libraries are loaded first
 	done := make(chan bool, 1)
 	o.achievementManager.EnsureLibrariesLoaded(func(success bool) {
 		done <- success
 	})
 	if !<-done {
-		o.achMu.Lock()
-		o.achLoading = false
-		o.achLoadErr = fmt.Errorf("failed to load achievement data")
-		o.achMu.Unlock()
-		o.callback.RequestRebuild()
+		o.finishLoad(req.gen, false, nil, fmt.Errorf("failed to load achievement data"))
 		return
 	}
 
@@ -119,55 +158,34 @@ func (o *OverviewSection) loadAchievementProgress() {
 	}
 
 	// Get MD5 from RDB (fast path - no ROM loading needed)
-	crc32, _ := strconv.ParseUint(o.game.CRC32, 16, 32)
+	crc32, _ := strconv.ParseUint(req.crc32, 16, 32)
 	md5Hash := o.callback.GetMD5ByCRC32(uint32(crc32))
 
 	// Fallback: compute the hash directly when not in the RDB. Disc games hash
 	// the selected disc (rcheevos reads sectors through it); cartridge games
 	// hash the ROM file.
 	if md5Hash == "" {
-		gameConsoleID := uint32(o.defaultConsoleID)
-		if o.game.ConsoleID != 0 {
-			gameConsoleID = uint32(o.game.ConsoleID)
-		}
-		if len(o.game.Discs) > 0 {
-			idx := o.game.SelectedDisc
-			if idx < 0 || idx >= len(o.game.Discs) {
-				idx = 0
-			}
-			disc, err := romloader.OpenDisc(o.game.Discs[idx].File)
+		if req.discFile != "" {
+			disc, err := romloader.OpenDisc(req.discFile)
 			if err != nil {
-				o.achMu.Lock()
-				o.achLoading = false
-				o.achLoadErr = err
-				o.achMu.Unlock()
-				o.callback.RequestRebuild()
+				o.finishLoad(req.gen, false, nil, err)
 				return
 			}
-			md5Hash = o.achievementManager.ComputeGameHashFromDisc(disc, gameConsoleID)
+			md5Hash = o.achievementManager.ComputeGameHashFromDisc(disc, req.consoleID)
 			disc.Close()
 		} else {
-			romData, _, err := romloader.Load(o.game.File, o.callback.GetExtensions())
+			romData, _, err := romloader.Load(req.romFile, o.callback.GetExtensions())
 			if err != nil {
-				o.achMu.Lock()
-				o.achLoading = false
-				o.achLoadErr = err
-				o.achMu.Unlock()
-				o.callback.RequestRebuild()
+				o.finishLoad(req.gen, false, nil, err)
 				return
 			}
-			md5Hash = o.achievementManager.ComputeGameHash(romData, gameConsoleID)
+			md5Hash = o.achievementManager.ComputeGameHash(romData, req.consoleID)
 		}
 	}
 
 	// Look up progress using MD5
 	found, progress := o.achievementManager.LookupGameProgress(md5Hash)
-	o.achMu.Lock()
-	o.achFound = found
-	o.achProgress = progress
-	o.achLoading = false
-	o.achMu.Unlock()
-	o.callback.RequestRebuild()
+	o.finishLoad(req.gen, found, progress, nil)
 }
 
 // Build creates the Overview page: the game metadata and, for multi-disc
