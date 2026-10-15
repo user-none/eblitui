@@ -40,7 +40,7 @@ func NewAboutSection(name, version string, iconPNG []byte) *AboutSection {
 // Build creates the About section UI. The focus manager is unused because the
 // section has no interactive widgets.
 func (a *AboutSection) Build(focus types.FocusManager) *widget.Container {
-	// Outer container fills the settings content-area grid cell; the centered
+	// Outer container fills the settings content grid cell; the centered
 	// content is anchored to the middle.
 	outer := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewAnchorLayout()),

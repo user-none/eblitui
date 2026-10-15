@@ -5,6 +5,7 @@ package desktop
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -17,7 +18,6 @@ type SaveStateManager struct {
 	currentSlot  int
 	gameCRC      string
 	notification *Notification
-	library      *storage.Library
 }
 
 // NewSaveStateManager creates a new save state manager
@@ -28,26 +28,21 @@ func NewSaveStateManager(notification *Notification) *SaveStateManager {
 	}
 }
 
-// SetLibrary sets the library reference for slot persistence
-func (m *SaveStateManager) SetLibrary(library *storage.Library) {
-	m.library = library
-}
-
 // SetGame sets the current game for save states
-// Restores the last-used slot from the game's settings
+// Restores the last-used slot from the game's settings file
 func (m *SaveStateManager) SetGame(gameCRC string) {
 	m.gameCRC = gameCRC
-
-	// Restore last-used slot from library
-	if m.library != nil {
-		if game := m.library.GetGame(gameCRC); game != nil {
-			m.currentSlot = game.Settings.SaveSlot
-		} else {
-			m.currentSlot = 0
-		}
-	} else {
-		m.currentSlot = 0
+	m.currentSlot = 0
+	if gameCRC == "" {
+		return
 	}
+
+	settings, err := storage.LoadGameSettings(gameCRC)
+	if err != nil {
+		log.Printf("Failed to load game settings for %s: %v", gameCRC, err)
+		return
+	}
+	m.currentSlot = settings.SaveStates.Slot
 }
 
 // GetCurrentSlot returns the current save slot
@@ -76,14 +71,21 @@ func (m *SaveStateManager) PreviousSlot() {
 	}
 }
 
-// persistSlot saves the current slot to the library for the current game
+// persistSlot saves the current slot to the current game's settings file.
+// The file is read first so its other settings are kept; a file that
+// cannot be read is left untouched.
 func (m *SaveStateManager) persistSlot() {
-	if m.library == nil || m.gameCRC == "" {
+	if m.gameCRC == "" {
 		return
 	}
-	if game := m.library.GetGame(m.gameCRC); game != nil {
-		game.Settings.SaveSlot = m.currentSlot
-		storage.SaveLibrary(m.library)
+	settings, err := storage.LoadGameSettings(m.gameCRC)
+	if err != nil {
+		log.Printf("Failed to load game settings for %s: %v", m.gameCRC, err)
+		return
+	}
+	settings.SaveStates.Slot = m.currentSlot
+	if err := storage.SaveGameSettings(m.gameCRC, settings); err != nil {
+		log.Printf("Failed to save game settings for %s: %v", m.gameCRC, err)
 	}
 }
 

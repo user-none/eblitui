@@ -19,7 +19,7 @@ func TestSettingsSelectSection(t *testing.T) {
 
 	s.SelectSection(SettingsSectionLibrary)
 
-	if got := s.sections[s.selectedSection].focusKey; got != SettingsSectionLibrary {
+	if got := s.sections[s.selected].focusKey; got != SettingsSectionLibrary {
 		t.Errorf("selected section = %q, want %q", got, SettingsSectionLibrary)
 	}
 	if s.pendingFocus != SettingsSectionLibrary {
@@ -29,13 +29,13 @@ func TestSettingsSelectSection(t *testing.T) {
 
 func TestSettingsSelectSectionUnknown(t *testing.T) {
 	s := newTestSettingsScreen()
-	s.selectedSection = 2
+	s.selected = 2
 	s.SetPendingFocus("section-input")
 
 	s.SelectSection("section-missing")
 
-	if s.selectedSection != 2 {
-		t.Errorf("selectedSection = %d, want 2", s.selectedSection)
+	if s.selected != 2 {
+		t.Errorf("selected = %d, want 2", s.selected)
 	}
 	if s.pendingFocus != "section-input" {
 		t.Errorf("pendingFocus = %q, want 'section-input'", s.pendingFocus)

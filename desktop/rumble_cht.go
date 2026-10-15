@@ -3,6 +3,7 @@ package desktop
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -43,17 +44,22 @@ type CHTRumbleEvent struct {
 	WeakDurationMs   int
 }
 
-// ParseCHTRumbleFile reads a CHT rumble file and returns the parsed entries.
+// ParseCHTRumbleFile reads a CHT rumble file. See ParseCHTRumble.
 func ParseCHTRumbleFile(path string) ([]CHTRumbleEntry, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+	return ParseCHTRumble(f)
+}
 
-	// Parse all key-value pairs from the file
+// ParseCHTRumble reads CHT rumble entries from r and returns the parsed
+// entries.
+func ParseCHTRumble(r io.Reader) ([]CHTRumbleEntry, error) {
+	// Parse all key-value pairs
 	kv := make(map[string]string)
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -164,8 +170,8 @@ type CHTRumbleEngine struct {
 
 // NewCHTRumbleEngine creates a new rumble engine from parsed entries.
 // systemBigEndian should match SystemInfo.BigEndianMemory for the core.
-// Byte swapping is determined per-entry by comparing the CHT entry's
-// big_endian field against the system endianness.
+// See readMemoryValue for how it and each entry's big_endian field are
+// used.
 func NewCHTRumbleEngine(entries []CHTRumbleEntry, systemBigEndian bool) *CHTRumbleEngine {
 	n := len(entries)
 	now := time.Now()
@@ -189,8 +195,8 @@ func (re *CHTRumbleEngine) Evaluate(mi coreif.Memory) []CHTRumbleEvent {
 	if re.initialized < 30 {
 		// Warmup: read values to populate prevValues without triggering
 		for i := range re.entries {
-			swap := re.entries[i].BigEndian != re.systemBigEndian
-			re.prevValues[i] = readMemoryValue(mi, re.entries[i].Address, re.entries[i].MemorySearchSize, swap)
+			e := &re.entries[i]
+			re.prevValues[i] = readMemoryValue(mi, e.Address, e.MemorySearchSize, e.BigEndian, re.systemBigEndian)
 		}
 		re.initialized++
 		return nil
@@ -201,8 +207,7 @@ func (re *CHTRumbleEngine) Evaluate(mi coreif.Memory) []CHTRumbleEvent {
 
 	for i := range re.entries {
 		e := &re.entries[i]
-		swap := e.BigEndian != re.systemBigEndian
-		current := readMemoryValue(mi, e.Address, e.MemorySearchSize, swap)
+		current := readMemoryValue(mi, e.Address, e.MemorySearchSize, e.BigEndian, re.systemBigEndian)
 		prev := re.prevValues[i]
 		re.prevValues[i] = current
 
@@ -278,51 +283,48 @@ func evaluateCondition(rumbleType int, current, prev, rumbleValue uint32) bool {
 	}
 }
 
-// readMemoryValue reads a value from memory at the given address with the
-// appropriate width based on MemorySearchSize.
-// byteSwap is true when the CHT entry's endianness differs from the system's,
-// requiring address and byte order adjustments.
-func readMemoryValue(mi coreif.Memory, addr uint32, searchSize int, byteSwap bool) uint32 {
+// readMemoryValue reads an entry's value from memory with the width given
+// by MemorySearchSize. CHT addresses refer to the system's memory as
+// RetroArch exposes it, with 16-bit words stored little-endian, so on a
+// big-endian core each byte is read from its address with bit 0 flipped.
+// valueBigEndian is the entry's big_endian field: the byte order of 16
+// and 32-bit values within that memory.
+func readMemoryValue(mi coreif.Memory, addr uint32, searchSize int, valueBigEndian, systemBigEndian bool) uint32 {
+	n := 1
+	switch searchSize {
+	case 4:
+		n = 2
+	case 5:
+		n = 4
+	}
+
 	var buf [4]byte
+	for i := 0; i < n; i++ {
+		readAddr := addr + uint32(i)
+		if systemBigEndian {
+			readAddr ^= 1
+		}
+		mi.ReadMemoryFlat(readAddr, buf[i:i+1])
+	}
+
+	var val uint32
+	for i := 0; i < n; i++ {
+		if valueBigEndian {
+			val = val<<8 | uint32(buf[i])
+		} else {
+			val |= uint32(buf[i]) << (8 * i)
+		}
+	}
 
 	switch searchSize {
-	case 0, 1, 2, 3: // 1bit, 2bit, 4bit, 8bit - read 1 byte
-		readAddr := addr
-		if byteSwap {
-			readAddr ^= 1
-		}
-		mi.ReadMemoryFlat(readAddr, buf[:1])
-		val := uint32(buf[0])
-		switch searchSize {
-		case 0: // 1-bit
-			return val & 1
-		case 1: // 2-bit
-			return val & 3
-		case 2: // 4-bit
-			return val & 0x0F
-		default: // 8-bit
-			return val
-		}
-	case 4: // 16-bit - read 2 bytes
-		mi.ReadMemoryFlat(addr, buf[:2])
-		if byteSwap {
-			return uint32(buf[0])<<8 | uint32(buf[1])
-		}
-		return uint32(buf[0]) | uint32(buf[1])<<8
-	case 5: // 32-bit - read 4 bytes
-		mi.ReadMemoryFlat(addr, buf[:4])
-		if byteSwap {
-			return uint32(buf[0])<<24 | uint32(buf[1])<<16 | uint32(buf[2])<<8 | uint32(buf[3])
-		}
-		return uint32(buf[0]) | uint32(buf[1])<<8 | uint32(buf[2])<<16 | uint32(buf[3])<<24
-	default:
-		readAddr := addr
-		if byteSwap {
-			readAddr ^= 1
-		}
-		mi.ReadMemoryFlat(readAddr, buf[:1])
-		return uint32(buf[0])
+	case 0: // 1-bit
+		return val & 1
+	case 1: // 2-bit
+		return val & 3
+	case 2: // 4-bit
+		return val & 0x0F
 	}
+	return val
 }
 
 // FireCHTRumbleEvents sends rumble events to gamepads via Ebiten.

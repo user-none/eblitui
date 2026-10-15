@@ -248,26 +248,25 @@ type ScanDirectory struct {
 
 // GameEntry represents a single game in the library
 type GameEntry struct {
-	CRC32           string       `json:"crc32"`
-	File            string       `json:"file,omitempty"`   // Cartridge ROM/archive path; disc games leave this empty and use Discs
-	Name            string       `json:"name"`             // Full No-Intro name from RDB
-	DisplayName     string       `json:"displayName"`      // Cleaned name for display (region info removed)
-	Region          string       `json:"region"`           // "us", "eu", "jp" (from RDB)
-	Serial          string       `json:"serial,omitempty"` // Disc/product serial (game ID), when known
-	Developer       string       `json:"developer,omitempty"`
-	Publisher       string       `json:"publisher,omitempty"`
-	Genre           string       `json:"genre,omitempty"`
-	Franchise       string       `json:"franchise,omitempty"`
-	ESRBRating      string       `json:"esrbRating,omitempty"`
-	ReleaseDate     string       `json:"releaseDate,omitempty"` // "Month / Year" format
-	System          string       `json:"system,omitempty"`      // Variant name (e.g. "Neo Geo Pocket") - set when >1 RDB variant
-	ConsoleID       int          `json:"consoleID,omitempty"`   // RetroAchievements console ID; 0 = use system default
-	Favorite        bool         `json:"favorite"`              // User marked as favorite
-	Missing         bool         `json:"missing"`               // true if ROM file not found
-	PlayTimeSeconds int64        `json:"playTimeSeconds"`       // Total play time
-	LastPlayed      int64        `json:"lastPlayed"`            // Unix timestamp
-	Added           int64        `json:"added"`                 // Unix timestamp when added to library
-	Settings        GameSettings `json:"settings"`              // Per-game settings
+	CRC32           string `json:"crc32"`
+	File            string `json:"file,omitempty"`   // Cartridge ROM/archive path; disc games leave this empty and use Discs
+	Name            string `json:"name"`             // Full No-Intro name from RDB
+	DisplayName     string `json:"displayName"`      // Cleaned name for display (region info removed)
+	Region          string `json:"region"`           // "us", "eu", "jp" (from RDB)
+	Serial          string `json:"serial,omitempty"` // Disc/product serial (game ID), when known
+	Developer       string `json:"developer,omitempty"`
+	Publisher       string `json:"publisher,omitempty"`
+	Genre           string `json:"genre,omitempty"`
+	Franchise       string `json:"franchise,omitempty"`
+	ESRBRating      string `json:"esrbRating,omitempty"`
+	ReleaseDate     string `json:"releaseDate,omitempty"` // "Month / Year" format
+	System          string `json:"system,omitempty"`      // Variant name (e.g. "Neo Geo Pocket") - set when >1 RDB variant
+	ConsoleID       int    `json:"consoleID,omitempty"`   // RetroAchievements console ID; 0 = use system default
+	Favorite        bool   `json:"favorite"`              // User marked as favorite
+	Missing         bool   `json:"missing"`               // true if ROM file not found
+	PlayTimeSeconds int64  `json:"playTimeSeconds"`       // Total play time
+	LastPlayed      int64  `json:"lastPlayed"`            // Unix timestamp
+	Added           int64  `json:"added"`                 // Unix timestamp when added to library
 
 	// Discs lists the discs of a disc-based game (one entry even for a
 	// single-disc game), ordered by Index. Empty for cartridge games,
@@ -284,11 +283,6 @@ type GameDisc struct {
 	Index int    `json:"index"` // 0-based disc index (DiscNumber-1)
 	File  string `json:"file"`  // Path to this disc's image on disk
 	Name  string `json:"name"`  // Per-disc display name
-}
-
-// GameSettings contains per-game configuration overrides
-type GameSettings struct {
-	SaveSlot int `json:"saveSlot,omitempty"` // Last-used save state slot (0-9)
 }
 
 // FontSizePresets lists the available font size options
@@ -359,7 +353,7 @@ func DefaultConfig() *Config {
 // DefaultLibrary returns a new Library with default values
 func DefaultLibrary() *Library {
 	return &Library{
-		Version:         1,
+		Version:         libraryVersion,
 		ScanDirectories: []ScanDirectory{},
 		ExcludedPaths:   []string{},
 		Games:           make(map[string]*GameEntry),

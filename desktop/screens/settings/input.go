@@ -296,12 +296,7 @@ func (s *InputSection) validateProfileName(name, sdlID, controller, excludeID st
 func (s *InputSection) Build(focus types.FocusManager) *widget.Container {
 	s.focus = focus
 
-	outer := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(1),
-			widget.GridLayoutOpts.Stretch([]bool{true}, []bool{true}),
-		)),
-	)
+	outer := widgets.FillContainer()
 
 	section := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
@@ -322,39 +317,11 @@ func (s *InputSection) Build(focus types.FocusManager) *widget.Container {
 	}
 
 	// Wrap in scrollable container
-	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
-		Content:     section,
-		BgColor:     style.Background,
-		BorderColor: style.Border,
-		Spacing:     0,
-		Padding:     style.SmallSpacing,
-	})
+	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.PageScrollOpts(section))
 	focus.SetScrollContainer(scrollContainer)
 	focus.RestoreScrollPosition()
 	outer.AddChild(scrollWrapper)
 	return outer
-}
-
-// sectionHeader creates an accent header text row.
-func sectionHeader(text string) *widget.Text {
-	return widget.NewText(
-		widget.TextOpts.Text(text, style.FontFace(), style.Accent),
-	)
-}
-
-// noticeText creates a secondary-colored informational text row.
-func noticeText(text string) *widget.Text {
-	return widget.NewText(
-		widget.TextOpts.Text(text, style.FontFace(), style.TextSecondary),
-	)
-}
-
-// chainZones links zones vertically in order with up/down transitions.
-func chainZones(focus types.FocusManager, zones []string) {
-	for i := 0; i < len(zones)-1; i++ {
-		focus.SetNavTransition(zones[i], types.DirDown, zones[i+1], types.NavIndexFirst)
-		focus.SetNavTransition(zones[i+1], types.DirUp, zones[i], types.NavIndexLast)
-	}
 }
 
 // buildHeaderRow creates the column headers for a binding table
@@ -398,40 +365,31 @@ func (s *InputSection) bindingFocusKeys(prefix string) []string {
 	return keys
 }
 
-// actionButton describes a right-aligned action row button.
+// actionButton describes an action row button. primary marks the
+// confirming action.
 type actionButton struct {
 	label    string
 	focusKey string
 	handler  func()
+	primary  bool
 }
 
-// buildActionRow creates a right-justified row of action buttons.
+// buildActionRow creates the view's action row with widgets.ActionRow
 func (s *InputSection) buildActionRow(focus types.FocusManager, actions ...actionButton) *widget.Container {
-	row := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(len(actions)+1),
-			// First column stretches to push buttons right
-			widget.GridLayoutOpts.Stretch(append([]bool{true}, make([]bool, len(actions))...), []bool{true}),
-			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
-
-	// Spacer
-	row.AddChild(widget.NewContainer())
-
+	buttons := make([]*widget.Button, 0, len(actions))
 	for _, a := range actions {
 		handler := a.handler
-		btn := widgets.TextButton(a.label, style.ButtonPaddingSmall, func(args *widget.ButtonClickedEventArgs) {
+		onClick := func(args *widget.ButtonClickedEventArgs) {
 			handler()
-		})
+		}
+		btn := widgets.TextButton(a.label, style.ButtonPaddingSmall, onClick)
+		if a.primary {
+			btn = widgets.PrimaryTextButton(a.label, style.ButtonPaddingSmall, onClick)
+		}
 		focus.RegisterFocusButton(a.focusKey, btn)
-		row.AddChild(btn)
+		buttons = append(buttons, btn)
 	}
-
-	return row
+	return widgets.ActionRow(buttons...)
 }
 
 // buildNameRow creates the profile name entry row.

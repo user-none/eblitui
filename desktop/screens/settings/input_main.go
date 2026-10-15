@@ -18,18 +18,13 @@ import (
 // the players block, and the controller profile list.
 func (s *InputSection) buildMainView(focus types.FocusManager, section *widget.Container) {
 	// Core options section (options with Category == "Input")
-	hasInputOptions := addCoreOptionRows(section, focus, s.callback, s.config, s.systemInfo.CoreOptions, coreif.CoreOptionCategoryInput, "input")
-
-	if hasInputOptions {
-		// Spacer between core options and the rest
-		section.AddChild(noticeText(""))
-	}
+	addCoreOptionRows(section, focus, s.callback, s.config, s.systemInfo.CoreOptions, coreif.CoreOptionCategoryInput, "input")
 
 	// Analog stick toggle
 	section.AddChild(s.buildAnalogStickRow(focus))
 
 	// Players
-	section.AddChild(sectionHeader("Players"))
+	section.AddChild(widgets.SectionHeader("Players"))
 	section.AddChild(s.buildKeyboardPlayerRow())
 	for p := 0; p < s.playerCount(); p++ {
 		section.AddChild(s.buildPlayerRow(focus, p))
@@ -39,9 +34,9 @@ func (s *InputSection) buildMainView(focus types.FocusManager, section *widget.C
 	section.AddChild(s.buildKeyboardEditRow(focus))
 
 	// Controller profiles
-	section.AddChild(sectionHeader("Controller Profiles"))
+	section.AddChild(widgets.SectionHeader("Controller Profiles"))
 	if len(s.config.Input.Profiles) == 0 {
-		section.AddChild(noticeText("No profiles. Connect a controller and create one."))
+		section.AddChild(widgets.NoticeText("No profiles. Connect a controller and create one."))
 	}
 	for i := range s.config.Input.Profiles {
 		section.AddChild(s.buildProfileRow(focus, &s.config.Input.Profiles[i]))
@@ -254,7 +249,7 @@ func (s *InputSection) setupMainNavigation(focus types.FocusManager) {
 	focus.RegisterNavZone("input-new-profile", types.NavZoneVertical, []string{"input-new-profile"}, 0)
 	zones = append(zones, "input-new-profile")
 
-	chainZones(focus, zones)
+	types.ChainZones(focus, zones)
 }
 
 // buildAnalogStickRow creates the "Disable Analog Stick" toggle row
@@ -268,23 +263,12 @@ func (s *InputSection) buildAnalogStickRow(focus types.FocusManager) *widget.Con
 	row.AddChild(label)
 
 	isDisabled := s.config.Input.DisableAnalogStick
-	toggleBtn := widget.NewButton(
-		widget.ButtonOpts.Image(style.ActiveButtonImage(isDisabled)),
-		widget.ButtonOpts.Text(boolToOnOff(isDisabled), style.FontFace(), style.ButtonTextColor()),
-		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
-		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-			widget.WidgetOpts.MinSize(style.Px(50), 0),
-		),
-		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			s.config.Input.DisableAnalogStick = !s.config.Input.DisableAnalogStick
-			storage.SaveConfig(s.config)
-			focus.SetPendingFocus("input-analog-stick")
-			s.callback.RequestRebuild()
-		}),
-	)
+	toggleBtn := widgets.OnOffButton(isDisabled, func(args *widget.ButtonClickedEventArgs) {
+		s.config.Input.DisableAnalogStick = !s.config.Input.DisableAnalogStick
+		storage.SaveConfig(s.config)
+		focus.SetPendingFocus("input-analog-stick")
+		s.callback.RequestRebuild()
+	})
 	focus.RegisterFocusButton("input-analog-stick", toggleBtn)
 	row.AddChild(toggleBtn)
 

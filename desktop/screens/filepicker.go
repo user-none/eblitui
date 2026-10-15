@@ -60,7 +60,7 @@ type FilePickerScreen struct {
 	pathInput    *widget.TextInput
 	textInputs   *widgets.TextInputGroup
 	listContent  *widget.Container
-	sidebar      *widget.Container
+	sidebar      *widgets.Sidebar
 	acceptBtn    *widget.Button
 	cancelBtn    *widget.Button
 	placeButtons []*widget.Button
@@ -279,18 +279,8 @@ func (s *FilePickerScreen) Build() *widget.Container {
 		)),
 	)
 
-	s.sidebar = widget.NewContainer(
-		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
-		widget.ContainerOpts.Layout(widget.NewRowLayout(
-			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
-			widget.RowLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
-			widget.RowLayoutOpts.Spacing(style.TinySpacing),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.MinSize(style.SettingsSidebarMinWidth, 0),
-		),
-	)
-	main.AddChild(s.sidebar)
+	s.sidebar = widgets.NewSidebar(style.SidebarMinWidth)
+	main.AddChild(s.sidebar.Container)
 
 	right := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewGridLayout(
@@ -344,26 +334,13 @@ func (s *FilePickerScreen) Build() *widget.Container {
 
 // buildButtons creates the right-aligned Accept | Cancel row.
 func (s *FilePickerScreen) buildButtons() *widget.Container {
-	row := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(3),
-			// First column stretches to push buttons right
-			widget.GridLayoutOpts.Stretch([]bool{true, false, false}, []bool{true}),
-			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
-		)),
-	)
-	row.AddChild(widget.NewContainer())
-
 	s.acceptBtn = widgets.PrimaryTextButton("Accept", style.ButtonPaddingSmall, func(args *widget.ButtonClickedEventArgs) {
 		s.accept()
 	})
-	row.AddChild(s.acceptBtn)
-
 	s.cancelBtn = widgets.TextButton("Cancel", style.ButtonPaddingSmall, func(args *widget.ButtonClickedEventArgs) {
 		s.Cancel()
 	})
-	row.AddChild(s.cancelBtn)
-	return row
+	return widgets.ActionRow(s.acceptBtn, s.cancelBtn)
 }
 
 // refreshPlaces rebuilds the sidebar buttons in place. Volumes are separated
@@ -373,40 +350,22 @@ func (s *FilePickerScreen) refreshPlaces() {
 		return
 	}
 	focusKey := s.focusedPlaceKey()
-	s.sidebar.RemoveChildren()
+	s.sidebar.Clear()
 	s.placeButtons = s.placeButtons[:0]
 	s.placeKeys = s.placeKeys[:0]
 
 	prevKind := filebrowser.PlaceFolder
 	for i, p := range s.places {
 		if i > 0 && p.Kind != prevKind {
-			s.sidebar.AddChild(widget.NewContainer(
-				widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Border)),
-				widget.ContainerOpts.WidgetOpts(
-					widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-					widget.WidgetOpts.MinSize(0, style.Px(1)),
-				),
-			))
+			s.sidebar.AddDivider()
 		}
 		prevKind = p.Kind
 		path := p.Path
-		btn := widget.NewButton(
-			widget.ButtonOpts.Image(style.ActiveButtonImage(false)),
-			widget.ButtonOpts.Text(p.Label, style.FontFace(), &widget.ButtonTextColor{
-				Idle:     style.Text,
-				Disabled: style.TextSecondary,
-			}),
-			widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
-			widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-				s.enterDir(path)
-			}),
-			widget.ButtonOpts.WidgetOpts(
-				widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-			),
-		)
+		btn := s.sidebar.AddButton(p.Label, false, func() {
+			s.enterDir(path)
+		})
 		s.placeButtons = append(s.placeButtons, btn)
 		s.placeKeys = append(s.placeKeys, placeKey(path))
-		s.sidebar.AddChild(btn)
 	}
 
 	s.registerNavigation()
@@ -608,7 +567,7 @@ func (s *FilePickerScreen) NavigatePath(focused widget.Focuser, direction int) (
 	}
 	if focused == widget.Focuser(s.pathInput) {
 		if direction == types.DirDown {
-			if btn := s.focusButtons[s.firstListKey()]; btn != nil {
+			if btn := s.target(s.firstListKey()); btn != nil {
 				return btn, true
 			}
 		}

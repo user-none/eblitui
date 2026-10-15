@@ -80,47 +80,6 @@ func TestSanitizeLibraryEntries(t *testing.T) {
 		}
 	})
 
-	t.Run("negative saveSlot set to 0", func(t *testing.T) {
-		lib := DefaultLibrary()
-		lib.AddGame(&GameEntry{CRC32: "1", Settings: GameSettings{SaveSlot: -1}})
-
-		SanitizeLibraryEntries(lib)
-
-		if lib.Games["1"].Settings.SaveSlot != 0 {
-			t.Errorf("expected 0, got %d", lib.Games["1"].Settings.SaveSlot)
-		}
-	})
-
-	t.Run("saveSlot above 9 set to 0", func(t *testing.T) {
-		lib := DefaultLibrary()
-		lib.AddGame(&GameEntry{CRC32: "1", Settings: GameSettings{SaveSlot: 10}})
-
-		SanitizeLibraryEntries(lib)
-
-		if lib.Games["1"].Settings.SaveSlot != 0 {
-			t.Errorf("expected 0, got %d", lib.Games["1"].Settings.SaveSlot)
-		}
-	})
-
-	t.Run("valid saveSlot boundaries preserved", func(t *testing.T) {
-		lib := DefaultLibrary()
-		lib.AddGame(&GameEntry{CRC32: "a", Settings: GameSettings{SaveSlot: 0}})
-		lib.AddGame(&GameEntry{CRC32: "b", Settings: GameSettings{SaveSlot: 9}})
-		lib.AddGame(&GameEntry{CRC32: "c", Settings: GameSettings{SaveSlot: 5}})
-
-		SanitizeLibraryEntries(lib)
-
-		if lib.Games["a"].Settings.SaveSlot != 0 {
-			t.Errorf("slot 0: expected 0, got %d", lib.Games["a"].Settings.SaveSlot)
-		}
-		if lib.Games["b"].Settings.SaveSlot != 9 {
-			t.Errorf("slot 9: expected 9, got %d", lib.Games["b"].Settings.SaveSlot)
-		}
-		if lib.Games["c"].Settings.SaveSlot != 5 {
-			t.Errorf("slot 5: expected 5, got %d", lib.Games["c"].Settings.SaveSlot)
-		}
-	})
-
 	t.Run("multiple fields fixed on same entry", func(t *testing.T) {
 		lib := DefaultLibrary()
 		lib.AddGame(&GameEntry{
@@ -128,9 +87,6 @@ func TestSanitizeLibraryEntries(t *testing.T) {
 			PlayTimeSeconds: -10,
 			LastPlayed:      -20,
 			Added:           -30,
-			Settings: GameSettings{
-				SaveSlot: 99,
-			},
 		})
 
 		SanitizeLibraryEntries(lib)
@@ -144,9 +100,6 @@ func TestSanitizeLibraryEntries(t *testing.T) {
 		}
 		if game.Added != 0 {
 			t.Errorf("added: expected 0, got %d", game.Added)
-		}
-		if game.Settings.SaveSlot != 0 {
-			t.Errorf("saveSlot: expected 0, got %d", game.Settings.SaveSlot)
 		}
 	})
 
@@ -197,6 +150,14 @@ func TestValidateLibrary(t *testing.T) {
 		}
 	})
 
+	t.Run("version 1 is invalid", func(t *testing.T) {
+		lib := &Library{Version: 1}
+		errs := ValidateLibrary(lib)
+		if len(errs) != 1 {
+			t.Errorf("expected 1 error, got %d: %v", len(errs), errs)
+		}
+	})
+
 	t.Run("version 0 is invalid", func(t *testing.T) {
 		lib := &Library{Version: 0}
 		errs := ValidateLibrary(lib)
@@ -218,16 +179,16 @@ func TestCorrectLibrary(t *testing.T) {
 	t.Run("fixes invalid version", func(t *testing.T) {
 		lib := &Library{Version: 99}
 		corrected := CorrectLibrary(lib)
-		if corrected.Version != 1 {
-			t.Errorf("expected version 1, got %d", corrected.Version)
+		if corrected.Version != libraryVersion {
+			t.Errorf("expected version %d, got %d", libraryVersion, corrected.Version)
 		}
 	})
 
 	t.Run("valid version preserved", func(t *testing.T) {
 		lib := DefaultLibrary()
 		corrected := CorrectLibrary(lib)
-		if corrected.Version != 1 {
-			t.Errorf("expected version 1, got %d", corrected.Version)
+		if corrected.Version != libraryVersion {
+			t.Errorf("expected version %d, got %d", libraryVersion, corrected.Version)
 		}
 	})
 }

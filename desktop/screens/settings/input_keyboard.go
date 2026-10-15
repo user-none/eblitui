@@ -14,7 +14,7 @@ import (
 
 // buildKeyboardView creates the player 1 keyboard binding editor view.
 func (s *InputSection) buildKeyboardView(focus types.FocusManager, section *widget.Container) {
-	section.AddChild(sectionHeader("Keyboard Bindings (Player 1)"))
+	section.AddChild(widgets.SectionHeader("Keyboard Bindings (Player 1)"))
 	section.AddChild(s.buildHeaderRow("Keyboard"))
 
 	for _, dp := range dpadEntries {
@@ -25,13 +25,13 @@ func (s *InputSection) buildKeyboardView(focus types.FocusManager, section *widg
 	}
 
 	section.AddChild(s.buildActionRow(focus,
-		actionButton{"Reset Keyboard", "input-reset-kb", func() {
+		actionButton{label: "Reset Keyboard", focusKey: "input-reset-kb", handler: func() {
 			s.config.Input.P1Keyboard = nil
 			storage.SaveConfig(s.config)
 			s.focus.SetPendingFocus("input-reset-kb")
 			s.callback.RequestRebuild()
 		}},
-		actionButton{"Done", "input-kb-done", func() {
+		actionButton{label: "Done", focusKey: "input-kb-done", handler: func() {
 			s.switchView(inputViewMain, "input-kb-edit")
 		}},
 	))
@@ -39,7 +39,7 @@ func (s *InputSection) buildKeyboardView(focus types.FocusManager, section *widg
 	bindingKeys := s.bindingFocusKeys("input-kb-")
 	focus.RegisterNavZone("input-kb-bindings", types.NavZoneVertical, bindingKeys, 0)
 	focus.RegisterNavZone("input-kb-actions", types.NavZoneHorizontal, []string{"input-reset-kb", "input-kb-done"}, 0)
-	chainZones(focus, []string{"input-kb-bindings", "input-kb-actions"})
+	types.ChainZones(focus, []string{"input-kb-bindings", "input-kb-actions"})
 }
 
 // updateKeyboardCapture reads the next valid key press and applies it to

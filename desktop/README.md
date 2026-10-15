@@ -4,7 +4,8 @@ Full-featured desktop application UI for eblitui emulator cores. Built
 on [Ebiten](https://ebitengine.org) and
 [ebitenui](https://github.com/ebitenui/ebitenui), it provides a
 complete desktop experience with a game library, settings, shader
-effects, save states, rewind, RetroAchievements, and gamepad navigation.
+effects, save states, rewind, cheats, RetroAchievements, and gamepad
+navigation.
 
 Build tag: `!libretro` (excluded from libretro builds).
 
@@ -41,9 +42,9 @@ The app is a state machine that transitions between screens:
 | State | Screen | Description |
 |---|---|---|
 | `StateLibrary` | Library | Game grid/list with artwork, search, and sorting |
-| `StateDetail` | Detail | Game info, artwork, play/resume, achievement progress |
+| `StateDetail` | Detail | Artwork and page sidebar: Overview (game info, discs, achievement progress) and Cheats |
 | `StateSettings` | Settings | Tabbed configuration (Library, Appearance, Video, Audio, Rewind, RetroAchievements) |
-| `StateScanProgress` | Scan Progress | ROM scanning with discovery and artwork phases |
+| `StateScanProgress` | Scan Progress | ROM scanning with discovery, artwork, rumble, and cheat phases |
 | `StateError` | Error | Startup error handling (corrupted config recovery) |
 | `StatePlaying` | Gameplay | Active emulation with pause menu overlay |
 | `StateFilePicker` | File Picker | Full-screen file and folder selection |
@@ -113,12 +114,35 @@ Rumble strength is configurable with multiple levels:
 | 4x | 4x | 2x (min 250ms) |
 | Max | 100% | 2x (min 250ms) |
 
-Requires the core to implement `MemoryInspector`.
+Requires the core to implement `coreif.Memory`.
 
 **Note**
 The number of games with rumble support is severely limited. Very few games
 have rumble files and the number of events that trigger a rumble is also
 sparse. The intensity and duration of rumble can be inconsistent between games.
+
+### Cheats
+
+The detail screen's Cheats page lists a game's cheats with an On/Off
+toggle each. Cheats are applied between emulated frames through the
+core's memory interface, so they take effect without changing the core.
+
+Database cheats come from RetroArch CHT cheat files, downloaded during
+library scans from the libretro-database repository for games matched
+in the RDB. Both code string entries (such as Action Replay codes) and
+RetroArch format entries are decoded. Master codes, entries that cannot
+be decoded, and entries that cannot be converted to the core's memory
+byte order are hidden. Every cheat starts off; the file's own enable
+values are ignored.
+
+Custom cheats are added on the Cheats page with a name and a code
+string. Codes can be pasted with several codes separated by spaces, "+",
+or new lines. Duplicate codes are rejected, and a custom cheat whose code
+no longer parses shows why in place of its code.
+
+Cheat support is available when the core implements `coreif.Memory` and
+the `cheats` package knows the system's code formats. Currently that is
+the Sega Saturn.
 
 ### Shader Effects
 
@@ -163,7 +187,7 @@ Shaders are written in Ebiten's Kage shading language.
 - In-game achievement overlay
 - Per-game and library-wide progress tracking
 
-Requires the core to implement `MemoryInspector`.
+Requires the core to implement `coreif.Memory`.
 
 ### Themes
 
@@ -199,12 +223,18 @@ Directory structure:
 <DataDirName>/
     config.json      - Application settings
     library.json     - Game library and scan state
+    gamesettings/    - Per-game settings (save state slot, cheat choices)
     metadata/        - RDB databases and artwork index
     artwork/         - Game artwork images
     rumble/          - CHT rumble definition files
+    cheats/          - CHT cheat files
     saves/           - SRAM and save state files
     screenshots/     - Screenshot captures
 ```
+
+Per-game settings live in one JSON file per game under `gamesettings/`,
+with a section per feature. The library file holds no per-game settings;
+a version 1 library's save slots are moved there on first load.
 
 All JSON writes are atomic (write to temp, rename) to prevent
 corruption.
@@ -215,13 +245,22 @@ corruption.
 | Package | Description |
 |---|---|
 | `screens` | UI screens (library, detail, settings, scan, error, file picker) |
-| `storage` | Config and library persistence with validation |
+| `screens/detail` | Detail screen pages: Overview and Cheats |
+| `screens/settings` | Settings screen sections |
+| `cheats` | CHT cheat file and code string decoding into memory operations (standard library only) |
+| `gamecheats` | A game's database and custom cheats, shared by the Cheats page and the cheat engine |
+| `storage` | Config, library, and per-game settings persistence with validation |
+| `widgets` | Shared ebitenui widget builders, the scroll view, sidebar, and multi-line text input |
+| `widgets/textedit` | Text, caret, and selection model behind the multi-line text input |
 | `shader` | Shader registry, compilation, and effect pipeline |
 | `style` | Themes, DPI-aware layout constants, widget builders |
 | `types` | Shared interfaces for cross-package use |
 | `achievements` | RetroAchievements manager and unlock sounds |
 | `filebrowser` | Directory listing, path input parsing and sidebar places for the file picker |
-| `rdb` | RetroArch database (RDB) binary parser |
+| `scanner` | Background ROM scanning and artwork, rumble, and cheat file downloads |
+| `metadata` | RDB downloads and lookups for the core's metadata variants |
+| `netutil` | HTTP download helpers |
+| `display` | Aspect ratio sizing, scaling, and DPI helpers for the game image |
 
 
 ## Dependencies
@@ -233,6 +272,7 @@ Key external dependencies:
 - `github.com/ebitengine/oto/v3` - Audio output
 - `github.com/user-none/eblitui/coreif` - Core interfaces
 - `github.com/user-none/eblitui/romloader` - ROM loading
+- `github.com/user-none/eblitui/rdb` - RetroArch database (RDB) binary parser
 - `github.com/user-none/go-rcheevos` - RetroAchievements client
 - `golang.design/x/clipboard` - Clipboard access
 - `golang.org/x/image` - Font rendering
@@ -247,5 +287,6 @@ go test ./...
 
 Test coverage includes state management, audio buffering, save states,
 rewind, turbo, pause menu, achievement overlay, search, scanning,
-storage validation, shader ordering, themes, rumble engine, and RDB
-parsing.
+storage validation, shader ordering, themes, rumble engine, cheat
+decoding and the cheat engine, the Cheats page, the text edit model, and
+RDB parsing.

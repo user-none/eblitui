@@ -409,3 +409,18 @@ func TestRumbleDownloadsGated(t *testing.T) {
 		}
 	}
 }
+
+func TestSupportsCheats(t *testing.T) {
+	md := metadata.NewMetadataManager([]coreif.MetadataVariant{
+		{Name: "Saturn", RDBName: "Sega - Saturn"},
+		{Name: "Other", RDBName: "Other - System"},
+	})
+	s := NewScanner(nil, nil, nil, false, nil, md, 0, false, nil, Downloads{Cheats: true})
+
+	if !s.supportsCheats(0) {
+		t.Error("Saturn variant: supportsCheats = false, want true")
+	}
+	if s.supportsCheats(1) {
+		t.Error("unsupported system: supportsCheats = true, want false")
+	}
+}

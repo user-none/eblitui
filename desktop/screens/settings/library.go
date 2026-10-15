@@ -59,11 +59,7 @@ func (l *LibrarySection) Build(focus types.FocusManager) *widget.Container {
 		)),
 	)
 
-	// ROM Folders label
-	dirLabel := widget.NewText(
-		widget.TextOpts.Text("ROM Folders", style.FontFace(), style.Accent),
-	)
-	section.AddChild(dirLabel)
+	section.AddChild(widgets.SectionHeader("ROM Folders"))
 
 	// Create the folder list
 	section.AddChild(l.buildFolderList(focus))

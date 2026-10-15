@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/user-none/eblitui/coreif"
+	"github.com/user-none/eblitui/desktop/cheats"
 	"github.com/user-none/eblitui/desktop/metadata"
 	"github.com/user-none/eblitui/desktop/netutil"
 	"github.com/user-none/eblitui/desktop/storage"
@@ -29,6 +30,7 @@ const (
 	ScanPhaseDiscovery
 	ScanPhaseArtwork
 	ScanPhaseRumble
+	ScanPhaseCheats
 )
 
 const (
@@ -68,6 +70,7 @@ type ScanResult struct {
 // app decides these from what the core supports.
 type Downloads struct {
 	Rumble bool // rumble files
+	Cheats bool // cheat CHT files
 }
 
 // Scanner handles ROM scanning in the background
@@ -102,13 +105,14 @@ type Scanner struct {
 	artworkQueue   []downloadJob // Games that need artwork download
 	chtRumbleQueue []downloadJob // Games that need legacy rumble CHT file download
 	erumbleQueue   []downloadJob // Games that need .erumble file download
+	cheatQueue     []downloadJob // Games that need cheat CHT file download
 	errors         []error
 	cancelled      bool
 	downloadSem    chan struct{} // Semaphore for concurrent downloads (size 2)
 }
 
 // downloadJob represents a pending asset download: artwork, a legacy
-// rumble CHT file, or an .erumble file.
+// rumble CHT file, an .erumble file, or a cheat CHT file.
 type downloadJob struct {
 	gameCRC    string
 	gameName   string // No-Intro name from RDB
@@ -149,6 +153,7 @@ func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[st
 		artworkQueue:     make([]downloadJob, 0),
 		chtRumbleQueue:   make([]downloadJob, 0),
 		erumbleQueue:     make([]downloadJob, 0),
+		cheatQueue:       make([]downloadJob, 0),
 		downloadSem:      make(chan struct{}, 2), // Limit to 2 concurrent downloads
 	}
 }
@@ -271,6 +276,16 @@ func (s *Scanner) Run() {
 		s.downloadAssets(erumbleJobs, ScanPhaseRumble, "Downloading rumble files...")
 	}
 
+	// Phase 5: Resolve and download cheat files
+	if !s.isCancelled() {
+		s.sendProgress(ScanProgress{
+			Phase:      ScanPhaseCheats,
+			StatusText: "Resolving cheats...",
+		})
+		cheatJobs := s.resolveCheats(s.cheatQueue)
+		s.downloadAssets(cheatJobs, ScanPhaseCheats, "Downloading cheats...")
+	}
+
 	// Send final result
 	s.done <- ScanResult{
 		NewGames:  s.gamesCount(),
@@ -368,7 +383,6 @@ func (s *Scanner) processCartridge(path string) {
 			PlayTimeSeconds: existingEntry.PlayTimeSeconds,
 			LastPlayed:      existingEntry.LastPlayed,
 			Added:           existingEntry.Added,
-			Settings:        existingEntry.Settings,
 
 			// Update file path (may have moved)
 			File:    path,
@@ -465,7 +479,6 @@ func (s *Scanner) processDisc(path string) {
 				PlayTimeSeconds: existingEntry.PlayTimeSeconds,
 				LastPlayed:      existingEntry.LastPlayed,
 				Added:           existingEntry.Added,
-				Settings:        existingEntry.Settings,
 				Missing:         false,
 				Name:            existingEntry.Name,
 				DisplayName:     existingEntry.DisplayName,
@@ -684,6 +697,23 @@ func (s *Scanner) applyMetadata(entry *storage.GameEntry, game *rdb.Game, varian
 			if _, err := os.Stat(rumblePath); os.IsNotExist(err) {
 				s.mu.Lock()
 				s.chtRumbleQueue = append(s.chtRumbleQueue, downloadJob{
+					gameCRC:    crcHex,
+					gameName:   game.Name,
+					variantIdx: variantIdx,
+				})
+				s.mu.Unlock()
+			}
+		}
+
+		// Queue cheat file download only if cheat downloads are enabled,
+		// the variant's system has cheat support, and the cheat file
+		// doesn't exist. Cheat files are matched by the RDB name, so only
+		// RDB matches are queued.
+		if s.downloads.Cheats && s.supportsCheats(variantIdx) {
+			cheatPath, _ := storage.GetGameCheatPath(crcHex)
+			if _, err := os.Stat(cheatPath); os.IsNotExist(err) {
+				s.mu.Lock()
+				s.cheatQueue = append(s.cheatQueue, downloadJob{
 					gameCRC:    crcHex,
 					gameName:   game.Name,
 					variantIdx: variantIdx,
@@ -950,6 +980,66 @@ func (s *Scanner) resolveCHTRumble(queue []downloadJob) []resolvedJob {
 	}
 
 	return resolved
+}
+
+// resolveCheats resolves cheat CHT download URLs for queued games by
+// fetching a single listing per variant. Multi-disc games queue once per
+// disc under the same game key; the first disc whose RDB name matches a
+// file resolves the game, and the rest are skipped.
+func (s *Scanner) resolveCheats(queue []downloadJob) []resolvedJob {
+	if len(queue) == 0 {
+		return nil
+	}
+
+	var resolved []resolvedJob
+
+	// Group by variant
+	byVariant := make(map[int][]downloadJob)
+	for _, job := range queue {
+		byVariant[job.variantIdx] = append(byVariant[job.variantIdx], job)
+	}
+
+	done := make(map[string]bool, len(queue))
+	for vi, jobs := range byVariant {
+		if s.isCancelled() {
+			break
+		}
+
+		listing := fetchCheatListing(s.metadata.VariantRDBName(vi))
+		if listing == nil {
+			continue
+		}
+
+		for _, job := range jobs {
+			if done[job.gameCRC] {
+				continue
+			}
+			name, found := resolveCheatName(listing, job.gameName)
+			if !found {
+				continue
+			}
+
+			savePath, err := storage.GetGameCheatPath(job.gameCRC)
+			if err != nil {
+				continue
+			}
+
+			done[job.gameCRC] = true
+			resolved = append(resolved, resolvedJob{
+				downloadURL: listing.urls[name],
+				savePath:    savePath,
+			})
+		}
+	}
+
+	return resolved
+}
+
+// supportsCheats reports whether the cheats package supports the
+// variant's system, identified by its RDB name.
+func (s *Scanner) supportsCheats(variantIdx int) bool {
+	_, err := cheats.SystemFromName(s.metadata.VariantRDBName(variantIdx))
+	return err == nil
 }
 
 // hasERumbleRepoDir reports whether the variant declares a rumble repo

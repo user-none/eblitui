@@ -1,14 +1,14 @@
 package desktop
 
 import (
-	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/user-none/eblitui/coreif"
 )
 
-func TestParseCHTRumbleFile(t *testing.T) {
+func TestParseCHTRumble(t *testing.T) {
 	content := `cheats = "3"
 cheat0_address = "49152"
 cheat0_memory_search_size = "3"
@@ -38,13 +38,7 @@ cheat2_rumble_primary_duration = "150"
 cheat2_rumble_secondary_strength = "20000"
 cheat2_rumble_secondary_duration = "150"
 `
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.cht")
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	entries, err := ParseCHTRumbleFile(path)
+	entries, err := ParseCHTRumble(strings.NewReader(content))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +113,7 @@ cheat2_rumble_secondary_duration = "150"
 	}
 }
 
-func TestParseCHTRumbleFileBigEndian(t *testing.T) {
+func TestParseCHTRumbleBigEndian(t *testing.T) {
 	content := `cheats = "2"
 cheat0_big_endian = "true"
 cheat0_address = "100"
@@ -134,13 +128,7 @@ cheat1_rumble_type = "1"
 cheat1_rumble_primary_strength = "65535"
 cheat1_rumble_primary_duration = "200"
 `
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.cht")
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	entries, err := ParseCHTRumbleFile(path)
+	entries, err := ParseCHTRumble(strings.NewReader(content))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,15 +143,16 @@ cheat1_rumble_primary_duration = "200"
 	}
 }
 
-func TestCHTRumbleEngineByteSwapPerEntry(t *testing.T) {
-	// Two entries: one big-endian CHT, one little-endian CHT.
-	// System is big-endian. The little-endian entry needs swap, the big-endian does not.
+func TestCHTRumbleEngineBigEndianSystem(t *testing.T) {
+	// On a big-endian system every entry's 8-bit address is read with bit
+	// 0 flipped, whatever its big_endian field: the field only orders the
+	// bytes of wider values
 	entries := []CHTRumbleEntry{
 		{
 			Address:          100,
 			MemorySearchSize: 3,
 			RumbleType:       1,
-			BigEndian:        true, // matches system -> no swap
+			BigEndian:        true,
 			PrimaryStrength:  65535,
 			PrimaryDuration:  200,
 		},
@@ -171,50 +160,43 @@ func TestCHTRumbleEngineByteSwapPerEntry(t *testing.T) {
 			Address:          200,
 			MemorySearchSize: 3,
 			RumbleType:       1,
-			BigEndian:        false, // differs from system -> swap
+			BigEndian:        false,
 			PrimaryStrength:  65535,
 			PrimaryDuration:  200,
 		},
 	}
 
-	engine := NewCHTRumbleEngine(entries, true) // system is big-endian
+	engine := NewCHTRumbleEngine(entries, true)
 	mi := newMockMemoryInspector()
-
-	// For entry 0 (no swap): value at addr 100
-	mi.set8(100, 0x42)
-	// For entry 1 (swap): addr 200 XOR 1 = 201
+	mi.set8(101, 0x42)
 	mi.set8(201, 0x55)
 
-	// Run warmup
 	for i := 0; i < 30; i++ {
 		engine.Evaluate(mi)
 	}
 
-	// Change entry 0 value directly at addr 100 (no swap)
-	mi.set8(100, 0x43)
-	// Change entry 1 value at addr 201 (swapped from 200)
-	mi.set8(201, 0x56)
+	// Changes at the unflipped addresses are not seen
+	mi.set8(100, 0x01)
+	mi.set8(200, 0x01)
+	if events := engine.Evaluate(mi); len(events) != 0 {
+		t.Fatalf("unflipped addresses: expected 0 events, got %d", len(events))
+	}
 
-	events := engine.Evaluate(mi)
-	if len(events) != 2 {
+	mi.set8(101, 0x43)
+	mi.set8(201, 0x56)
+	if events := engine.Evaluate(mi); len(events) != 2 {
 		t.Fatalf("expected 2 events, got %d", len(events))
 	}
 }
 
-func TestParseCHTRumbleFileMissingFields(t *testing.T) {
+func TestParseCHTRumbleMissingFields(t *testing.T) {
 	content := `cheats = "1"
 cheat0_address = "1000"
 cheat0_rumble_type = "1"
 cheat0_rumble_primary_strength = "65535"
 cheat0_rumble_primary_duration = "200"
 `
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.cht")
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	entries, err := ParseCHTRumbleFile(path)
+	entries, err := ParseCHTRumble(strings.NewReader(content))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,22 +222,16 @@ cheat0_rumble_primary_duration = "200"
 	}
 }
 
-func TestParseCHTRumbleFileNoCheatsKey(t *testing.T) {
+func TestParseCHTRumbleNoCheatsKey(t *testing.T) {
 	content := `cheat0_address = "1000"`
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.cht")
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err := ParseCHTRumbleFile(path)
+	_, err := ParseCHTRumble(strings.NewReader(content))
 	if err == nil {
 		t.Fatal("expected error for missing cheats key")
 	}
 }
 
 func TestParseCHTRumbleFileNotFound(t *testing.T) {
-	_, err := ParseCHTRumbleFile("/nonexistent/path.cht")
+	_, err := ParseCHTRumbleFile(filepath.Join(t.TempDir(), "missing.cht"))
 	if err == nil {
 		t.Fatal("expected error for missing file")
 	}
@@ -411,7 +387,7 @@ func (m *mockMemoryInspector) set16(addr uint32, val uint16) {
 func TestReadMemoryValue8Bit(t *testing.T) {
 	mi := newMockMemoryInspector()
 	mi.set8(100, 0xAB)
-	val := readMemoryValue(mi, 100, 3, false) // 8-bit, no swap
+	val := readMemoryValue(mi, 100, 3, false, false) // 8-bit, no swap
 	if val != 0xAB {
 		t.Errorf("expected 0xAB, got 0x%X", val)
 	}
@@ -420,7 +396,7 @@ func TestReadMemoryValue8Bit(t *testing.T) {
 func TestReadMemoryValue16Bit(t *testing.T) {
 	mi := newMockMemoryInspector()
 	mi.set16(200, 0x1234)
-	val := readMemoryValue(mi, 200, 4, false) // 16-bit, no swap
+	val := readMemoryValue(mi, 200, 4, false, false) // 16-bit, no swap
 	if val != 0x1234 {
 		t.Errorf("expected 0x1234, got 0x%X", val)
 	}
@@ -429,13 +405,13 @@ func TestReadMemoryValue16Bit(t *testing.T) {
 func TestReadMemoryValue1Bit(t *testing.T) {
 	mi := newMockMemoryInspector()
 	mi.set8(50, 0xFF)
-	val := readMemoryValue(mi, 50, 0, false) // 1-bit, no swap
+	val := readMemoryValue(mi, 50, 0, false, false) // 1-bit, no swap
 	if val != 1 {
 		t.Errorf("expected 1, got %d", val)
 	}
 
 	mi.set8(50, 0xFE) // bit 0 = 0
-	val = readMemoryValue(mi, 50, 0, false)
+	val = readMemoryValue(mi, 50, 0, false, false)
 	if val != 0 {
 		t.Errorf("expected 0, got %d", val)
 	}
@@ -444,38 +420,95 @@ func TestReadMemoryValue1Bit(t *testing.T) {
 func TestReadMemoryValue4Bit(t *testing.T) {
 	mi := newMockMemoryInspector()
 	mi.set8(60, 0xAB)
-	val := readMemoryValue(mi, 60, 2, false) // 4-bit, no swap
+	val := readMemoryValue(mi, 60, 2, false, false) // 4-bit, no swap
 	if val != 0x0B {
 		t.Errorf("expected 0x0B, got 0x%X", val)
 	}
 }
 
-func TestReadMemoryValue8BitByteSwap(t *testing.T) {
+func TestReadMemoryValue8BitBigEndianSystem(t *testing.T) {
 	mi := newMockMemoryInspector()
 	// Big-endian memory: addr 100 = high byte, addr 101 = low byte
 	mi.set8(100, 0x00) // even addr
 	mi.set8(101, 0xAB) // odd addr
-	// With byteSwap, reading addr 100 should XOR to 101
-	val := readMemoryValue(mi, 100, 3, true)
+	// On a big-endian system, reading addr 100 should XOR to 101
+	val := readMemoryValue(mi, 100, 3, false, true)
 	if val != 0xAB {
 		t.Errorf("expected 0xAB, got 0x%X", val)
 	}
 	// And reading addr 101 should XOR to 100
-	val = readMemoryValue(mi, 101, 3, true)
+	val = readMemoryValue(mi, 101, 3, false, true)
 	if val != 0x00 {
 		t.Errorf("expected 0x00, got 0x%X", val)
 	}
 }
 
-func TestReadMemoryValue16BitByteSwap(t *testing.T) {
+func TestReadMemoryValue16BitBigEndianSystem(t *testing.T) {
 	mi := newMockMemoryInspector()
 	// Big-endian memory: 0x12 at addr 200, 0x34 at addr 201
 	mi.set8(200, 0x12)
 	mi.set8(201, 0x34)
-	// With byteSwap, should read as big-endian: 0x1234
-	val := readMemoryValue(mi, 200, 4, true)
+	// A little-endian entry on a big-endian system reads the core's
+	// big-endian value: 0x1234
+	val := readMemoryValue(mi, 200, 4, false, true)
 	if val != 0x1234 {
 		t.Errorf("expected 0x1234, got 0x%X", val)
+	}
+}
+
+func TestReadMemoryValueBigEndianEntry(t *testing.T) {
+	mi := newMockMemoryInspector()
+	for i, b := range []byte{0x12, 0x34, 0x56, 0x78} {
+		mi.set8(uint32(200+i), b)
+	}
+
+	tests := []struct {
+		name       string
+		addr       uint32
+		size       int
+		systemBig  bool
+		wantResult uint32
+	}{
+		// Big-endian system: RetroArch's view is 34 12 78 56
+		{"8-bit, big-endian system", 200, 3, true, 0x34},
+		{"16-bit, big-endian system", 200, 4, true, 0x3412},
+		{"32-bit, big-endian system", 200, 5, true, 0x34127856},
+		// Little-endian system: the view is the memory as stored
+		{"8-bit, little-endian system", 200, 3, false, 0x12},
+		{"16-bit, little-endian system", 200, 4, false, 0x1234},
+		{"32-bit, little-endian system", 200, 5, false, 0x12345678},
+	}
+	for _, tc := range tests {
+		if got := readMemoryValue(mi, tc.addr, tc.size, true, tc.systemBig); got != tc.wantResult {
+			t.Errorf("%s: got 0x%X, want 0x%X", tc.name, got, tc.wantResult)
+		}
+	}
+}
+
+func TestReadMemoryValueLittleEndianEntryWide(t *testing.T) {
+	mi := newMockMemoryInspector()
+	for i, b := range []byte{0x12, 0x34, 0x56, 0x78} {
+		mi.set8(uint32(200+i), b)
+	}
+
+	tests := []struct {
+		name       string
+		addr       uint32
+		size       int
+		systemBig  bool
+		wantResult uint32
+	}{
+		// Big-endian system: RetroArch's view is 34 12 78 56
+		{"32-bit, big-endian system", 200, 5, true, 0x56781234},
+		{"odd 16-bit, big-endian system", 201, 4, true, 0x7812},
+		// Little-endian system: the view is the memory as stored
+		{"32-bit, little-endian system", 200, 5, false, 0x78563412},
+		{"odd 16-bit, little-endian system", 201, 4, false, 0x5634},
+	}
+	for _, tc := range tests {
+		if got := readMemoryValue(mi, tc.addr, tc.size, false, tc.systemBig); got != tc.wantResult {
+			t.Errorf("%s: got 0x%X, want 0x%X", tc.name, got, tc.wantResult)
+		}
 	}
 }
 

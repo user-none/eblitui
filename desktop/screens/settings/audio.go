@@ -52,12 +52,7 @@ func (a *AudioSection) SetConfig(config *storage.Config) {
 
 // Build creates the audio section UI
 func (a *AudioSection) Build(focus types.FocusManager) *widget.Container {
-	outer := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(1),
-			widget.GridLayoutOpts.Stretch([]bool{true}, []bool{true}),
-		)),
-	)
+	outer := widgets.FillContainer()
 
 	section := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
@@ -67,13 +62,7 @@ func (a *AudioSection) Build(focus types.FocusManager) *widget.Container {
 	)
 
 	// Core options filtered by audio category
-	hasAudioOptions := addCoreOptionRows(section, focus, a.callback, a.config, a.systemInfo.CoreOptions, coreif.CoreOptionCategoryAudio, "audio")
-
-	if hasAudioOptions {
-		section.AddChild(widget.NewText(
-			widget.TextOpts.Text("", style.FontFace(), style.TextSecondary),
-		))
-	}
+	addCoreOptionRows(section, focus, a.callback, a.config, a.systemInfo.CoreOptions, coreif.CoreOptionCategoryAudio, "audio")
 
 	// Mute Game Audio toggle
 	section.AddChild(a.buildMuteRow(focus))
@@ -86,13 +75,7 @@ func (a *AudioSection) Build(focus types.FocusManager) *widget.Container {
 
 	a.setupNavigation(focus)
 
-	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
-		Content:     section,
-		BgColor:     style.Background,
-		BorderColor: style.Border,
-		Spacing:     0,
-		Padding:     style.SmallSpacing,
-	})
+	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.PageScrollOpts(section))
 	focus.SetScrollContainer(scrollContainer)
 	focus.RestoreScrollPosition()
 	outer.AddChild(scrollWrapper)
@@ -228,23 +211,12 @@ func (a *AudioSection) buildMuteRow(focus types.FocusManager) *widget.Container 
 	)
 	row.AddChild(label)
 
-	toggleBtn := widget.NewButton(
-		widget.ButtonOpts.Image(style.ActiveButtonImage(a.config.Audio.Muted)),
-		widget.ButtonOpts.Text(boolToOnOff(a.config.Audio.Muted), style.FontFace(), style.ButtonTextColor()),
-		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
-		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-			widget.WidgetOpts.MinSize(style.Px(50), 0),
-		),
-		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			a.config.Audio.Muted = !a.config.Audio.Muted
-			storage.SaveConfig(a.config)
-			focus.SetPendingFocus("audio-mute")
-			a.callback.RequestRebuild()
-		}),
-	)
+	toggleBtn := widgets.OnOffButton(a.config.Audio.Muted, func(args *widget.ButtonClickedEventArgs) {
+		a.config.Audio.Muted = !a.config.Audio.Muted
+		storage.SaveConfig(a.config)
+		focus.SetPendingFocus("audio-mute")
+		a.callback.RequestRebuild()
+	})
 	focus.RegisterFocusButton("audio-mute", toggleBtn)
 	row.AddChild(toggleBtn)
 
@@ -261,23 +233,12 @@ func (a *AudioSection) buildFastForwardMuteRow(focus types.FocusManager) *widget
 	)
 	row.AddChild(label)
 
-	toggleBtn := widget.NewButton(
-		widget.ButtonOpts.Image(style.ActiveButtonImage(a.config.Audio.FastForwardMute)),
-		widget.ButtonOpts.Text(boolToOnOff(a.config.Audio.FastForwardMute), style.FontFace(), style.ButtonTextColor()),
-		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
-		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-			widget.WidgetOpts.MinSize(style.Px(50), 0),
-		),
-		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			a.config.Audio.FastForwardMute = !a.config.Audio.FastForwardMute
-			storage.SaveConfig(a.config)
-			focus.SetPendingFocus("audio-ff-mute")
-			a.callback.RequestRebuild()
-		}),
-	)
+	toggleBtn := widgets.OnOffButton(a.config.Audio.FastForwardMute, func(args *widget.ButtonClickedEventArgs) {
+		a.config.Audio.FastForwardMute = !a.config.Audio.FastForwardMute
+		storage.SaveConfig(a.config)
+		focus.SetPendingFocus("audio-ff-mute")
+		a.callback.RequestRebuild()
+	})
 	focus.RegisterFocusButton("audio-ff-mute", toggleBtn)
 	row.AddChild(toggleBtn)
 

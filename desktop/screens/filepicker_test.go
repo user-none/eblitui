@@ -410,7 +410,7 @@ func TestFilePickerBuildRegistersNavigation(t *testing.T) {
 	if buttons == nil || !sameStrings(buttons.Keys, []string{pickerAcceptKey, pickerCancelKey}) {
 		t.Errorf("picker-buttons zone = %+v", buttons)
 	}
-	if p.GetPendingFocusButton() == nil {
+	if p.GetPendingFocus() == nil {
 		t.Error("pending focus button should resolve after Build")
 	}
 	if p.acceptBtn.GetWidget().Disabled {

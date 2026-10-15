@@ -30,10 +30,11 @@ type BaseScreen struct {
 	scrollContainer *widgets.ScrollView
 	scrollTop       float64
 
-	// Button references for focus restoration (maps key to button)
-	focusButtons map[string]*widget.Button
+	// Focus targets for navigation and focus restoration (maps key to
+	// widget): buttons, and text fields such as widgets.MultiLineInput
+	focusTargets map[string]widget.Focuser
 
-	// Key of button to restore focus to after rebuild
+	// Key of the target to restore focus to after rebuild
 	pendingFocus string
 
 	// Zone-based navigation
@@ -45,7 +46,7 @@ type BaseScreen struct {
 // InitBase initializes the base screen state.
 // Call this in the screen's constructor.
 func (b *BaseScreen) InitBase() {
-	b.focusButtons = make(map[string]*widget.Button)
+	b.focusTargets = make(map[string]widget.Focuser)
 	b.navZones = make(map[string]*NavZone)
 	b.navTransitions = make(map[string]map[int]*NavTransition)
 	b.buttonToZone = make(map[string]string)
@@ -76,13 +77,20 @@ func (b *BaseScreen) RestoreScrollPosition() {
 // RegisterFocusButton registers a button for focus restoration.
 // Call this during Build() for each focusable button.
 func (b *BaseScreen) RegisterFocusButton(key string, btn *widget.Button) {
-	if b.focusButtons == nil {
-		b.focusButtons = make(map[string]*widget.Button)
-	}
-	b.focusButtons[key] = btn
+	b.RegisterFocusWidget(key, btn)
 }
 
-// SaveFocusState checks which registered focus button currently has focus
+// RegisterFocusWidget registers any focusable widget, such as a text
+// field, as a navigation and focus restoration target. Call this during
+// Build() like RegisterFocusButton.
+func (b *BaseScreen) RegisterFocusWidget(key string, f widget.Focuser) {
+	if b.focusTargets == nil {
+		b.focusTargets = make(map[string]widget.Focuser)
+	}
+	b.focusTargets[key] = f
+}
+
+// SaveFocusState checks which registered focus target currently has focus
 // and saves its key as pending focus. This preserves focus across rebuilds
 // triggered by async operations (e.g., achievement loading).
 // Does nothing if pendingFocus is already set (e.g., by OnEnter).
@@ -94,18 +102,18 @@ func (b *BaseScreen) SaveFocusState(focused widget.Focuser) {
 	if focusedWidget == nil {
 		return
 	}
-	for key, btn := range b.focusButtons {
-		if btn.GetWidget() == focusedWidget {
+	for key, f := range b.focusTargets {
+		if f.GetWidget() == focusedWidget {
 			b.pendingFocus = key
 			return
 		}
 	}
 }
 
-// ClearFocusButtons clears all registered focus buttons and navigation zones.
-// Call this at the start of Build() before registering new buttons.
+// ClearFocusButtons clears all registered focus targets and navigation zones.
+// Call this at the start of Build() before registering new targets.
 func (b *BaseScreen) ClearFocusButtons() {
-	b.focusButtons = make(map[string]*widget.Button)
+	b.focusTargets = make(map[string]widget.Focuser)
 	b.navZones = make(map[string]*NavZone)
 	b.navTransitions = make(map[string]map[int]*NavTransition)
 	b.buttonToZone = make(map[string]string)
@@ -124,13 +132,13 @@ func (b *BaseScreen) SetDefaultFocus(key string) {
 	}
 }
 
-// GetPendingFocusButton returns the button that should receive focus after rebuild.
-// Returns nil if no pending focus or button not found.
-func (b *BaseScreen) GetPendingFocusButton() *widget.Button {
+// GetPendingFocus returns the target that should receive focus after
+// rebuild. Returns nil if no pending focus or target not found.
+func (b *BaseScreen) GetPendingFocus() widget.Focuser {
 	if b.pendingFocus == "" {
 		return nil
 	}
-	return b.focusButtons[b.pendingFocus]
+	return b.focusTargets[b.pendingFocus]
 }
 
 // ClearPendingFocus clears the pending focus state.
@@ -189,18 +197,18 @@ func (b *BaseScreen) EnsureFocusedVisible(focused widget.Focuser, isScrollableBu
 	b.scrollContainer.ScrollRectIntoView(focusWidget.Rect)
 }
 
-// FindFocusInDirection finds the next button in the specified direction
+// FindFocusInDirection finds the next target in the specified direction
 // using zone-based navigation. Falls back to spatial navigation if no zones defined.
 // Returns nil if no suitable target found.
-func (b *BaseScreen) FindFocusInDirection(current widget.Focuser, direction int) *widget.Button {
-	if current == nil || len(b.focusButtons) == 0 {
+func (b *BaseScreen) FindFocusInDirection(current widget.Focuser, direction int) widget.Focuser {
+	if current == nil || len(b.focusTargets) == 0 {
 		return nil
 	}
 
-	// Find current button's key
+	// Find current target's key
 	currentKey := ""
-	for key, btn := range b.focusButtons {
-		if btn.GetWidget() == current.GetWidget() {
+	for key, f := range b.focusTargets {
+		if f.GetWidget() == current.GetWidget() {
 			currentKey = key
 			break
 		}
@@ -219,23 +227,22 @@ func (b *BaseScreen) FindFocusInDirection(current widget.Focuser, direction int)
 	return b.findFocusSpatial(current, direction)
 }
 
-// FindFocusLinear cycles focus within the current button's navigation zone,
-// wrapping at the ends. forward advances to the next button in the zone;
-// otherwise the previous. It is used as the fallback when directional zone
-// navigation has no target (e.g. moving past the right edge of a grid row),
-// replacing ebitenui's ChangeFocus, which cannot see content inside the custom
-// scroll view. Staying within the zone keeps the wrap spatially sensible (a
-// grid advances to the next cell; a list wraps within the list) instead of
-// jumping into an unrelated zone. Returns nil when there is no current button
-// or it is not in a zone.
-func (b *BaseScreen) FindFocusLinear(current widget.Focuser, forward bool) *widget.Button {
+// FindFocusLinear moves focus to the next or previous target in the current
+// target's navigation zone, without wrapping. forward advances to the next
+// target; otherwise the previous. It is used as the fallback when
+// directional zone navigation has no target (e.g. moving past the right edge
+// of a grid row advances to the next cell), replacing ebitenui's
+// ChangeFocus, which cannot see content inside the custom scroll view.
+// Returns nil at the ends of the zone, when there is no current target, or
+// when it is not in a zone.
+func (b *BaseScreen) FindFocusLinear(current widget.Focuser, forward bool) widget.Focuser {
 	if current == nil {
 		return nil
 	}
 
 	currentKey := ""
-	for key, btn := range b.focusButtons {
-		if btn.GetWidget() == current.GetWidget() {
+	for key, f := range b.focusTargets {
+		if f.GetWidget() == current.GetWidget() {
 			currentKey = key
 			break
 		}
@@ -260,15 +267,43 @@ func (b *BaseScreen) FindFocusLinear(current widget.Focuser, forward bool) *widg
 		return nil
 	}
 
-	n := len(zone.Keys)
 	if forward {
-		return b.focusButtons[zone.Keys[(idx+1)%n]]
+		idx++
+	} else {
+		idx--
 	}
-	return b.focusButtons[zone.Keys[(idx-1+n)%n]]
+	if idx < 0 || idx >= len(zone.Keys) {
+		return nil
+	}
+	return b.target(zone.Keys[idx])
+}
+
+// IsFocusTarget reports whether f is one of the screen's registered focus
+// targets
+func (b *BaseScreen) IsFocusTarget(f widget.Focuser) bool {
+	if f == nil {
+		return false
+	}
+	for _, t := range b.focusTargets {
+		if t.GetWidget() == f.GetWidget() {
+			return true
+		}
+	}
+	return false
+}
+
+// target returns the focus target registered under key, or nil. A
+// missing key must give an untyped nil, not a nil map value boxed in the
+// interface.
+func (b *BaseScreen) target(key string) widget.Focuser {
+	if f, ok := b.focusTargets[key]; ok && f != nil {
+		return f
+	}
+	return nil
 }
 
 // findFocusInZone implements zone-aware navigation
-func (b *BaseScreen) findFocusInZone(currentKey string, direction int) *widget.Button {
+func (b *BaseScreen) findFocusInZone(currentKey string, direction int) widget.Focuser {
 	zoneName, ok := b.buttonToZone[currentKey]
 	if !ok {
 		return nil
@@ -313,7 +348,7 @@ func (b *BaseScreen) findFocusInZone(currentKey string, direction int) *widget.B
 
 	// Stay within zone
 	if targetIndex >= 0 && targetIndex < len(zone.Keys) {
-		return b.focusButtons[zone.Keys[targetIndex]]
+		return b.target(zone.Keys[targetIndex])
 	}
 
 	return nil
@@ -397,7 +432,7 @@ func (b *BaseScreen) navigateGrid(currentIndex, total, columns, direction int) (
 }
 
 // handleZoneTransition handles transitioning to another zone
-func (b *BaseScreen) handleZoneTransition(fromZone string, fromIndex int, fromZoneData *NavZone, direction int) *widget.Button {
+func (b *BaseScreen) handleZoneTransition(fromZone string, fromIndex int, fromZoneData *NavZone, direction int) widget.Focuser {
 	transitions := b.navTransitions[fromZone]
 	if transitions == nil {
 		return nil
@@ -430,7 +465,7 @@ func (b *BaseScreen) handleZoneTransition(fromZone string, fromIndex int, fromZo
 	}
 
 	if targetIndex >= 0 && targetIndex < len(toZone.Keys) {
-		return b.focusButtons[toZone.Keys[targetIndex]]
+		return b.target(toZone.Keys[targetIndex])
 	}
 
 	return nil
@@ -475,7 +510,7 @@ func (b *BaseScreen) calculatePreservedIndex(fromIndex int, fromZone, toZone *Na
 }
 
 // findFocusSpatial is the legacy spatial navigation (fallback)
-func (b *BaseScreen) findFocusSpatial(current widget.Focuser, direction int) *widget.Button {
+func (b *BaseScreen) findFocusSpatial(current widget.Focuser, direction int) widget.Focuser {
 	currentWidget := current.GetWidget()
 	if currentWidget == nil {
 		return nil
@@ -485,10 +520,10 @@ func (b *BaseScreen) findFocusSpatial(current widget.Focuser, direction int) *wi
 	currentCX := (currentRect.Min.X + currentRect.Max.X) / 2
 	currentCY := (currentRect.Min.Y + currentRect.Max.Y) / 2
 
-	var bestBtn *widget.Button
+	var bestBtn widget.Focuser
 	bestDist := int(^uint(0) >> 1)
 
-	for _, btn := range b.focusButtons {
+	for _, btn := range b.focusTargets {
 		btnWidget := btn.GetWidget()
 		if btnWidget == currentWidget {
 			continue

@@ -28,7 +28,7 @@ func (s *InputSection) buildProfileView(focus types.FocusManager, section *widge
 		return
 	}
 
-	section.AddChild(sectionHeader("Edit Profile: " + profileDisplay(prof)))
+	section.AddChild(widgets.SectionHeader("Edit Profile: " + profileDisplay(prof)))
 	section.AddChild(s.buildNameRow(prof.Name))
 	if s.nameError != "" {
 		section.AddChild(widget.NewText(
@@ -40,9 +40,9 @@ func (s *InputSection) buildProfileView(focus types.FocusManager, section *widge
 	matching := len(matchingPadIDs(prof))
 	hasPad := matching > 0
 	if hasPad {
-		section.AddChild(noticeText(fmt.Sprintf("Capturing from: %s (%d connected)", prof.Controller, matching)))
+		section.AddChild(widgets.NoticeText(fmt.Sprintf("Capturing from: %s (%d connected)", prof.Controller, matching)))
 	} else {
-		section.AddChild(noticeText(fmt.Sprintf("No %s controller connected. Connect one to change bindings.", prof.Controller)))
+		section.AddChild(widgets.NoticeText(fmt.Sprintf("No %s controller connected. Connect one to change bindings.", prof.Controller)))
 	}
 
 	section.AddChild(s.buildHeaderRow("Controller"))
@@ -54,7 +54,7 @@ func (s *InputSection) buildProfileView(focus types.FocusManager, section *widge
 	}
 
 	section.AddChild(s.buildActionRow(focus,
-		actionButton{"Reset to Defaults", "input-reset-pad", func() {
+		actionButton{label: "Reset to Defaults", focusKey: "input-reset-pad", handler: func() {
 			p := s.config.Input.ProfileByID(s.profileID)
 			if p == nil {
 				return
@@ -64,7 +64,7 @@ func (s *InputSection) buildProfileView(focus types.FocusManager, section *widge
 			s.focus.SetPendingFocus("input-reset-pad")
 			s.callback.RequestRebuild()
 		}},
-		actionButton{"Done", "input-profile-done", func() {
+		actionButton{label: "Done", focusKey: "input-profile-done", handler: func() {
 			s.commitProfileName()
 		}},
 	))
@@ -73,7 +73,7 @@ func (s *InputSection) buildProfileView(focus types.FocusManager, section *widge
 	focus.RegisterNavZone("input-profile-rumble", types.NavZoneGrid, []string{"input-profile-rumble-dec", "input-profile-rumble-inc"}, 2)
 	focus.RegisterNavZone("input-pad-bindings", types.NavZoneVertical, bindingKeys, 0)
 	focus.RegisterNavZone("input-profile-actions", types.NavZoneHorizontal, []string{"input-reset-pad", "input-profile-done"}, 0)
-	chainZones(focus, []string{"input-profile-rumble", "input-pad-bindings", "input-profile-actions"})
+	types.ChainZones(focus, []string{"input-profile-rumble", "input-pad-bindings", "input-profile-actions"})
 }
 
 const (

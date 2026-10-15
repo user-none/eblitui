@@ -15,17 +15,20 @@ import (
 
 // VideoSection manages video settings including shaders
 type VideoSection struct {
-	callback   types.ScreenCallback
-	config     *storage.Config
-	systemInfo coreif.SystemInfo
+	callback     types.ScreenCallback
+	config       *storage.Config
+	systemInfo   coreif.SystemInfo
+	contentWidth func() int
 }
 
-// NewVideoSection creates a new video section
-func NewVideoSection(callback types.ScreenCallback, config *storage.Config, systemInfo coreif.SystemInfo) *VideoSection {
+// NewVideoSection creates a new video section. contentWidth returns the
+// width of the section content.
+func NewVideoSection(callback types.ScreenCallback, config *storage.Config, systemInfo coreif.SystemInfo, contentWidth func() int) *VideoSection {
 	return &VideoSection{
-		callback:   callback,
-		config:     config,
-		systemInfo: systemInfo,
+		callback:     callback,
+		config:       config,
+		systemInfo:   systemInfo,
+		contentWidth: contentWidth,
 	}
 }
 
@@ -41,12 +44,7 @@ func (v *VideoSection) SetConfig(config *storage.Config) {
 
 // Build creates the video section UI
 func (v *VideoSection) Build(focus types.FocusManager) *widget.Container {
-	outer := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(1),
-			widget.GridLayoutOpts.Stretch([]bool{true}, []bool{true}),
-		)),
-	)
+	outer := widgets.FillContainer()
 
 	// Shaders list in scrollable container (includes core options and header)
 	outer.AddChild(v.buildShadersList(focus))
@@ -110,6 +108,13 @@ func (v *VideoSection) setupNavigation(focus types.FocusManager) {
 			focus.SetNavTransition("video-shaders", types.DirUp, "video-aspect", types.NavIndexFirst)
 		}
 	}
+
+	// Game-only effects sit above the UI+Game shaders, their Game buttons
+	// in the shaders' Game column (index 1 of the first row)
+	if len(preprocessKeys) > 0 && len(shaderKeys) > 0 {
+		focus.SetNavTransition("video-preprocess", types.DirDown, "video-shaders", 1)
+		focus.SetNavTransition("video-shaders", types.DirUp, "video-preprocess", types.NavIndexLast)
+	}
 }
 
 // buildShadersList creates the scrollable shaders list with core options and header
@@ -122,74 +127,31 @@ func (v *VideoSection) buildShadersList(focus types.FocusManager) widget.Preferr
 	)
 
 	// Core options filtered by video category
-	hasVideoOptions := addCoreOptionRows(listContent, focus, v.callback, v.config, v.systemInfo.CoreOptions, coreif.CoreOptionCategoryVideo, "video")
-
-	if hasVideoOptions {
-		listContent.AddChild(widget.NewText(
-			widget.TextOpts.Text("", style.FontFace(), style.TextSecondary),
-		))
-	}
+	addCoreOptionRows(listContent, focus, v.callback, v.config, v.systemInfo.CoreOptions, coreif.CoreOptionCategoryVideo, "video")
 
 	// Aspect ratio setting
 	listContent.AddChild(v.buildAspectRatioRow(focus))
 
-	// Spacer before shaders
-	listContent.AddChild(widget.NewText(
-		widget.TextOpts.Text("", style.FontFace(), style.TextSecondary),
-	))
-
 	// Shaders header
-	listContent.AddChild(buildSectionHeader("Shader Effects"))
+	listContent.AddChild(widgets.SectionHeader("Shader Effects"))
 
 	for _, shaderInfo := range shader.AvailableShaders {
 		listContent.AddChild(v.buildShaderRow(shaderInfo, focus))
 	}
 
 	// Wrap in scrollable container
-	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
-		Content:     listContent,
-		BgColor:     style.Background,
-		BorderColor: style.Border,
-		Spacing:     0,
-		Padding:     style.SmallSpacing,
-	})
+	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.PageScrollOpts(listContent))
 	focus.SetScrollContainer(scrollContainer)
 	focus.RestoreScrollPosition()
 
 	return scrollWrapper
 }
 
-// maxShaderLabelWidth calculates the maximum pixel width for text labels in shader rows,
-// based on the current window width and font-dependent sidebar size.
+// maxShaderLabelWidth returns the width of the name column of a shader
+// row: the row less the UI and Game buttons
 func (v *VideoSection) maxShaderLabelWidth() float64 {
-	windowWidth := v.callback.GetWindowWidth()
-	if windowWidth == 0 {
-		windowWidth = 1100
-	}
-
-	// Estimate sidebar width: max of min size or measured widest label + padding
-	sidebarWidth := style.SettingsSidebarMinWidth
-	measuredSidebar := int(style.MeasureWidth("Achievements")) +
-		style.SmallSpacing*2 + style.ButtonPaddingSmall*2
-	if measuredSidebar > sidebarWidth {
-		sidebarWidth = measuredSidebar
-	}
-
-	// Measure button column widths
-	uiBtnW := int(style.MeasureWidth("UI")) + style.ButtonPaddingSmall*2
-	gameBtnW := int(style.MeasureWidth("Game")) + style.ButtonPaddingSmall*2
-
-	// Layout overhead: root padding + sidebar + main spacing + content area padding +
-	// scroll wrapper padding + scrollbar + 2 grid spacings + UI button + Game button
-	overhead := style.DefaultPadding*2 + sidebarWidth + style.DefaultSpacing +
-		style.DefaultPadding*2 + style.SmallSpacing*2 + style.ScrollbarWidth +
-		style.DefaultSpacing*2 + uiBtnW + gameBtnW
-
-	available := windowWidth - overhead
-	if available < 150 {
-		available = 150
-	}
-	return float64(available)
+	return float64(widgets.SettingsRowLabelWidth(widgets.PageRowWidth(v.contentWidth()),
+		widgets.ButtonWidth("UI"), widgets.ButtonWidth("Game")))
 }
 
 // buildAspectRatioRow creates a cycle button row for the aspect ratio setting
@@ -205,17 +167,7 @@ func (v *VideoSection) buildAspectRatioRow(focus types.FocusManager) *widget.Con
 		}
 	}
 
-	row := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(2),
-			widget.GridLayoutOpts.Stretch([]bool{true, false}, []bool{true}),
-			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
-			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
+	row := widgets.SettingsRow(2)
 
 	label := widget.NewText(
 		widget.TextOpts.Text("Aspect Ratio", style.FontFace(), style.Text),
@@ -256,17 +208,8 @@ func (v *VideoSection) buildShaderRow(info shader.ShaderInfo, focus types.FocusM
 	displayName, _ := style.TruncateToWidth(info.Name, face, maxW)
 	displayDesc, _ := style.TruncateToWidth(info.Description, face, maxW)
 
-	// Use grid layout: [Info (stretch)] [UI toggle] [Game toggle]
-	row := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(3),
-			widget.GridLayoutOpts.Stretch([]bool{true, false, false}, []bool{true}),
-			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
+	// Columns: [Info (stretch)] [UI toggle] [Game toggle]
+	row := widgets.SettingsRow(3)
 
 	// Info column
 	row.AddChild(widgets.LabeledText(displayName, displayDesc))
@@ -294,12 +237,14 @@ func (v *VideoSection) buildShaderRow(info shader.ShaderInfo, focus types.FocusM
 		focus.RegisterFocusButton("shader-ui-"+info.ID, uiBtn)
 		row.AddChild(uiBtn)
 	} else {
-		// Empty placeholder to maintain 3-column grid layout
+		// Empty placeholder the width of the UI button, so every row has
+		// the same columns
 		placeholder := widget.NewContainer(
 			widget.ContainerOpts.WidgetOpts(
 				widget.WidgetOpts.LayoutData(widget.GridLayoutData{
 					VerticalPosition: widget.GridLayoutPositionCenter,
 				}),
+				widget.WidgetOpts.MinSize(widgets.ButtonWidth("UI"), 0),
 			),
 		)
 		row.AddChild(placeholder)
@@ -375,12 +320,4 @@ func removeFromSlice(slice []string, value string) []string {
 		}
 	}
 	return result
-}
-
-// boolToOnOff converts a boolean to "On" or "Off" string
-func boolToOnOff(b bool) string {
-	if b {
-		return "On"
-	}
-	return "Off"
 }

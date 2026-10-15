@@ -26,26 +26,15 @@ func buildCoreOptionRow(focus types.FocusManager, callback types.ScreenCallback,
 		current := getCoreOptionValue(config, opt)
 		isOn := current == "true" || current == "1" || current == "on"
 
-		toggleBtn := widget.NewButton(
-			widget.ButtonOpts.Image(style.ActiveButtonImage(isOn)),
-			widget.ButtonOpts.Text(boolToOnOff(isOn), style.FontFace(), style.ButtonTextColor()),
-			widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
-			widget.ButtonOpts.WidgetOpts(
-				widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-					VerticalPosition: widget.GridLayoutPositionCenter,
-				}),
-				widget.WidgetOpts.MinSize(style.Px(50), 0),
-			),
-			widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-				if isOn {
-					setCoreOptionValue(config, opt.Key, "false")
-				} else {
-					setCoreOptionValue(config, opt.Key, "true")
-				}
-				focus.SetPendingFocus(focusKey)
-				callback.RequestRebuild()
-			}),
-		)
+		toggleBtn := widgets.OnOffButton(isOn, func(args *widget.ButtonClickedEventArgs) {
+			if isOn {
+				setCoreOptionValue(config, opt.Key, "false")
+			} else {
+				setCoreOptionValue(config, opt.Key, "true")
+			}
+			focus.SetPendingFocus(focusKey)
+			callback.RequestRebuild()
+		})
 		focus.RegisterFocusButton(focusKey, toggleBtn)
 		row.AddChild(toggleBtn)
 
@@ -136,37 +125,16 @@ func coreOptionFocusKeys(opts []coreif.CoreOption, category coreif.CoreOptionCat
 }
 
 // addCoreOptionRows adds the category's option rows to container in
-// display order, a section header before each group's rows, and
-// reports whether any rows were added.
-func addCoreOptionRows(container *widget.Container, focus types.FocusManager, callback types.ScreenCallback, config *storage.Config, opts []coreif.CoreOption, category coreif.CoreOptionCategory, prefix string) bool {
-	ordered := categoryOptions(opts, category)
+// display order, a section header before each group's rows.
+func addCoreOptionRows(container *widget.Container, focus types.FocusManager, callback types.ScreenCallback, config *storage.Config, opts []coreif.CoreOption, category coreif.CoreOptionCategory, prefix string) {
 	group := ""
-	for _, opt := range ordered {
+	for _, opt := range categoryOptions(opts, category) {
 		if opt.Group != "" && opt.Group != group {
-			container.AddChild(buildSectionHeader(opt.Group))
+			container.AddChild(widgets.SectionHeader(opt.Group))
 		}
 		group = opt.Group
 		container.AddChild(buildCoreOptionRow(focus, callback, config, opt, prefix))
 	}
-	return len(ordered) > 0
-}
-
-// buildSectionHeader creates a section header label with accent color.
-func buildSectionHeader(title string) *widget.Container {
-	container := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewRowLayout(
-			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
-			widget.RowLayoutOpts.Spacing(style.TinySpacing),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
-	label := widget.NewText(
-		widget.TextOpts.Text(title, style.FontFace(), style.Accent),
-	)
-	container.AddChild(label)
-	return container
 }
 
 // getCoreOptionValue returns the current value for a core option,

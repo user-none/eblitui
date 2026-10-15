@@ -14,14 +14,12 @@ import (
 	rcheevos "github.com/user-none/go-rcheevos"
 )
 
-// Max width for the settings content to keep toggles closer to labels
-const settingsMaxWidth = 600
-
 // RetroAchievementsSection manages RetroAchievements settings
 type RetroAchievementsSection struct {
 	callback     types.ScreenCallback
 	config       *storage.Config
 	achievements *achievements.Manager
+	contentWidth func() int
 
 	// Input handling
 	textInputs    *widgets.TextInputGroup
@@ -31,16 +29,19 @@ type RetroAchievementsSection struct {
 	loggingIn     bool
 }
 
-// NewRetroAchievementsSection creates a new RetroAchievements section
+// NewRetroAchievementsSection creates a new RetroAchievements section.
+// contentWidth returns the width of the section content.
 func NewRetroAchievementsSection(
 	callback types.ScreenCallback,
 	config *storage.Config,
 	achievementMgr *achievements.Manager,
+	contentWidth func() int,
 ) *RetroAchievementsSection {
 	return &RetroAchievementsSection{
 		callback:     callback,
 		config:       config,
 		achievements: achievementMgr,
+		contentWidth: contentWidth,
 		textInputs:   widgets.NewTextInputGroup(),
 	}
 }
@@ -72,13 +73,8 @@ func (r *RetroAchievementsSection) isLoggedIn() bool {
 
 // Build creates the RetroAchievements section UI
 func (r *RetroAchievementsSection) Build(focus types.FocusManager) *widget.Container {
-	// Outer container with grid layout so scrollable content can stretch
-	outer := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(1),
-			widget.GridLayoutOpts.Stretch([]bool{true}, []bool{true}),
-		)),
-	)
+	// Outer container so scrollable content can stretch
+	outer := widgets.FillContainer()
 
 	// Content container
 	section := widget.NewContainer(
@@ -89,12 +85,12 @@ func (r *RetroAchievementsSection) Build(focus types.FocusManager) *widget.Conta
 	)
 
 	// Account section
-	section.AddChild(buildSectionHeader("Account"))
+	section.AddChild(widgets.SectionHeader("Account"))
 	if r.isLoggedIn() {
 		section.AddChild(r.buildLoggedInSection(focus))
 
 		// General section
-		section.AddChild(buildSectionHeader("General"))
+		section.AddChild(widgets.SectionHeader("General"))
 		section.AddChild(r.buildToggleRow(focus, "ra-enable", "Enable RetroAchievements", "",
 			r.config.RetroAchievements.Enabled,
 			func() {
@@ -126,7 +122,7 @@ func (r *RetroAchievementsSection) Build(focus types.FocusManager) *widget.Conta
 			}))
 
 		// Notifications section
-		section.AddChild(buildSectionHeader("Notifications"))
+		section.AddChild(widgets.SectionHeader("Notifications"))
 		section.AddChild(r.buildToggleRow(focus, "ra-notification", "Show Notification", "Display popup on unlock",
 			r.config.RetroAchievements.ShowNotification,
 			func() {
@@ -149,7 +145,7 @@ func (r *RetroAchievementsSection) Build(focus types.FocusManager) *widget.Conta
 			}))
 
 		// Advanced section
-		section.AddChild(buildSectionHeader("Advanced"))
+		section.AddChild(widgets.SectionHeader("Advanced"))
 		section.AddChild(r.buildToggleRow(focus, "ra-encore", "Encore Mode", "Re-trigger unlocked achievements",
 			r.config.RetroAchievements.EncoreMode,
 			func() {
@@ -167,52 +163,23 @@ func (r *RetroAchievementsSection) Build(focus types.FocusManager) *widget.Conta
 	r.setupNavigation(focus)
 
 	// Wrap in scrollable container
-	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
-		Content:     section,
-		BgColor:     style.Background,
-		BorderColor: style.Border,
-		Spacing:     0,
-		Padding:     style.SmallSpacing,
-	})
+	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.PageScrollOpts(section))
 	focus.SetScrollContainer(scrollContainer)
 	focus.RestoreScrollPosition()
 	outer.AddChild(scrollWrapper)
 	return outer
 }
 
-// maxLabelWidth calculates the maximum pixel width for text labels in toggle rows,
-// based on the current window width and font-dependent sidebar size.
-func (r *RetroAchievementsSection) maxLabelWidth() float64 {
-	windowWidth := r.callback.GetWindowWidth()
-	if windowWidth == 0 {
-		windowWidth = 1100
-	}
-
-	// Estimate sidebar width: max of min size or measured widest label + padding
-	sidebarWidth := style.SettingsSidebarMinWidth
-	measuredSidebar := int(style.MeasureWidth("Achievements")) +
-		style.SmallSpacing*2 + style.ButtonPaddingSmall*2
-	if measuredSidebar > sidebarWidth {
-		sidebarWidth = measuredSidebar
-	}
-
-	// Layout overhead: root padding + sidebar + main spacing + content area padding +
-	// scroll wrapper padding + scrollbar + toggle row padding + grid spacing + button column
-	overhead := style.DefaultPadding*2 + sidebarWidth + style.DefaultSpacing +
-		style.DefaultPadding*2 + style.SmallSpacing*2 + style.ScrollbarWidth +
-		style.SmallSpacing*2 + style.DefaultSpacing + 70
-
-	available := windowWidth - overhead
-	if available < 150 {
-		available = 150
-	}
-	return float64(available)
+// maxLabelWidth returns the width of the label column of a row with one
+// control column controlWidth wide
+func (r *RetroAchievementsSection) maxLabelWidth(controlWidth int) float64 {
+	return float64(widgets.SettingsRowLabelWidth(widgets.PageRowWidth(r.contentWidth()), controlWidth))
 }
 
 // buildToggleRow creates a toggle row with background, label, description, and right-aligned button
 func (r *RetroAchievementsSection) buildToggleRow(focus types.FocusManager, key, label, description string, value bool, toggle func()) *widget.Container {
 	// Truncate text to prevent pushing buttons off-screen at large font sizes
-	maxW := r.maxLabelWidth()
+	maxW := r.maxLabelWidth(widgets.OnOffButtonWidth())
 	face := *style.FontFace()
 	displayLabel, _ := style.TruncateToWidth(label, face, maxW)
 	displayDesc := description
@@ -226,23 +193,12 @@ func (r *RetroAchievementsSection) buildToggleRow(focus types.FocusManager, key,
 	row.AddChild(widgets.LabeledText(displayLabel, displayDesc))
 
 	// Toggle button (right-aligned via grid)
-	toggleBtn := widget.NewButton(
-		widget.ButtonOpts.Image(style.ActiveButtonImage(value)),
-		widget.ButtonOpts.Text(boolToOnOff(value), style.FontFace(), style.ButtonTextColor()),
-		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
-		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-			widget.WidgetOpts.MinSize(style.Px(50), 0),
-		),
-		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			toggle()
-			storage.SaveConfig(r.config)
-			focus.SetPendingFocus(key)
-			r.callback.RequestRebuild()
-		}),
-	)
+	toggleBtn := widgets.OnOffButton(value, func(args *widget.ButtonClickedEventArgs) {
+		toggle()
+		storage.SaveConfig(r.config)
+		focus.SetPendingFocus(key)
+		r.callback.RequestRebuild()
+	})
 	focus.RegisterFocusButton(key, toggleBtn)
 	row.AddChild(toggleBtn)
 
@@ -275,7 +231,7 @@ func (r *RetroAchievementsSection) buildLoggedInSection(focus types.FocusManager
 
 	// Status text (truncated to prevent pushing button off-screen)
 	statusStr := "Logged in as: " + username
-	displayStatus, _ := style.TruncateToWidth(statusStr, *style.FontFace(), r.maxLabelWidth())
+	displayStatus, _ := style.TruncateToWidth(statusStr, *style.FontFace(), r.maxLabelWidth(widgets.ButtonWidth("Logout")))
 	statusText := widget.NewText(
 		widget.TextOpts.Text(displayStatus, style.FontFace(), style.Text),
 		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),

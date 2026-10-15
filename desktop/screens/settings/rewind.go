@@ -52,13 +52,8 @@ func (r *RewindSection) SetConfig(config *storage.Config) {
 
 // Build creates the rewind section UI
 func (r *RewindSection) Build(focus types.FocusManager) *widget.Container {
-	// Outer container with grid layout so scrollable content can stretch
-	outer := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(1),
-			widget.GridLayoutOpts.Stretch([]bool{true}, []bool{true}),
-		)),
-	)
+	// Outer container so scrollable content can stretch
+	outer := widgets.FillContainer()
 
 	// Content container
 	section := widget.NewContainer(
@@ -118,13 +113,7 @@ func (r *RewindSection) Build(focus types.FocusManager) *widget.Container {
 	r.setupNavigation(focus)
 
 	// Wrap in scrollable container
-	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
-		Content:     section,
-		BgColor:     style.Background,
-		BorderColor: style.Border,
-		Spacing:     0,
-		Padding:     style.SmallSpacing,
-	})
+	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.PageScrollOpts(section))
 	focus.SetScrollContainer(scrollContainer)
 	focus.RestoreScrollPosition()
 	outer.AddChild(scrollWrapper)
@@ -150,18 +139,7 @@ func (r *RewindSection) setupNavigation(focus types.FocusManager) {
 
 // buildToggleRow creates an on/off toggle row
 func (r *RewindSection) buildToggleRow(focus types.FocusManager, key, label string, value bool, toggle func()) *widget.Container {
-	row := widget.NewContainer(
-		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(2),
-			widget.GridLayoutOpts.Stretch([]bool{true, false}, []bool{true}),
-			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
-			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
+	row := widgets.SettingsRow(2)
 
 	labelText := widget.NewText(
 		widget.TextOpts.Text(label, style.FontFace(), style.Text),
@@ -169,23 +147,12 @@ func (r *RewindSection) buildToggleRow(focus types.FocusManager, key, label stri
 	)
 	row.AddChild(labelText)
 
-	toggleBtn := widget.NewButton(
-		widget.ButtonOpts.Image(style.ActiveButtonImage(value)),
-		widget.ButtonOpts.Text(boolToOnOff(value), style.FontFace(), style.ButtonTextColor()),
-		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
-		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-			widget.WidgetOpts.MinSize(style.Px(50), 0),
-		),
-		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			toggle()
-			storage.SaveConfig(r.config)
-			focus.SetPendingFocus(key)
-			r.callback.RequestRebuild()
-		}),
-	)
+	toggleBtn := widgets.OnOffButton(value, func(args *widget.ButtonClickedEventArgs) {
+		toggle()
+		storage.SaveConfig(r.config)
+		focus.SetPendingFocus(key)
+		r.callback.RequestRebuild()
+	})
 	focus.RegisterFocusButton(key, toggleBtn)
 	row.AddChild(toggleBtn)
 

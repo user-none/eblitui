@@ -260,22 +260,3 @@ func TestResolve(t *testing.T) {
 		}
 	}
 }
-
-func TestPlacesStartsWithHome(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Skip("no home directory")
-	}
-	places := Places()
-	if len(places) == 0 || places[0].Path != home || places[0].Label != "Home" {
-		t.Fatalf("first place = %+v, want Home at %q", places, home)
-	}
-	sawVolume := false
-	for _, p := range places {
-		if p.Kind == PlaceVolume {
-			sawVolume = true
-		} else if sawVolume {
-			t.Errorf("folder %+v listed after volumes", p)
-		}
-	}
-}

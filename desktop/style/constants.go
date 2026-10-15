@@ -20,8 +20,7 @@ const (
 	baseIconDefaultWinWidth = 800
 	baseIconUnfocusedScale  = 0.95
 	baseIconUnfocusedDim    = 0.95
-	baseDetailArtSmall      = 150
-	baseDetailArtLarge      = 400
+	baseDetailColumnWidth   = 200
 	baseSidebarMinWidth     = 180
 	baseFolderListMinHeight = 100
 	baseProgressBarWidth    = 300
@@ -113,16 +112,13 @@ var (
 )
 
 // Detail screen vars
-var (
-	DetailArtWidthSmall = baseDetailArtSmall
-	DetailArtWidthLarge = baseDetailArtLarge
-)
+var DetailColumnWidth = baseDetailColumnWidth
+
+// Sidebar default minimum width
+var SidebarMinWidth = baseSidebarMinWidth
 
 // Settings screen vars
-var (
-	SettingsSidebarMinWidth     = baseSidebarMinWidth
-	SettingsFolderListMinHeight = baseFolderListMinHeight
-)
+var SettingsFolderListMinHeight = baseFolderListMinHeight
 
 // Font-dependent settings layout value (updated by ApplyFontSize)
 var SettingsRowHeight = baseSettingsRowHeight

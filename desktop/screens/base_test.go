@@ -10,14 +10,15 @@ import (
 	eimage "github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/user-none/eblitui/desktop/types"
+	"github.com/user-none/eblitui/desktop/widgets"
 )
 
 func TestInitBase(t *testing.T) {
 	b := &BaseScreen{}
 	b.InitBase()
 
-	if b.focusButtons == nil {
-		t.Error("focusButtons should be initialized")
+	if b.focusTargets == nil {
+		t.Error("focusTargets should be initialized")
 	}
 	if b.navZones == nil {
 		t.Error("navZones should be initialized")
@@ -125,8 +126,8 @@ func TestClearFocusButtons(t *testing.T) {
 
 	b.ClearFocusButtons()
 
-	if len(b.focusButtons) != 0 {
-		t.Error("focusButtons should be empty")
+	if len(b.focusTargets) != 0 {
+		t.Error("focusTargets should be empty")
 	}
 	if len(b.navZones) != 0 {
 		t.Error("navZones should be empty")
@@ -139,24 +140,22 @@ func TestClearFocusButtons(t *testing.T) {
 	}
 }
 
-func TestGetPendingFocusButtonNoFocus(t *testing.T) {
+func TestGetPendingFocusNoFocus(t *testing.T) {
 	b := &BaseScreen{}
 	b.InitBase()
 
-	btn := b.GetPendingFocusButton()
-	if btn != nil {
+	if b.GetPendingFocus() != nil {
 		t.Error("should return nil when no pending focus")
 	}
 }
 
-func TestGetPendingFocusButtonNotFound(t *testing.T) {
+func TestGetPendingFocusNotFound(t *testing.T) {
 	b := &BaseScreen{}
 	b.InitBase()
 
 	b.SetPendingFocus("nonexistent")
-	btn := b.GetPendingFocusButton()
-	if btn != nil {
-		t.Error("should return nil when button not registered")
+	if b.GetPendingFocus() != nil {
+		t.Error("should return nil when target not registered")
 	}
 }
 
@@ -622,5 +621,79 @@ func TestSaveFocusStateNoMatch(t *testing.T) {
 	b.SaveFocusState(btn2)
 	if b.pendingFocus != "" {
 		t.Errorf("pendingFocus should be empty, got %q", b.pendingFocus)
+	}
+}
+
+func TestFocusWidgetInZones(t *testing.T) {
+	b := &BaseScreen{}
+	b.InitBase()
+	field := widgets.NewMultiLineInput(3, 100, 0, 0, nil)
+	save := testButton()
+
+	b.RegisterFocusWidget("code", field)
+	b.RegisterFocusButton("save", save)
+	b.RegisterNavZone("fields", types.NavZoneVertical, []string{"code"}, 0)
+	b.RegisterNavZone("buttons", types.NavZoneHorizontal, []string{"save"}, 0)
+	b.SetNavTransition("fields", types.DirDown, "buttons", types.NavIndexFirst)
+	b.SetNavTransition("buttons", types.DirUp, "fields", types.NavIndexFirst)
+
+	if got := b.FindFocusInDirection(field, types.DirDown); got != widget.Focuser(save) {
+		t.Errorf("down from the field = %v, want the save button", got)
+	}
+	if got := b.FindFocusInDirection(save, types.DirUp); got != widget.Focuser(field) {
+		t.Errorf("up from the button = %v, want the field", got)
+	}
+
+	b.SaveFocusState(field)
+	if got := b.GetPendingFocus(); got != widget.Focuser(field) {
+		t.Errorf("pending focus = %v, want the field", got)
+	}
+}
+
+func TestFindFocusLinearStopsAtEnds(t *testing.T) {
+	b := &BaseScreen{}
+	b.InitBase()
+	first, mid, last := testButton(), testButton(), testButton()
+	b.RegisterFocusButton("a", first)
+	b.RegisterFocusButton("b", mid)
+	b.RegisterFocusButton("c", last)
+	b.RegisterNavZone("list", types.NavZoneVertical, []string{"a", "b", "c"}, 0)
+
+	if got := b.FindFocusLinear(mid, true); got != widget.Focuser(last) {
+		t.Errorf("forward from the middle = %v, want the last", got)
+	}
+	if got := b.FindFocusLinear(mid, false); got != widget.Focuser(first) {
+		t.Errorf("back from the middle = %v, want the first", got)
+	}
+	if got := b.FindFocusLinear(last, true); got != nil {
+		t.Errorf("forward from the last = %v, want nil", got)
+	}
+	if got := b.FindFocusLinear(first, false); got != nil {
+		t.Errorf("back from the first = %v, want nil", got)
+	}
+}
+
+func TestIsFocusTarget(t *testing.T) {
+	b := &BaseScreen{}
+	b.InitBase()
+	btn := testButton()
+	b.RegisterFocusButton("a", btn)
+	if !b.IsFocusTarget(btn) {
+		t.Error("registered button not a target")
+	}
+	if b.IsFocusTarget(testButton()) || b.IsFocusTarget(nil) {
+		t.Error("unregistered or nil reported as a target")
+	}
+}
+
+func TestTargetMissingIsNil(t *testing.T) {
+	b := &BaseScreen{}
+	b.InitBase()
+	// A missing key must be an untyped nil so callers' nil checks work
+	if b.target("missing") != nil {
+		t.Error("missing target is not nil")
+	}
+	if b.FindFocusLinear(testButton(), true) != nil {
+		t.Error("unregistered current gave a target")
 	}
 }

@@ -20,13 +20,15 @@ func Init(dataDirName string) {
 }
 
 const (
-	configFile    = "config.json"
-	libraryFile   = "library.json"
-	metadataDir   = "metadata"
-	artworkDir    = "artwork"
-	rumbleDir     = "rumble"
-	savesDir      = "saves"
-	screenshotDir = "screenshots"
+	configFile      = "config.json"
+	libraryFile     = "library.json"
+	metadataDir     = "metadata"
+	artworkDir      = "artwork"
+	rumbleDir       = "rumble"
+	cheatsDir       = "cheats"
+	gameSettingsDir = "gamesettings"
+	savesDir        = "saves"
+	screenshotDir   = "screenshots"
 )
 
 // GetBaseDir returns the base directory for application data.
@@ -79,6 +81,8 @@ func EnsureDirectories() error {
 		filepath.Join(baseDir, metadataDir),
 		filepath.Join(baseDir, artworkDir),
 		filepath.Join(baseDir, rumbleDir),
+		filepath.Join(baseDir, cheatsDir),
+		filepath.Join(baseDir, gameSettingsDir),
 		filepath.Join(baseDir, savesDir),
 		filepath.Join(baseDir, screenshotDir),
 	}
@@ -153,6 +157,42 @@ func GetGameRumblePath(gameID string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(rumbleDir, gameID+".erumble"), nil
+}
+
+// GetCheatsDir returns the full path to the cheats directory
+func GetCheatsDir() (string, error) {
+	baseDir, err := GetBaseDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(baseDir, cheatsDir), nil
+}
+
+// GetGameSettingsDir returns the full path to the per-game settings directory
+func GetGameSettingsDir() (string, error) {
+	baseDir, err := GetBaseDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(baseDir, gameSettingsDir), nil
+}
+
+// GetGameSettingsPath returns the path to a game's settings file
+func GetGameSettingsPath(gameCRC string) (string, error) {
+	dir, err := GetGameSettingsDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, gameCRC+".json"), nil
+}
+
+// GetGameCheatPath returns the path to a game's cheat CHT file
+func GetGameCheatPath(gameCRC string) (string, error) {
+	cheatsDir, err := GetCheatsDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(cheatsDir, gameCRC+".cht"), nil
 }
 
 // GetSavesDir returns the full path to the saves directory

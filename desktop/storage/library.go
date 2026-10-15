@@ -4,7 +4,9 @@
 package storage
 
 import (
+	"encoding/json"
 	"errors"
+	"log"
 	"os"
 	"sort"
 	"strings"
@@ -37,11 +39,18 @@ func LoadLibrary() (*Library, error) {
 		library.Games = make(map[string]*GameEntry)
 	}
 
-	// Apply any migration for older library versions
-	library = migrateLibrary(library)
+	// Apply any migration for older library versions, saving the result so
+	// the migration runs once
+	migrated := migrateLibrary(library, path)
 
 	// Silently fix invalid game entry fields
 	SanitizeLibraryEntries(library)
+
+	if migrated {
+		if err := SaveLibrary(library); err != nil {
+			log.Printf("Failed to save migrated library: %v", err)
+		}
+	}
 
 	return library, nil
 }
@@ -86,14 +95,85 @@ func DeleteLibrary() error {
 	return nil
 }
 
-// migrateLibrary handles any necessary migrations from older library versions
-func migrateLibrary(library *Library) *Library {
-	// Currently at version 1, no migrations needed
+// libraryVersion is the current library.json format version. Version 2
+// moved per-game settings out of the library into per-game settings files.
+const libraryVersion = 2
+
+// migrateLibrary updates a library loaded from path from an older version
+// to the current one and reports whether it changed anything. Version 0
+// is treated as version 1. Version 1 kept each game's save slot in the
+// library under "settings"; it moves to the game's settings file.
+func migrateLibrary(library *Library, path string) bool {
+	migrated := false
 	if library.Version == 0 {
 		library.Version = 1
+		migrated = true
+	}
+	if library.Version == 1 {
+		migrateSaveSlots(path)
+		library.Version = 2
+		migrated = true
+	}
+	return migrated
+}
+
+// migrateSaveSlots copies each game's version 1 save slot from the library
+// file at path into the game's settings file, unless that file already has
+// a slot. Game keys that are not safe file names are skipped. Failures are
+// logged and that game is skipped.
+func migrateSaveSlots(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		log.Printf("Failed to read library for save slot migration: %v", err)
+		return
+	}
+	slots, err := legacySaveSlots(data)
+	if err != nil {
+		log.Printf("Failed to parse library for save slot migration: %v", err)
+		return
 	}
 
-	return library
+	for key, slot := range slots {
+		if CleanGameKey(key) != key {
+			continue
+		}
+		settings, err := LoadGameSettings(key)
+		if err != nil {
+			log.Printf("Failed to load game settings for %s: %v", key, err)
+			continue
+		}
+		if settings.SaveStates.Slot != 0 {
+			continue
+		}
+		settings.SaveStates.Slot = slot
+		if err := SaveGameSettings(key, settings); err != nil {
+			log.Printf("Failed to save game settings for %s: %v", key, err)
+		}
+	}
+}
+
+// legacySaveSlots returns the version 1 per-game save slots from a raw
+// library file, keyed by game key. Only slots 1-9 are returned; slot 0 is
+// the default and needs no migration.
+func legacySaveSlots(data []byte) (map[string]int, error) {
+	var raw struct {
+		Games map[string]struct {
+			Settings struct {
+				SaveSlot int `json:"saveSlot"`
+			} `json:"settings"`
+		} `json:"games"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+
+	slots := make(map[string]int)
+	for key, game := range raw.Games {
+		if slot := game.Settings.SaveSlot; slot >= 1 && slot <= 9 {
+			slots[key] = slot
+		}
+	}
+	return slots, nil
 }
 
 // AddGame adds or updates a game entry in the library

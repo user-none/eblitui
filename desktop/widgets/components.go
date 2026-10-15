@@ -5,6 +5,7 @@ package widgets
 
 import (
 	"image/color"
+	"math"
 	"runtime"
 
 	"github.com/ebitenui/ebitenui/image"
@@ -12,7 +13,6 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/user-none/eblitui/desktop/style"
-	"golang.design/x/clipboard"
 )
 
 // SettingsRow creates a standard settings row container with style.Surface background,
@@ -32,6 +32,28 @@ func SettingsRow(columns int) *widget.Container {
 			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
 		),
 	)
+}
+
+// minRowLabelWidth is the narrowest width RowLabelWidth returns, so labels
+// keep some text in a very narrow window
+const minRowLabelWidth = 150
+
+// RowLabelWidth returns the width left for the label column of a row grid
+// that is rowWidth wide with the given padding and style.DefaultSpacing
+// between columns, after each control column. It is never below
+// minRowLabelWidth.
+func RowLabelWidth(rowWidth, padding int, controlWidths ...int) int {
+	w := rowWidth - padding*2
+	for _, cw := range controlWidths {
+		w -= style.DefaultSpacing + cw
+	}
+	return max(w, minRowLabelWidth)
+}
+
+// SettingsRowLabelWidth returns the width left for the label column of a
+// SettingsRow that is rowWidth wide. See RowLabelWidth.
+func SettingsRowLabelWidth(rowWidth int, controlWidths ...int) int {
+	return RowLabelWidth(rowWidth, style.SmallSpacing, controlWidths...)
 }
 
 // ScrollSlider creates a vertical scroll slider bound to a scroll container.
@@ -89,30 +111,6 @@ func SetupScrollHandler(scrollContainer *ScrollView, vSlider *widget.Slider, nee
 	})
 }
 
-// DisabledSidebarItem creates a non-focusable sidebar item with the given label.
-// Used for future/coming-soon menu items.
-func DisabledSidebarItem(label string) *widget.Container {
-	item := widget.NewContainer(
-		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Border)),
-		widget.ContainerOpts.Layout(widget.NewAnchorLayout(
-			widget.AnchorLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
-	item.AddChild(widget.NewText(
-		widget.TextOpts.Text(label, style.FontFace(), style.TextSecondary),
-		widget.TextOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.AnchorLayoutData{
-				HorizontalPosition: widget.AnchorLayoutPositionStart,
-				VerticalPosition:   widget.AnchorLayoutPositionCenter,
-			}),
-		),
-	))
-	return item
-}
-
 // TextButton creates a standard text button with consistent styling.
 // Use for regular actions like "Back", "Cancel", "Settings".
 func TextButton(text string, padding int, handler func(*widget.ButtonClickedEventArgs)) *widget.Button {
@@ -133,6 +131,43 @@ func PrimaryTextButton(text string, padding int, handler func(*widget.ButtonClic
 		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(padding)),
 		widget.ButtonOpts.ClickedHandler(handler),
 	)
+}
+
+// OnOffButton creates a settings row toggle labeled "On" or "Off", in the
+// active style when on, vertically centered in its grid cell
+func OnOffButton(on bool, handler func(*widget.ButtonClickedEventArgs)) *widget.Button {
+	label := "Off"
+	if on {
+		label = "On"
+	}
+	return widget.NewButton(
+		widget.ButtonOpts.Image(style.ActiveButtonImage(on)),
+		widget.ButtonOpts.Text(label, style.FontFace(), style.ButtonTextColor()),
+		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
+		widget.ButtonOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
+				VerticalPosition: widget.GridLayoutPositionCenter,
+			}),
+			widget.WidgetOpts.MinSize(onOffMinWidth(), 0),
+		),
+		widget.ButtonOpts.ClickedHandler(handler),
+	)
+}
+
+// onOffMinWidth is the minimum width of an OnOffButton
+func onOffMinWidth() int {
+	return style.Px(50)
+}
+
+// OnOffButtonWidth returns the width an OnOffButton takes in either state
+func OnOffButtonWidth() int {
+	return max(onOffMinWidth(), ButtonWidth("Off"))
+}
+
+// ButtonWidth returns the width of a button with the given label and
+// style.ButtonPaddingSmall text padding
+func ButtonWidth(label string) int {
+	return int(math.Ceil(style.MeasureWidth(label))) + style.ButtonPaddingSmall*2
 }
 
 // ToggleButton creates a button that visually indicates an active/inactive state.
@@ -198,6 +233,38 @@ type ScrollableOpts struct {
 	Padding     int               // Padding inside wrapper, used with BorderColor (default: 0)
 }
 
+// sliderSpacing returns the spacing between the scroll area and the slider
+func (opts ScrollableOpts) sliderSpacing() int {
+	if opts.Spacing == 0 && opts.BorderColor == nil {
+		return 4 // Default spacing when no border
+	}
+	return opts.Spacing
+}
+
+// ContentWidth returns the width of the scrolled content in a scrollable
+// container that is width wide: less the wrapper padding, the slider, and
+// the spacing between them
+func (opts ScrollableOpts) ContentWidth(width int) int {
+	return width - opts.Padding*2 - opts.sliderSpacing() - style.ScrollbarWidth
+}
+
+// PageScrollOpts returns the options of the scrollable container that holds
+// the content of a sidebar page, such as a settings section or a detail
+// page
+func PageScrollOpts(content *widget.Container) ScrollableOpts {
+	return ScrollableOpts{
+		Content: content,
+		BgColor: style.Background,
+		Spacing: style.TinySpacing,
+	}
+}
+
+// PageRowWidth returns the width of a row in a page's scrollable content
+// when the page content is contentWidth wide. See PageScrollOpts.
+func PageRowWidth(contentWidth int) int {
+	return PageScrollOpts(nil).ContentWidth(contentWidth)
+}
+
 // ScrollableContainer creates a scrollable container with a vertical slider.
 // Returns the scroll container, slider, and wrapper widget for embedding in layouts.
 // The scroll container and slider references can be used for scroll position preservation.
@@ -207,10 +274,7 @@ func ScrollableContainer(opts ScrollableOpts) (*ScrollView, *widget.Slider, widg
 	if bgColor == nil {
 		bgColor = style.Background
 	}
-	spacing := opts.Spacing
-	if spacing == 0 && opts.BorderColor == nil {
-		spacing = 4 // Default spacing when no border
-	}
+	spacing := opts.sliderSpacing()
 
 	// Create scroll container (clips with a SubImage rather than an allocated
 	// mask buffer; see ScrollView).
@@ -274,6 +338,68 @@ func CenteredContainer(spacing int) *widget.Container {
 			}),
 		),
 	)
+}
+
+// FillContainer creates a single cell container whose child is stretched
+// to fill it. Use as the outer container of a sidebar section's content so
+// scrollable content can stretch to the content area.
+func FillContainer() *widget.Container {
+	return widget.NewContainer(
+		widget.ContainerOpts.Layout(widget.NewGridLayout(
+			widget.GridLayoutOpts.Columns(1),
+			widget.GridLayoutOpts.Stretch([]bool{true}, []bool{true}),
+		)),
+	)
+}
+
+// ActionRow creates the action button row of a form or sub-view: the
+// buttons right-aligned in the order given. Put the confirming action
+// first, as a primary button, and Cancel or Done last. The returned
+// container has RowLayoutData{Stretch: true} for use in row layouts.
+func ActionRow(buttons ...*widget.Button) *widget.Container {
+	stretch := make([]bool, len(buttons)+1)
+	stretch[0] = true
+	row := widget.NewContainer(
+		widget.ContainerOpts.Layout(widget.NewGridLayout(
+			widget.GridLayoutOpts.Columns(len(buttons)+1),
+			widget.GridLayoutOpts.Stretch(stretch, []bool{true}),
+			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
+		)),
+		widget.ContainerOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
+		),
+	)
+	row.AddChild(widget.NewContainer())
+	for _, b := range buttons {
+		row.AddChild(b)
+	}
+	return row
+}
+
+// NoticeText creates a line of secondary text for notes and hints
+func NoticeText(text string) *widget.Text {
+	return widget.NewText(
+		widget.TextOpts.Text(text, style.FontFace(), style.TextSecondary),
+	)
+}
+
+// SectionHeader creates a header row with the title in the accent color.
+// The returned container has RowLayoutData{Stretch: true} for use in row
+// layouts.
+func SectionHeader(title string) *widget.Container {
+	container := widget.NewContainer(
+		widget.ContainerOpts.Layout(widget.NewRowLayout(
+			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
+			widget.RowLayoutOpts.Spacing(style.TinySpacing),
+		)),
+		widget.ContainerOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
+		),
+	)
+	container.AddChild(widget.NewText(
+		widget.TextOpts.Text(title, style.FontFace(), style.Accent),
+	))
+	return container
 }
 
 // EmptyState creates a centered empty state display with title, optional subtitle, and optional button.
@@ -377,8 +503,7 @@ func ShortcutModifierPressed() bool {
 // TextInputGroup manages a group of text inputs with clipboard support.
 // Call Update() each frame to handle Ctrl/Cmd+A/C/V/X shortcuts.
 type TextInputGroup struct {
-	inputs          []*widget.TextInput
-	clipboardInited bool
+	inputs []*widget.TextInput
 }
 
 // NewTextInputGroup creates a new text input group for clipboard handling.
@@ -394,13 +519,6 @@ func (g *TextInputGroup) Add(input *widget.TextInput) {
 // Update handles clipboard shortcuts (Ctrl/Cmd+A/C/V/X) for the focused input.
 // Call this each frame from your screen's Update method.
 func (g *TextInputGroup) Update() {
-	// Initialize clipboard on first use
-	if !g.clipboardInited {
-		if err := clipboard.Init(); err == nil {
-			g.clipboardInited = true
-		}
-	}
-
 	if !ShortcutModifierPressed() {
 		return
 	}
@@ -425,23 +543,23 @@ func (g *TextInputGroup) Update() {
 
 	// Ctrl/Cmd+V: Paste
 	if inpututil.IsKeyJustPressed(ebiten.KeyV) {
-		if text := clipboard.Read(clipboard.FmtText); text != nil {
+		if text, ok := ClipboardRead(); ok {
 			focused.DeleteSelectedText()
-			focused.Insert(string(text))
+			focused.Insert(text)
 		}
 	}
 
 	// Ctrl/Cmd+C: Copy
 	if inpututil.IsKeyJustPressed(ebiten.KeyC) {
 		if selected := focused.SelectedText(); selected != "" {
-			clipboard.Write(clipboard.FmtText, []byte(selected))
+			ClipboardWrite(selected)
 		}
 	}
 
-	// Ctrl/Cmd+X: Cut
+	// Ctrl/Cmd+X: Cut. The text is only removed once it is on the
+	// clipboard.
 	if inpututil.IsKeyJustPressed(ebiten.KeyX) {
-		if selected := focused.SelectedText(); selected != "" {
-			clipboard.Write(clipboard.FmtText, []byte(selected))
+		if selected := focused.SelectedText(); selected != "" && ClipboardWrite(selected) {
 			focused.DeleteSelectedText()
 		}
 	}

@@ -715,7 +715,7 @@ func (s *LibraryScreen) ApplyPendingIconScroll() {
 		return
 	}
 
-	btn := s.focusButtons["game-"+s.iconSelectedCRC]
+	btn := s.target("game-" + s.iconSelectedCRC)
 	if btn == nil {
 		s.pendingIconScroll = false
 		s.iconSelectedCRC = ""
@@ -1005,8 +1005,8 @@ func (s *LibraryScreen) OnEnter() {
 // isGameButton returns true if the button is a game button (not a toolbar button)
 func (s *LibraryScreen) isGameButton(btn *widget.Button) bool {
 	// Game buttons have keys starting with "game-"
-	for key, b := range s.focusButtons {
-		if b == btn && len(key) > 5 && key[:5] == "game-" {
+	for key, b := range s.focusTargets {
+		if b == widget.Focuser(btn) && len(key) > 5 && key[:5] == "game-" {
 			return true
 		}
 	}

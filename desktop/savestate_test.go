@@ -2,8 +2,6 @@ package desktop
 
 import (
 	"testing"
-
-	"github.com/user-none/eblitui/desktop/storage"
 )
 
 func TestNewSaveStateManager(t *testing.T) {
@@ -67,41 +65,7 @@ func TestNextPreviousSlotRoundTrip(t *testing.T) {
 	}
 }
 
-func TestSetGameRestoresSlot(t *testing.T) {
-	lib := storage.DefaultLibrary()
-	lib.AddGame(&storage.GameEntry{
-		CRC32:    "aabbccdd",
-		Settings: storage.GameSettings{SaveSlot: 5},
-	})
-
-	m := NewSaveStateManager(nil)
-	m.SetLibrary(lib)
-	m.SetGame("aabbccdd")
-
-	if m.GetCurrentSlot() != 5 {
-		t.Errorf("expected slot 5 from game settings, got %d", m.GetCurrentSlot())
-	}
-}
-
-func TestSetGameNotInLibrary(t *testing.T) {
-	lib := storage.DefaultLibrary()
-
-	m := NewSaveStateManager(nil)
-	m.SetLibrary(lib)
-
-	// Set to slot 5 first
-	for i := 0; i < 5; i++ {
-		m.NextSlot()
-	}
-
-	// SetGame with unknown CRC should reset to 0
-	m.SetGame("nonexistent")
-	if m.GetCurrentSlot() != 0 {
-		t.Errorf("expected slot 0 for unknown game, got %d", m.GetCurrentSlot())
-	}
-}
-
-func TestSetGameNilLibrary(t *testing.T) {
+func TestSetGameNoGameResetsSlot(t *testing.T) {
 	m := NewSaveStateManager(nil)
 
 	// Set to slot 3 first
@@ -109,25 +73,10 @@ func TestSetGameNilLibrary(t *testing.T) {
 		m.NextSlot()
 	}
 
-	// SetGame without library should reset to 0
-	m.SetGame("anything")
+	// SetGame with no game resets to 0 without reading any file
+	m.SetGame("")
 	if m.GetCurrentSlot() != 0 {
-		t.Errorf("expected slot 0 with nil library, got %d", m.GetCurrentSlot())
-	}
-}
-
-func TestSetLibrary(t *testing.T) {
-	m := NewSaveStateManager(nil)
-
-	if m.library != nil {
-		t.Error("library should be nil initially")
-	}
-
-	lib := storage.DefaultLibrary()
-	m.SetLibrary(lib)
-
-	if m.library == nil {
-		t.Error("library should not be nil after SetLibrary")
+		t.Errorf("expected slot 0 with no game, got %d", m.GetCurrentSlot())
 	}
 }
 
@@ -152,15 +101,8 @@ func TestHasResumeStateNoGame(t *testing.T) {
 	}
 }
 
-func TestPersistSlotNilLibrary(t *testing.T) {
-	m := NewSaveStateManager(nil)
-	// persistSlot with nil library should not panic
-	m.persistSlot()
-}
-
 func TestPersistSlotNoGame(t *testing.T) {
 	m := NewSaveStateManager(nil)
-	m.SetLibrary(storage.DefaultLibrary())
-	// persistSlot with empty gameCRC should not panic
+	// persistSlot with empty gameCRC does nothing and writes no file
 	m.persistSlot()
 }

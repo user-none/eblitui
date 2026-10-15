@@ -134,8 +134,8 @@ func TestDefaultConfig(t *testing.T) {
 func TestDefaultLibrary(t *testing.T) {
 	lib := DefaultLibrary()
 
-	if lib.Version != 1 {
-		t.Errorf("expected version 1, got %d", lib.Version)
+	if lib.Version != libraryVersion {
+		t.Errorf("expected version %d, got %d", libraryVersion, lib.Version)
 	}
 	if len(lib.Games) != 0 {
 		t.Errorf("expected empty games map, got %d entries", len(lib.Games))
@@ -749,22 +749,49 @@ func TestLibraryDefaultSortOrder(t *testing.T) {
 	}
 }
 
-func TestMigrateLibrary(t *testing.T) {
-	lib := &Library{
-		Version: 0,
-		Games:   make(map[string]*GameEntry),
+func TestMigrateLibraryCurrentVersion(t *testing.T) {
+	// A current library is left alone and no library file is read. Older
+	// versions read the library file for save slots, so they are not
+	// exercised here.
+	lib := &Library{Version: libraryVersion}
+	if migrateLibrary(lib, "") {
+		t.Error("current library reported as migrated")
+	}
+	if lib.Version != libraryVersion {
+		t.Errorf("expected version %d, got %d", libraryVersion, lib.Version)
+	}
+}
+
+func TestLegacySaveSlots(t *testing.T) {
+	data := []byte(`{
+		"version": 1,
+		"games": {
+			"T-14310G": {"crc32": "T-14310G", "settings": {"saveSlot": 2}},
+			"MK-81019": {"crc32": "MK-81019", "settings": {}},
+			"ZERO": {"settings": {"saveSlot": 0}},
+			"HIGH": {"settings": {"saveSlot": 10}},
+			"NEG": {"settings": {"saveSlot": -1}},
+			"NONE": {"crc32": "NONE"},
+			"NINE": {"settings": {"saveSlot": 9}}
+		}
+	}`)
+
+	slots, err := legacySaveSlots(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := map[string]int{"T-14310G": 2, "NINE": 9}
+	if len(slots) != len(want) {
+		t.Errorf("got %v, want %v", slots, want)
+	}
+	for key, slot := range want {
+		if slots[key] != slot {
+			t.Errorf("%s: got %d, want %d", key, slots[key], slot)
+		}
 	}
 
-	migrated := migrateLibrary(lib)
-	if migrated.Version != 1 {
-		t.Errorf("expected version 1, got %d", migrated.Version)
-	}
-
-	// Already current version should stay the same
-	lib2 := &Library{Version: 1}
-	migrated2 := migrateLibrary(lib2)
-	if migrated2.Version != 1 {
-		t.Errorf("expected version 1, got %d", migrated2.Version)
+	if _, err := legacySaveSlots([]byte("not json")); err == nil {
+		t.Error("expected error for invalid JSON")
 	}
 }
 

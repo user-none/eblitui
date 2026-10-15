@@ -17,13 +17,13 @@ import (
 // buildNewProfileView creates the new-profile view: connected controller
 // selection plus name entry.
 func (s *InputSection) buildNewProfileView(focus types.FocusManager, section *widget.Container) {
-	section.AddChild(sectionHeader("New Profile"))
+	section.AddChild(widgets.SectionHeader("New Profile"))
 
 	models := connectedModels()
 	if len(models) == 0 {
-		section.AddChild(noticeText("No controllers connected. Connect one to create a profile."))
+		section.AddChild(widgets.NoticeText("No controllers connected. Connect one to create a profile."))
 	} else {
-		section.AddChild(noticeText("Controller (connected):"))
+		section.AddChild(widgets.NoticeText("Controller (connected):"))
 		modelKeys := make([]string, 0, len(models))
 		for i, m := range models {
 			section.AddChild(s.buildModelRow(focus, i, m))
@@ -42,11 +42,11 @@ func (s *InputSection) buildNewProfileView(focus types.FocusManager, section *wi
 
 	var actions []actionButton
 	if len(models) > 0 {
-		actions = append(actions, actionButton{"Create", "input-newp-create", func() {
+		actions = append(actions, actionButton{label: "Create", focusKey: "input-newp-create", primary: true, handler: func() {
 			s.createProfile()
 		}})
 	}
-	actions = append(actions, actionButton{"Cancel", "input-newp-cancel", func() {
+	actions = append(actions, actionButton{label: "Cancel", focusKey: "input-newp-cancel", handler: func() {
 		s.switchView(inputViewMain, "input-new-profile")
 	}})
 	section.AddChild(s.buildActionRow(focus, actions...))
@@ -57,7 +57,7 @@ func (s *InputSection) buildNewProfileView(focus types.FocusManager, section *wi
 	}
 	focus.RegisterNavZone("input-newp-actions", types.NavZoneHorizontal, actionKeys, 0)
 	if len(models) > 0 {
-		chainZones(focus, []string{"input-models", "input-newp-actions"})
+		types.ChainZones(focus, []string{"input-models", "input-newp-actions"})
 	}
 }
 

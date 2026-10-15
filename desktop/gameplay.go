@@ -15,6 +15,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/desktop/achievements"
+	"github.com/user-none/eblitui/desktop/cheats"
 	"github.com/user-none/eblitui/desktop/metadata"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
@@ -97,6 +98,12 @@ type GameplayManager struct {
 	pendingRumbleMu  sync.Mutex
 	rumbleActivePads map[int]bool // Ebiten thread only: players vibrating last frame
 
+	// Cheats. cheatSystem is the core's cheat system (0 when unsupported);
+	// cheatEngine applies the game's enabled cheats each frame, nil when
+	// none are on.
+	cheatSystem cheats.System
+	cheatEngine *CheatEngine
+
 	// Turbo (fast-forward)
 	turboState    *TurboState
 	turboAudioBuf []int16 // Pre-allocated buffer for collecting multi-frame audio
@@ -141,6 +148,7 @@ func NewGameplayManager(
 	config *storage.Config,
 	achievementManager *achievements.Manager,
 	metadata *metadata.MetadataManager,
+	cheatSystem cheats.System,
 	onExitToLibrary func(),
 	onExitApp func(),
 ) *GameplayManager {
@@ -160,6 +168,7 @@ func NewGameplayManager(
 		config:             config,
 		achievementManager: achievementManager,
 		metadata:           metadata,
+		cheatSystem:        cheatSystem,
 		onExitToLibrary:    onExitToLibrary,
 		onExitApp:          onExitApp,
 	}
@@ -464,6 +473,11 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bo
 		}
 	}
 
+	// Load the game's enabled cheats when the emulator exposes memory
+	if gm.memoryInspector != nil {
+		gm.cheatEngine = gm.loadCheatEngine(game.CRC32)
+	}
+
 	// Start the emulation goroutine
 	launched = true
 	go gm.emulationLoop()
@@ -495,6 +509,10 @@ func (gm *GameplayManager) runEmulatorFrame() {
 	gm.perfOverlay.Stats().AddFrame(now.Sub(start), gameFrames, now)
 	if gm.achievementManager != nil {
 		gm.achievementManager.DoFrame()
+	}
+	// Cheats write memory between frames, while the emulation is stopped
+	if gm.cheatEngine != nil {
+		gm.cheatEngine.Apply(gm.memoryInspector)
 	}
 }
 
@@ -918,6 +936,7 @@ func (gm *GameplayManager) Exit(saveResume bool) {
 	gm.currentGame = nil
 	gm.rumbleEngine = nil
 	gm.rumbleCHT = nil
+	gm.cheatEngine = nil
 	gm.pendingCHTRumble = nil
 	gm.pendingMotor = nil
 	gm.pendingMotorSet = false

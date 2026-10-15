@@ -18,21 +18,12 @@ import (
 // SettingsSectionLibrary is the focus key of the Library settings section
 const SettingsSectionLibrary = "section-library"
 
-// sectionDescriptor describes a settings sidebar section
-type sectionDescriptor struct {
-	label    string
-	focusKey string
-	build    func(types.FocusManager) *widget.Container
-	setupNav func()
-}
-
 // SettingsScreen displays application settings
 type SettingsScreen struct {
 	BaseScreen // Embedded for focus restoration
 
 	callback        ScreenCallback
-	selectedSection int
-	sections        []sectionDescriptor
+	sidebarSections // Sidebar section list and selection
 
 	// Encapsulated sections
 	library           *settings.LibrarySection
@@ -51,17 +42,16 @@ type SettingsScreen struct {
 // systemInfo provides button definitions and core options for the input section.
 func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config *storage.Config, achievementMgr *achievements.Manager, serializeSize int, systemInfo coreif.SystemInfo, appIcon []byte) *SettingsScreen {
 	s := &SettingsScreen{
-		callback:          callback,
-		selectedSection:   0,
-		library:           settings.NewLibrarySection(callback, library),
-		appearance:        settings.NewAppearanceSection(callback, config),
-		video:             settings.NewVideoSection(callback, config, systemInfo),
-		audio:             settings.NewAudioSection(callback, config, systemInfo),
-		rewind:            settings.NewRewindSection(callback, config, serializeSize),
-		retroAchievements: settings.NewRetroAchievementsSection(callback, config, achievementMgr),
-		input:             settings.NewInputSection(callback, config, systemInfo),
-		about:             settings.NewAboutSection(systemInfo.CoreName, systemInfo.CoreVersion, appIcon),
+		callback:   callback,
+		library:    settings.NewLibrarySection(callback, library),
+		appearance: settings.NewAppearanceSection(callback, config),
+		audio:      settings.NewAudioSection(callback, config, systemInfo),
+		rewind:     settings.NewRewindSection(callback, config, serializeSize),
+		input:      settings.NewInputSection(callback, config, systemInfo),
+		about:      settings.NewAboutSection(systemInfo.CoreName, systemInfo.CoreVersion, appIcon),
 	}
+	s.video = settings.NewVideoSection(callback, config, systemInfo, s.contentWidth)
+	s.retroAchievements = settings.NewRetroAchievementsSection(callback, config, achievementMgr, s.contentWidth)
 	s.InitBase()
 
 	s.sections = []sectionDescriptor{
@@ -96,7 +86,6 @@ func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config
 		label:    "About",
 		focusKey: "section-about",
 		build:    s.about.Build,
-		setupNav: s.setupAboutNav,
 	})
 
 	return s
@@ -179,58 +168,11 @@ func (s *SettingsScreen) Build() *widget.Container {
 		)),
 	)
 
-	// Sidebar
-	sidebar := widget.NewContainer(
-		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
-		widget.ContainerOpts.Layout(widget.NewRowLayout(
-			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
-			widget.RowLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
-			widget.RowLayoutOpts.Spacing(style.TinySpacing),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.MinSize(style.SettingsSidebarMinWidth, 0),
-		),
-	)
+	mainContent.AddChild(s.buildSidebar(&s.BaseScreen, s.sidebarWidth(style.SidebarMinWidth), func() { s.callback.RequestRebuild() }))
 
-	for i, sec := range s.sections {
-		idx := i
-		key := sec.focusKey
-		btn := widget.NewButton(
-			widget.ButtonOpts.Image(style.ActiveButtonImage(s.selectedSection == idx)),
-			widget.ButtonOpts.Text(sec.label, style.FontFace(), &widget.ButtonTextColor{
-				Idle:     style.Text,
-				Disabled: style.TextSecondary,
-			}),
-			widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
-			widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-				s.selectedSection = idx
-				s.SetPendingFocus(key)
-				s.callback.RequestRebuild()
-			}),
-			widget.ButtonOpts.WidgetOpts(
-				widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-			),
-		)
-		s.RegisterFocusButton(key, btn)
-		sidebar.AddChild(btn)
+	if content := s.buildContent(s); content != nil {
+		mainContent.AddChild(content)
 	}
-
-	mainContent.AddChild(sidebar)
-
-	// Content area - use GridLayout to constrain the library section
-	contentArea := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(1),
-			widget.GridLayoutOpts.Stretch([]bool{true}, []bool{true}),
-			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(style.DefaultPadding)),
-		)),
-	)
-
-	if s.selectedSection >= 0 && s.selectedSection < len(s.sections) {
-		contentArea.AddChild(s.sections[s.selectedSection].build(s))
-	}
-
-	mainContent.AddChild(contentArea)
 	rootContainer.AddChild(mainContent)
 
 	// Set up navigation zones
@@ -239,23 +181,21 @@ func (s *SettingsScreen) Build() *widget.Container {
 	return rootContainer
 }
 
+// contentWidth returns the width of a section's content: the window less
+// the root padding and the sidebar and its spacing
+func (s *SettingsScreen) contentWidth() int {
+	return s.callback.GetWindowWidth() - style.DefaultPadding*2 -
+		s.sidebarWidth(style.SidebarMinWidth) - style.DefaultSpacing
+}
+
 // setupNavigation registers navigation zones for settings screen
 func (s *SettingsScreen) setupNavigation() {
-	sidebarKeys := make([]string, len(s.sections))
-	for i, sec := range s.sections {
-		sidebarKeys[i] = sec.focusKey
-	}
-
 	// Header zone holds the Back button above the sidebar/content. Up from the
 	// top of the sidebar reaches it; Down from it returns to the sidebar.
 	s.RegisterNavZone("header", types.NavZoneHorizontal, []string{"settings-back"}, 0)
-	s.RegisterNavZone("sidebar", types.NavZoneVertical, sidebarKeys, 0)
-	s.SetNavTransition("header", types.DirDown, "sidebar", types.NavIndexFirst)
-	s.SetNavTransition("sidebar", types.DirUp, "header", types.NavIndexFirst)
-
-	if s.selectedSection >= 0 && s.selectedSection < len(s.sections) {
-		s.sections[s.selectedSection].setupNav()
-	}
+	s.sidebarSections.setupNav(&s.BaseScreen)
+	s.SetNavTransition("header", types.DirDown, sidebarZone, types.NavIndexFirst)
+	s.SetNavTransition(sidebarZone, types.DirUp, "header", types.NavIndexFirst)
 }
 
 func (s *SettingsScreen) setupVideoNav() {
@@ -266,10 +206,10 @@ func (s *SettingsScreen) setupVideoNav() {
 			break
 		}
 	}
-	s.SetNavTransition("sidebar", types.DirRight, firstVideoZone, types.NavIndexFirst)
-	s.SetNavTransition("video-core-opts", types.DirLeft, "sidebar", types.NavIndexFirst)
-	s.SetNavTransition("video-preprocess", types.DirLeft, "sidebar", types.NavIndexFirst)
-	s.SetNavTransition("video-shaders", types.DirLeft, "sidebar", types.NavIndexFirst)
+	s.SetNavTransition(sidebarZone, types.DirRight, firstVideoZone, types.NavIndexFirst)
+	s.SetNavTransition("video-core-opts", types.DirLeft, sidebarZone, types.NavIndexFirst)
+	s.SetNavTransition("video-preprocess", types.DirLeft, sidebarZone, types.NavIndexFirst)
+	s.SetNavTransition("video-shaders", types.DirLeft, sidebarZone, types.NavIndexFirst)
 }
 
 func (s *SettingsScreen) setupAudioNav() {
@@ -280,53 +220,49 @@ func (s *SettingsScreen) setupAudioNav() {
 			break
 		}
 	}
-	s.SetNavTransition("sidebar", types.DirRight, firstAudioZone, types.NavIndexFirst)
-	s.SetNavTransition("audio-core-opts", types.DirLeft, "sidebar", types.NavIndexFirst)
-	s.SetNavTransition("audio-mute", types.DirLeft, "sidebar", types.NavIndexFirst)
-	s.SetNavTransition("audio-volume", types.DirLeft, "sidebar", types.NavIndexFirst)
-	s.SetNavTransition("audio-ff-mute", types.DirLeft, "sidebar", types.NavIndexFirst)
+	s.SetNavTransition(sidebarZone, types.DirRight, firstAudioZone, types.NavIndexFirst)
+	s.SetNavTransition("audio-core-opts", types.DirLeft, sidebarZone, types.NavIndexFirst)
+	s.SetNavTransition("audio-mute", types.DirLeft, sidebarZone, types.NavIndexFirst)
+	s.SetNavTransition("audio-volume", types.DirLeft, sidebarZone, types.NavIndexFirst)
+	s.SetNavTransition("audio-ff-mute", types.DirLeft, sidebarZone, types.NavIndexFirst)
 }
 
 func (s *SettingsScreen) setupInputNav() {
-	s.SetNavTransition("sidebar", types.DirRight, s.input.FirstNavZone(), types.NavIndexFirst)
+	s.SetNavTransition(sidebarZone, types.DirRight, s.input.FirstNavZone(), types.NavIndexFirst)
 	for _, zone := range s.input.NavZones() {
-		s.SetNavTransition(zone, types.DirLeft, "sidebar", types.NavIndexFirst)
+		s.SetNavTransition(zone, types.DirLeft, sidebarZone, types.NavIndexFirst)
 	}
 }
 
 func (s *SettingsScreen) setupLibraryNav() {
-	s.SetNavTransition("sidebar", types.DirRight, "lib-folders", types.NavIndexFirst)
-	s.SetNavTransition("lib-folders", types.DirLeft, "sidebar", types.NavIndexFirst)
-	s.SetNavTransition("lib-buttons", types.DirLeft, "sidebar", types.NavIndexFirst)
+	s.SetNavTransition(sidebarZone, types.DirRight, "lib-folders", types.NavIndexFirst)
+	s.SetNavTransition("lib-folders", types.DirLeft, sidebarZone, types.NavIndexFirst)
+	s.SetNavTransition("lib-buttons", types.DirLeft, sidebarZone, types.NavIndexFirst)
 }
 
 func (s *SettingsScreen) setupAppearanceNav() {
-	s.SetNavTransition("sidebar", types.DirRight, "theme-list", types.NavIndexFirst)
-	s.SetNavTransition("theme-list", types.DirLeft, "sidebar", types.NavIndexFirst)
+	s.SetNavTransition(sidebarZone, types.DirRight, "theme-list", types.NavIndexFirst)
+	s.SetNavTransition("theme-list", types.DirLeft, sidebarZone, types.NavIndexFirst)
 }
 
 func (s *SettingsScreen) setupRewindNav() {
-	s.SetNavTransition("sidebar", types.DirRight, "rewind-enable", types.NavIndexFirst)
-	s.SetNavTransition("rewind-enable", types.DirLeft, "sidebar", types.NavIndexFirst)
+	s.SetNavTransition(sidebarZone, types.DirRight, "rewind-enable", types.NavIndexFirst)
+	s.SetNavTransition("rewind-enable", types.DirLeft, sidebarZone, types.NavIndexFirst)
 }
 
 func (s *SettingsScreen) setupAchievementsNav() {
-	s.SetNavTransition("sidebar", types.DirRight, "ra-settings", types.NavIndexFirst)
-	s.SetNavTransition("ra-settings", types.DirLeft, "sidebar", types.NavIndexFirst)
+	s.SetNavTransition(sidebarZone, types.DirRight, "ra-settings", types.NavIndexFirst)
+	s.SetNavTransition("ra-settings", types.DirLeft, sidebarZone, types.NavIndexFirst)
 }
-
-// setupAboutNav is a no-op: the About section has no focusable widgets, so
-// there is no sidebar-to-content navigation transition to register.
-func (s *SettingsScreen) setupAboutNav() {}
 
 func (s *SettingsScreen) setupCoreNav() {
 	firstZone := "core-core-opts"
 	if s.coreOptions != nil && !s.coreOptions.HasCoreOpts() && s.coreOptions.HasBIOS() {
 		firstZone = "core-bios"
 	}
-	s.SetNavTransition("sidebar", types.DirRight, firstZone, types.NavIndexFirst)
-	s.SetNavTransition("core-core-opts", types.DirLeft, "sidebar", types.NavIndexFirst)
-	s.SetNavTransition("core-bios", types.DirLeft, "sidebar", types.NavIndexFirst)
+	s.SetNavTransition(sidebarZone, types.DirRight, firstZone, types.NavIndexFirst)
+	s.SetNavTransition("core-core-opts", types.DirLeft, sidebarZone, types.NavIndexFirst)
+	s.SetNavTransition("core-bios", types.DirLeft, sidebarZone, types.NavIndexFirst)
 }
 
 // OnEnter is called when entering the settings screen
@@ -339,12 +275,8 @@ func (s *SettingsScreen) OnEnter() {
 // SelectSection makes the section with the given focus key active and
 // focuses its sidebar button. Unknown keys are ignored.
 func (s *SettingsScreen) SelectSection(focusKey string) {
-	for i, sec := range s.sections {
-		if sec.focusKey == focusKey {
-			s.selectedSection = i
-			s.SetPendingFocus(focusKey)
-			return
-		}
+	if s.selectKey(focusKey) {
+		s.SetPendingFocus(focusKey)
 	}
 }
 
@@ -364,15 +296,13 @@ func (s *SettingsScreen) Update() {
 		inputUpdated = true
 	}
 
-	if s.selectedSection >= 0 && s.selectedSection < len(s.sections) {
-		switch s.sections[s.selectedSection].focusKey {
-		case "section-input":
-			if !inputUpdated {
-				s.input.Update()
-			}
-		case "section-achievements":
-			s.retroAchievements.Update()
+	switch s.currentKey() {
+	case "section-input":
+		if !inputUpdated {
+			s.input.Update()
 		}
+	case "section-achievements":
+		s.retroAchievements.Update()
 	}
 }
 
@@ -384,8 +314,7 @@ func (s *SettingsScreen) IsInputCaptureActive() bool {
 // HandleBack gives the selected section a chance to consume a back action
 // (e.g. leaving an input sub-view). Returns true when consumed.
 func (s *SettingsScreen) HandleBack() bool {
-	if s.selectedSection >= 0 && s.selectedSection < len(s.sections) &&
-		s.sections[s.selectedSection].focusKey == "section-input" {
+	if s.currentKey() == "section-input" {
 		return s.input.HandleBack()
 	}
 	return false

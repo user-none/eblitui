@@ -60,11 +60,6 @@ func SanitizeLibraryEntries(lib *Library) {
 		if game.Added < 0 {
 			game.Added = 0
 		}
-
-		// saveSlot: must be 0-9
-		if game.Settings.SaveSlot < 0 || game.Settings.SaveSlot > 9 {
-			game.Settings.SaveSlot = 0
-		}
 	}
 }
 
@@ -73,8 +68,8 @@ func SanitizeLibraryEntries(lib *Library) {
 func ValidateLibrary(lib *Library) []string {
 	var errors []string
 
-	if lib.Version != 1 {
-		errors = append(errors, fmt.Sprintf("version: %d (valid: 1)", lib.Version))
+	if lib.Version != libraryVersion {
+		errors = append(errors, fmt.Sprintf("version: %d (valid: %d)", lib.Version, libraryVersion))
 	}
 
 	return errors
@@ -82,8 +77,8 @@ func ValidateLibrary(lib *Library) []string {
 
 // CorrectLibrary resets any invalid library-level fields to their defaults.
 func CorrectLibrary(lib *Library) *Library {
-	if lib.Version != 1 {
-		lib.Version = 1
+	if lib.Version != libraryVersion {
+		lib.Version = libraryVersion
 	}
 	return lib
 }

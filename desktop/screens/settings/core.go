@@ -56,12 +56,7 @@ func (c *CoreSection) HasBIOS() bool {
 
 // Build creates the core options section UI
 func (c *CoreSection) Build(focus types.FocusManager) *widget.Container {
-	outer := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(1),
-			widget.GridLayoutOpts.Stretch([]bool{true}, []bool{true}),
-		)),
-	)
+	outer := widgets.FillContainer()
 
 	section := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
@@ -81,13 +76,7 @@ func (c *CoreSection) Build(focus types.FocusManager) *widget.Container {
 
 	c.setupNavigation(focus)
 
-	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
-		Content:     section,
-		BgColor:     style.Background,
-		BorderColor: style.Border,
-		Spacing:     0,
-		Padding:     style.SmallSpacing,
-	})
+	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.PageScrollOpts(section))
 	focus.SetScrollContainer(scrollContainer)
 	focus.RestoreScrollPosition()
 	outer.AddChild(scrollWrapper)
@@ -102,7 +91,7 @@ func (c *CoreSection) buildBIOSOption(section *widget.Container, focus types.Foc
 	bc := c.getBIOSConfig(opt.Key)
 
 	// Section header using the BIOSOption label
-	section.AddChild(buildSectionHeader(opt.Label))
+	section.AddChild(widgets.SectionHeader(opt.Label))
 
 	// Active toggle row
 	activeKey := "core-bios-active-" + opt.Key

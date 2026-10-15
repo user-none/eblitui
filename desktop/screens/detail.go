@@ -8,50 +8,57 @@ import (
 	goimage "image"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
-	"sync"
 
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/user-none/eblitui/desktop/achievements"
+	"github.com/user-none/eblitui/desktop/cheats"
+	"github.com/user-none/eblitui/desktop/screens/detail"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
+	"github.com/user-none/eblitui/desktop/types"
 	"github.com/user-none/eblitui/desktop/widgets"
-	"github.com/user-none/eblitui/romloader"
-	"github.com/user-none/go-rcheevos"
 )
 
 // DetailScreen displays game information and launch options
 type DetailScreen struct {
 	BaseScreen // Embedded for focus restoration
 
-	callback           ScreenCallback
-	library            *storage.Library
-	config             *storage.Config
-	game               *storage.GameEntry
-	achievementManager *achievements.Manager
-	defaultConsoleID   int
+	callback ScreenCallback
+	library  *storage.Library
+	game     *storage.GameEntry
 
-	// Achievement loading state
-	achMu       sync.Mutex
-	achLoading  bool
-	achLoadErr  error
-	achFound    bool
-	achProgress *rcheevos.UserProgressEntry
+	pages sidebarSections // Page sidebar list and selection
+
+	// Encapsulated pages
+	overviewPage *detail.OverviewSection
+	cheatsPage   *detail.CheatsSection // nil when the core has no cheat support
 }
 
-// NewDetailScreen creates a new detail screen
-func NewDetailScreen(callback ScreenCallback, library *storage.Library, config *storage.Config, achievementManager *achievements.Manager, defaultConsoleID int) *DetailScreen {
+// cheatsPageKey is the focus key of the Cheats page in the sidebar
+const cheatsPageKey = "page-cheats"
+
+// NewDetailScreen creates a new detail screen. cheatSystem is the core's
+// cheat system, or 0 when the core has no cheat support; the Cheats page
+// is listed only when it is set. cheatBigEndian is the byte order of the
+// core's memory, which cheats are converted to.
+func NewDetailScreen(callback ScreenCallback, library *storage.Library, achievementManager *achievements.Manager, defaultConsoleID int, cheatSystem cheats.System, cheatBigEndian bool) *DetailScreen {
 	s := &DetailScreen{
-		callback:           callback,
-		library:            library,
-		config:             config,
-		achievementManager: achievementManager,
-		defaultConsoleID:   defaultConsoleID,
+		callback: callback,
+		library:  library,
 	}
 	s.InitBase()
+	s.overviewPage = detail.NewOverviewSection(callback, library, achievementManager, defaultConsoleID, s.contentWidth)
+
+	s.pages.sections = []sectionDescriptor{
+		{label: "Overview", focusKey: "page-overview", build: s.overviewPage.Build, setupNav: s.setupOverviewNav},
+	}
+	// Cheats is listed only when the core supports cheats
+	if cheatSystem != 0 {
+		s.cheatsPage = detail.NewCheatsSection(callback, cheatSystem, cheatBigEndian, s.contentWidth)
+		s.pages.sections = append(s.pages.sections, sectionDescriptor{label: "Cheats", focusKey: cheatsPageKey, build: s.cheatsPage.Build, setupNav: s.setupCheatsNav})
+	}
 	return s
 }
 
@@ -59,111 +66,23 @@ func NewDetailScreen(callback ScreenCallback, library *storage.Library, config *
 func (s *DetailScreen) SetGame(gameCRC string) {
 	s.game = s.library.GetGame(gameCRC)
 
-	// Reset achievement state
-	s.achMu.Lock()
-	s.achLoading = false
-	s.achLoadErr = nil
-	s.achFound = false
-	s.achProgress = nil
-	s.achMu.Unlock()
+	// A different game starts on Overview at the top. The scroll container
+	// belongs to the previous game's build, so drop it to keep its offset
+	// from being saved and restored onto this game.
+	s.pages.selected = 0
+	s.scrollContainer = nil
+	s.scrollTop = 0
 
-	// Start async achievement lookup if logged in
-	if s.achievementManager != nil && s.achievementManager.IsLoggedIn() {
-		s.achMu.Lock()
-		s.achLoading = true
-		s.achMu.Unlock()
-		go s.loadAchievementProgress()
+	s.overviewPage.SetGame(s.game)
+	if s.cheatsPage != nil {
+		s.cheatsPage.SetGame(s.game)
 	}
-}
-
-// loadAchievementProgress loads achievement progress for the current game
-func (s *DetailScreen) loadAchievementProgress() {
-	if s.game == nil || s.achievementManager == nil {
-		s.achMu.Lock()
-		s.achLoading = false
-		s.achMu.Unlock()
-		return
-	}
-
-	// Ensure libraries are loaded first
-	done := make(chan bool, 1)
-	s.achievementManager.EnsureLibrariesLoaded(func(success bool) {
-		done <- success
-	})
-	if !<-done {
-		s.achMu.Lock()
-		s.achLoading = false
-		s.achLoadErr = fmt.Errorf("failed to load achievement data")
-		s.achMu.Unlock()
-		s.callback.RequestRebuild()
-		return
-	}
-
-	// If achievements were unlocked during gameplay, refresh the cached progress
-	if s.achievementManager.IsProgressDirty() {
-		refreshDone := make(chan bool, 1)
-		s.achievementManager.RefreshUserProgress(func(success bool) {
-			refreshDone <- success
-		})
-		<-refreshDone
-		s.achievementManager.ClearProgressDirty()
-	}
-
-	// Get MD5 from RDB (fast path - no ROM loading needed)
-	crc32, _ := strconv.ParseUint(s.game.CRC32, 16, 32)
-	md5Hash := s.callback.GetMD5ByCRC32(uint32(crc32))
-
-	// Fallback: compute the hash directly when not in the RDB. Disc games hash
-	// the selected disc (rcheevos reads sectors through it); cartridge games
-	// hash the ROM file.
-	if md5Hash == "" {
-		gameConsoleID := uint32(s.defaultConsoleID)
-		if s.game.ConsoleID != 0 {
-			gameConsoleID = uint32(s.game.ConsoleID)
-		}
-		if len(s.game.Discs) > 0 {
-			idx := s.game.SelectedDisc
-			if idx < 0 || idx >= len(s.game.Discs) {
-				idx = 0
-			}
-			disc, err := romloader.OpenDisc(s.game.Discs[idx].File)
-			if err != nil {
-				s.achMu.Lock()
-				s.achLoading = false
-				s.achLoadErr = err
-				s.achMu.Unlock()
-				s.callback.RequestRebuild()
-				return
-			}
-			md5Hash = s.achievementManager.ComputeGameHashFromDisc(disc, gameConsoleID)
-			disc.Close()
-		} else {
-			romData, _, err := romloader.Load(s.game.File, s.callback.GetExtensions())
-			if err != nil {
-				s.achMu.Lock()
-				s.achLoading = false
-				s.achLoadErr = err
-				s.achMu.Unlock()
-				s.callback.RequestRebuild()
-				return
-			}
-			md5Hash = s.achievementManager.ComputeGameHash(romData, gameConsoleID)
-		}
-	}
-
-	// Look up progress using MD5
-	found, progress := s.achievementManager.LookupGameProgress(md5Hash)
-	s.achMu.Lock()
-	s.achFound = found
-	s.achProgress = progress
-	s.achLoading = false
-	s.achMu.Unlock()
-	s.callback.RequestRebuild()
 }
 
 // Build creates the detail screen UI
 func (s *DetailScreen) Build() *widget.Container {
 	s.ClearFocusButtons()
+	s.updateCheatsLabel()
 
 	rootContainer := widget.NewContainer(
 		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Background)),
@@ -192,6 +111,7 @@ func (s *DetailScreen) Build() *widget.Container {
 	backButton := widgets.TextButton("Back", style.ButtonPaddingSmall, func(args *widget.ButtonClickedEventArgs) {
 		s.callback.SwitchToLibrary()
 	})
+	s.RegisterFocusButton("detail-back", backButton)
 	toolbarLeft.AddChild(backButton)
 	toolbar.AddChild(toolbarLeft)
 
@@ -246,6 +166,7 @@ func (s *DetailScreen) Build() *widget.Container {
 				}
 			}),
 		)
+		s.RegisterFocusButton("resume", resumeButton)
 		buttonContainer.AddChild(resumeButton)
 	} else {
 		removeButton := widgets.TextButton("Remove from Library", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
@@ -266,34 +187,61 @@ func (s *DetailScreen) Build() *widget.Container {
 		storage.SaveLibrary(s.library)
 		s.callback.RequestRebuild()
 	})
+	s.RegisterFocusButton("favorite", favButton)
 	buttonContainer.AddChild(favButton)
 
 	toolbarRight.AddChild(buttonContainer)
 
-	// Main content container (horizontal: box art | metadata)
-	// Uses GridLayout so the metadata column stretches to fill remaining width
-	contentContainer := widget.NewContainer(
+	// Main area: game column on the left, selected page stretched on the right
+	mainContent := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewGridLayout(
 			widget.GridLayoutOpts.Columns(2),
-			widget.GridLayoutOpts.Spacing(style.LargeSpacing, 0),
-			widget.GridLayoutOpts.Stretch([]bool{false, true}, nil),
+			widget.GridLayoutOpts.Stretch([]bool{false, true}, []bool{true}),
+			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
 		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{
-				Stretch: true,
-			}),
-		),
 	)
+	mainContent.AddChild(s.buildGameColumn())
+	if content := s.pages.buildContent(s); content != nil {
+		mainContent.AddChild(content)
+	}
+	rootContainer.AddChild(mainContent)
 
-	// Calculate art size based on window - use ~40% of width, with min/max bounds
-	windowWidth := s.callback.GetWindowWidth()
-	artWidth := windowWidth * 40 / 100
-	if artWidth < style.DetailArtWidthSmall {
-		artWidth = style.DetailArtWidthSmall
-	}
-	if artWidth > style.DetailArtWidthLarge {
-		artWidth = style.DetailArtWidthLarge
-	}
+	s.setupNavigation()
+
+	return rootContainer
+}
+
+// columnWidth returns the game column width, wider when a page label needs
+// more room
+func (s *DetailScreen) columnWidth() int {
+	return s.pages.sidebarWidth(style.DetailColumnWidth)
+}
+
+// contentWidth returns the width of the page content area: the window
+// minus the root padding and the game column
+func (s *DetailScreen) contentWidth() int {
+	return s.callback.GetWindowWidth() - style.DefaultPadding*2 - s.columnWidth() - style.DefaultSpacing
+}
+
+// buildGameColumn creates the left column shown on every page: the box art
+// above the page sidebar.
+func (s *DetailScreen) buildGameColumn() *widget.Container {
+	width := s.columnWidth()
+
+	column := widget.NewContainer(
+		widget.ContainerOpts.Layout(widget.NewRowLayout(
+			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
+			widget.RowLayoutOpts.Spacing(style.DefaultSpacing),
+		)),
+	)
+	column.AddChild(s.buildArtBox(width))
+	column.AddChild(s.pages.buildSidebar(&s.BaseScreen, width, func() { s.callback.RequestRebuild() }))
+	return column
+}
+
+// buildArtBox creates the box art at the given width in a 3:4 black box.
+// Without artwork the game's name is shown in the box instead.
+func (s *DetailScreen) buildArtBox(artWidth int) *widget.Container {
 	artHeight := artWidth * 4 / 3 // 3:4 aspect ratio for box art
 
 	// Box art container with black background (per design spec)
@@ -338,192 +286,90 @@ func (s *DetailScreen) Build() *widget.Container {
 		)
 		artContainer.AddChild(artPlaceholder)
 	}
+	return artContainer
+}
 
-	// Wrap art in a RowLayout so the grid doesn't stretch it to full row height
-	leftColumn := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewRowLayout(
-			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
-		)),
-	)
-	leftColumn.AddChild(artContainer)
-	contentContainer.AddChild(leftColumn)
-
-	// Outer metadata container that anchors content to top-left
-	metadataOuter := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewAnchorLayout()),
-	)
-
-	// Calculate available width for metadata based on window size
-	// Use all available space: window - art - padding - spacing - scrollbar
-	metadataWidth := windowWidth - artWidth - style.DefaultPadding*2 - style.LargeSpacing - style.ScrollbarWidth - style.TinySpacing
-	minMetadata := style.PxFont(200)
-	if metadataWidth < minMetadata {
-		metadataWidth = minMetadata
+// cheatsLabel returns the Cheats page label for n cheats on: "Cheats (n)",
+// or "Cheats" when none are
+func cheatsLabel(n int) string {
+	if n > 0 {
+		return fmt.Sprintf("Cheats (%d)", n)
 	}
+	return "Cheats"
+}
 
-	// Calculate pixel width for value text column
-	// Label width scales with font size; value column = metadataWidth - label - grid spacing - grid padding
-	labelWidth := style.PxFont(80)
-	valueWidth := metadataWidth - labelWidth - style.DefaultSpacing - style.SmallSpacing*2
+// updateCheatsLabel sets the Cheats page label to show how many cheats are
+// on. It runs at the start of Build, before the sidebar is measured.
+func (s *DetailScreen) updateCheatsLabel() {
+	if s.cheatsPage == nil {
+		return
+	}
+	label := cheatsLabel(s.cheatsPage.EnabledCount())
+	for i := range s.pages.sections {
+		if s.pages.sections[i].focusKey == cheatsPageKey {
+			s.pages.sections[i].label = label
+		}
+	}
+}
 
-	// Inner metadata container with fixed width
-	metadataContainer := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewRowLayout(
-			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
-			widget.RowLayoutOpts.Spacing(style.SmallSpacing),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.AnchorLayoutData{
-				HorizontalPosition: widget.AnchorLayoutPositionStart,
-				VerticalPosition:   widget.AnchorLayoutPositionStart,
-				StretchHorizontal:  true,
-			}),
-			widget.WidgetOpts.MinSize(metadataWidth, 0),
-		),
-	)
+// EnsureFocusedVisible scrolls the page content to keep the focused widget
+// visible
+func (s *DetailScreen) EnsureFocusedVisible(focused widget.Focuser) {
+	s.BaseScreen.EnsureFocusedVisible(focused, nil)
+}
 
-	// Game Info section
-	metadataContainer.AddChild(s.buildSectionHeader("Game Info"))
+// toolbarActionIndex is the toolbar zone index of Play, or Remove when the
+// game is missing, directly after Back
+const toolbarActionIndex = 1
 
-	// Title (with warning icon if missing)
-	titleText := s.game.DisplayName
+// setupNavigation registers the detail screen navigation zones. The toolbar
+// sits above the game column's page sidebar; the selected page adds its own
+// zones.
+func (s *DetailScreen) setupNavigation() {
+	toolbarKeys := []string{"detail-back", "play", "resume", "favorite"}
 	if s.game.Missing {
-		titleText = "[!] " + titleText
+		toolbarKeys = []string{"detail-back", "remove", "favorite"}
 	}
-	metadataContainer.AddChild(s.buildMetadataRow("Title", titleText, valueWidth))
+	s.RegisterNavZone("toolbar", types.NavZoneHorizontal, toolbarKeys, 0)
+	s.pages.setupNav(&s.BaseScreen)
+	s.SetNavTransition("toolbar", types.DirDown, sidebarZone, types.NavIndexFirst)
+	s.SetNavTransition(sidebarZone, types.DirUp, "toolbar", types.NavIndexFirst)
+}
 
-	if s.game.Name != "" && s.game.Name != s.game.DisplayName {
-		metadataContainer.AddChild(s.buildMetadataRow("Name", s.game.Name, valueWidth))
+func (s *DetailScreen) setupOverviewNav() {
+	s.setupPageNav(s.overviewPage.NavZones())
+}
+
+func (s *DetailScreen) setupCheatsNav() {
+	s.setupPageNav(s.cheatsPage.NavZones())
+}
+
+// setupPageNav links the selected page's zones, listed from the top, to
+// the sidebar on the left and the toolbar above the first zone. Right
+// from the sidebar enters the first zone. Moves between the zones are the
+// page's own.
+func (s *DetailScreen) setupPageNav(zones []string) {
+	if len(zones) == 0 {
+		return
 	}
-	if s.game.Serial != "" {
-		metadataContainer.AddChild(s.buildMetadataRow("Game ID", s.game.Serial, valueWidth))
+	s.SetNavTransition(sidebarZone, types.DirRight, zones[0], types.NavIndexFirst)
+	s.SetNavTransition(zones[0], types.DirUp, "toolbar", toolbarActionIndex)
+	for _, zone := range zones {
+		s.SetNavTransition(zone, types.DirLeft, sidebarZone, types.NavIndexFirst)
 	}
-	region := strings.ToUpper(s.game.Region)
-	if region == "" {
-		region = "Unknown"
+}
+
+// Update runs each frame while the detail screen is shown
+func (s *DetailScreen) Update() {
+	if s.cheatsPage != nil && s.pages.currentKey() == cheatsPageKey {
+		s.cheatsPage.Update()
 	}
-	metadataContainer.AddChild(s.buildMetadataRow("Region", region, valueWidth))
+}
 
-	if s.game.System != "" {
-		metadataContainer.AddChild(s.buildMetadataRow("System", s.game.System, valueWidth))
-	}
-
-	// Discs section (multi-disc disc-based games only). Each disc is a
-	// focusable selection button; activating it only marks that disc as
-	// the selected disc (persisted) - it does not launch. The toolbar
-	// Play button launches the selected disc. With no prior selection the
-	// first disc is selected by default.
-	if len(s.game.Discs) > 1 && !s.game.Missing {
-		metadataContainer.AddChild(s.buildSectionHeader("Discs"))
-		sel := s.game.SelectedDisc
-		if sel < 0 || sel >= len(s.game.Discs) {
-			sel = 0
-		}
-		for i, d := range s.game.Discs {
-			i, d := i, d
-			label := d.Name
-			if label == "" {
-				label = fmt.Sprintf("Disc %d", d.Index+1)
-			}
-			if i == sel {
-				label = "> " + label
-			}
-			handler := func(args *widget.ButtonClickedEventArgs) {
-				s.game.SelectedDisc = i
-				storage.SaveLibrary(s.library)
-				s.callback.RequestRebuild()
-			}
-			var btn *widget.Button
-			if i == sel {
-				btn = widgets.PrimaryTextButton(label, style.ButtonPaddingMedium, handler)
-			} else {
-				btn = widgets.TextButton(label, style.ButtonPaddingMedium, handler)
-			}
-			s.RegisterFocusButton(fmt.Sprintf("disc-%d", i), btn)
-			metadataContainer.AddChild(btn)
-		}
-	}
-
-	// Production section
-	hasProduction := s.game.Developer != "" || s.game.Publisher != "" ||
-		s.game.Genre != "" || s.game.Franchise != "" ||
-		s.game.ReleaseDate != "" || s.game.ESRBRating != ""
-	if hasProduction {
-		metadataContainer.AddChild(s.buildSectionHeader("Production"))
-		if s.game.Developer != "" {
-			metadataContainer.AddChild(s.buildMetadataRow("Developer", s.game.Developer, valueWidth))
-		}
-		if s.game.Publisher != "" {
-			metadataContainer.AddChild(s.buildMetadataRow("Publisher", s.game.Publisher, valueWidth))
-		}
-		if s.game.Genre != "" {
-			metadataContainer.AddChild(s.buildMetadataRow("Genre", s.game.Genre, valueWidth))
-		}
-		if s.game.Franchise != "" {
-			metadataContainer.AddChild(s.buildMetadataRow("Franchise", s.game.Franchise, valueWidth))
-		}
-		if s.game.ReleaseDate != "" {
-			metadataContainer.AddChild(s.buildMetadataRow("Released", s.game.ReleaseDate, valueWidth))
-		}
-		if s.game.ESRBRating != "" {
-			metadataContainer.AddChild(s.buildMetadataRow("ESRB", s.game.ESRBRating, valueWidth))
-		}
-	}
-
-	// Activity section
-	metadataContainer.AddChild(s.buildSectionHeader("Activity"))
-	metadataContainer.AddChild(s.buildMetadataRow("Play Time", style.FormatPlayTime(s.game.PlayTimeSeconds), valueWidth))
-	metadataContainer.AddChild(s.buildMetadataRow("Last Played", style.FormatLastPlayed(s.game.LastPlayed), valueWidth))
-	metadataContainer.AddChild(s.buildMetadataRow("Added", style.FormatDate(s.game.Added), valueWidth))
-
-	// Achievements section (only if logged in)
-	if s.achievementManager != nil && s.achievementManager.IsLoggedIn() {
-		metadataContainer.AddChild(s.buildSectionHeader("Achievements"))
-		metadataContainer.AddChild(s.buildAchievementSection(valueWidth))
-	}
-
-	// Missing ROM warning
-	if s.game.Missing {
-		metadataContainer.AddChild(s.buildSectionHeader("Warning"))
-		warningRow := widget.NewContainer(
-			widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
-			widget.ContainerOpts.Layout(widget.NewRowLayout(
-				widget.RowLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
-			)),
-			widget.ContainerOpts.WidgetOpts(
-				widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-			),
-		)
-		warningLabel := widget.NewText(
-			widget.TextOpts.Text("ROM file not found", style.FontFace(), style.Accent),
-		)
-		warningRow.AddChild(warningLabel)
-		metadataContainer.AddChild(warningRow)
-	}
-
-	metadataOuter.AddChild(metadataContainer)
-	contentContainer.AddChild(metadataOuter)
-
-	// Wrap content in a scrollable container so metadata scrolls when window is small
-	scrollContent := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewRowLayout(
-			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
-			widget.RowLayoutOpts.Spacing(style.DefaultSpacing),
-		)),
-	)
-	scrollContent.AddChild(contentContainer)
-
-	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
-		Content: scrollContent,
-		BgColor: style.Background,
-		Spacing: style.TinySpacing,
-	})
-	s.SetScrollContainer(scrollContainer)
-	s.RestoreScrollPosition()
-
-	rootContainer.AddChild(scrollWrapper)
-
-	return rootContainer
+// HandleBack handles Back on the selected page, reporting whether it was
+// used there. Back closes an open cheat form.
+func (s *DetailScreen) HandleBack() bool {
+	return s.cheatsPage != nil && s.pages.currentKey() == cheatsPageKey && s.cheatsPage.HandleBack()
 }
 
 // loadBoxArtScaled loads and scales the box art image for the current game
@@ -569,136 +415,4 @@ func (s *DetailScreen) OnEnter() {
 	} else {
 		s.SetPendingFocus("remove")
 	}
-}
-
-// buildSectionHeader creates a section header label with accent color
-func (s *DetailScreen) buildSectionHeader(title string) *widget.Container {
-	container := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewRowLayout(
-			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
-			widget.RowLayoutOpts.Spacing(style.TinySpacing),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
-
-	label := widget.NewText(
-		widget.TextOpts.Text(title, style.FontFace(), style.Accent),
-	)
-	container.AddChild(label)
-
-	return container
-}
-
-// buildMetadataRow creates a metadata row with background, label on left, value on right
-// valuePixelWidth specifies the maximum pixel width for the value before truncation
-func (s *DetailScreen) buildMetadataRow(label, value string, valuePixelWidth int) *widget.Container {
-	row := widget.NewContainer(
-		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(2),
-			widget.GridLayoutOpts.Stretch([]bool{false, true}, []bool{true}),
-			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
-			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
-
-	// Label (fixed width for alignment, scales with font size)
-	labelText := widget.NewText(
-		widget.TextOpts.Text(label, style.FontFace(), style.TextSecondary),
-		widget.TextOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-			widget.WidgetOpts.MinSize(style.PxFont(80), 0),
-		),
-	)
-	row.AddChild(labelText)
-
-	// Value (truncated if necessary using pixel-based measurement)
-	displayValue, wasTruncated := style.TruncateToWidth(value, *style.FontFace(), float64(valuePixelWidth))
-
-	valueOpts := []widget.TextOpt{
-		widget.TextOpts.Text(displayValue, style.FontFace(), style.Text),
-	}
-
-	// Add tooltip with full value if truncated
-	if wasTruncated {
-		valueOpts = append(valueOpts, widget.TextOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-			widget.WidgetOpts.ToolTip(
-				widget.NewToolTip(
-					widget.ToolTipOpts.Content(widgets.TooltipContent(value)),
-				),
-			),
-		))
-	} else {
-		valueOpts = append(valueOpts, widget.TextOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-		))
-	}
-
-	valueText := widget.NewText(valueOpts...)
-	row.AddChild(valueText)
-
-	return row
-}
-
-// buildAchievementSection creates the achievements section content
-func (s *DetailScreen) buildAchievementSection(valuePixelWidth int) *widget.Container {
-	container := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewRowLayout(
-			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
-			widget.RowLayoutOpts.Spacing(style.SmallSpacing),
-		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
-		),
-	)
-
-	s.achMu.Lock()
-	loading := s.achLoading
-	loadErr := s.achLoadErr
-	found := s.achFound
-	progress := s.achProgress
-	s.achMu.Unlock()
-
-	if loading {
-		container.AddChild(s.buildMetadataRow("Status", "Loading...", valuePixelWidth))
-		return container
-	}
-
-	if loadErr != nil {
-		container.AddChild(s.buildMetadataRow("Status", "Unable to load", valuePixelWidth))
-		return container
-	}
-
-	if !found {
-		container.AddChild(s.buildMetadataRow("Status", "Not found", valuePixelWidth))
-		return container
-	}
-
-	if progress == nil || progress.NumAchievements == 0 {
-		container.AddChild(s.buildMetadataRow("Status", "No achievements", valuePixelWidth))
-		return container
-	}
-
-	// Has achievements - show progress
-	pct := 0
-	if progress.NumAchievements > 0 {
-		pct = int(progress.NumUnlockedAchievements * 100 / progress.NumAchievements)
-	}
-	progressText := fmt.Sprintf("%d / %d (%d%%)",
-		progress.NumUnlockedAchievements, progress.NumAchievements, pct)
-	container.AddChild(s.buildMetadataRow("Progress", progressText, valuePixelWidth))
-
-	return container
 }

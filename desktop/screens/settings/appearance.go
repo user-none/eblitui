@@ -35,12 +35,7 @@ func (a *AppearanceSection) SetConfig(config *storage.Config) {
 
 // Build creates the appearance section UI
 func (a *AppearanceSection) Build(focus types.FocusManager) *widget.Container {
-	outer := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(1),
-			widget.GridLayoutOpts.Stretch([]bool{true}, []bool{true}),
-		)),
-	)
+	outer := widgets.FillContainer()
 
 	section := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
@@ -53,10 +48,7 @@ func (a *AppearanceSection) Build(focus types.FocusManager) *widget.Container {
 	section.AddChild(a.buildFontSizeRow(focus))
 
 	// Theme label
-	themeLabel := widget.NewText(
-		widget.TextOpts.Text("Theme", style.FontFace(), style.Accent),
-	)
-	section.AddChild(themeLabel)
+	section.AddChild(widgets.SectionHeader("Theme"))
 
 	// Theme cards
 	for _, theme := range style.AvailableThemes {
@@ -66,13 +58,7 @@ func (a *AppearanceSection) Build(focus types.FocusManager) *widget.Container {
 	// Set up navigation zones
 	a.setupNavigation(focus)
 
-	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
-		Content:     section,
-		BgColor:     style.Background,
-		BorderColor: style.Border,
-		Spacing:     0,
-		Padding:     style.SmallSpacing,
-	})
+	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.PageScrollOpts(section))
 	focus.SetScrollContainer(scrollContainer)
 	focus.RestoreScrollPosition()
 	outer.AddChild(scrollWrapper)

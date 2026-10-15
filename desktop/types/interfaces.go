@@ -70,17 +70,28 @@ type ScreenCallback interface {
 
 // FocusRestorer is implemented by screens that support focus restoration after rebuilds
 type FocusRestorer interface {
-	// GetPendingFocusButton returns the button that should receive focus after rebuild
-	GetPendingFocusButton() *widget.Button
+	// GetPendingFocus returns the target that should receive focus after rebuild
+	GetPendingFocus() widget.Focuser
 	// ClearPendingFocus clears the pending focus state
 	ClearPendingFocus()
 }
 
+// ChainZones links zones top to bottom: Down from each enters the first
+// target of the next, and Up from each enters the last target of the one
+// above.
+func ChainZones(focus FocusManager, zones []string) {
+	for i := 0; i+1 < len(zones); i++ {
+		focus.SetNavTransition(zones[i], DirDown, zones[i+1], NavIndexFirst)
+		focus.SetNavTransition(zones[i+1], DirUp, zones[i], NavIndexLast)
+	}
+}
+
 // FocusManager interface for focus restoration and scroll management.
 // Implemented by BaseScreen, used by sub-sections that need to register
-// focusable buttons and manage scroll position.
+// focusable buttons and text fields and manage scroll position.
 type FocusManager interface {
 	RegisterFocusButton(key string, btn *widget.Button)
+	RegisterFocusWidget(key string, f widget.Focuser)
 	SetPendingFocus(key string)
 	SetScrollContainer(sc *widgets.ScrollView)
 	SaveScrollPosition()

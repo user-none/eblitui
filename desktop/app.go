@@ -15,6 +15,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/desktop/achievements"
+	"github.com/user-none/eblitui/desktop/cheats"
 	"github.com/user-none/eblitui/desktop/display"
 	"github.com/user-none/eblitui/desktop/metadata"
 	"github.com/user-none/eblitui/desktop/scanner"
@@ -23,6 +24,7 @@ import (
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/desktop/types"
+	"github.com/user-none/eblitui/desktop/widgets"
 	"github.com/user-none/eblitui/romloader"
 	rcheevos "github.com/user-none/go-rcheevos"
 )
@@ -211,11 +213,13 @@ func Run(factory coreif.CoreFactory) error {
 
 // newApp creates and initializes the application with the given core factory and system info.
 func newApp(factory coreif.CoreFactory, info coreif.SystemInfo) (*App, error) {
+	// Rumble and cheats both need memory access
+	memory := supportsMemory(factory)
 	app := &App{
 		state:           StateLibrary,
 		factory:         factory,
 		systemInfo:      info,
-		downloads:       scanner.Downloads{Rumble: supportsMemory(factory)},
+		downloads:       scanner.Downloads{Rumble: memory, Cheats: memory},
 		padMappingTried: make(map[string]bool),
 	}
 
@@ -382,7 +386,6 @@ func (a *App) showStartupError(file, path string, details []string) {
 // valid. It runs once, from newApp or from an error screen handler.
 func (a *App) finishStartup() {
 	a.libraryLoaded = true
-	a.saveStateManager.SetLibrary(a.library)
 
 	a.gameplay = NewGameplayManager(
 		a.factory,
@@ -396,6 +399,7 @@ func (a *App) finishStartup() {
 		a.config,
 		a.achievementManager,
 		a.metadata,
+		a.cheatSystem(),
 		func() { a.SwitchToLibrary() }, // onExitToLibrary
 		func() { a.Exit() },            // onExitApp
 	)
@@ -508,7 +512,7 @@ func (a *App) toggleFullscreen() {
 // initScreens creates all screen instances
 func (a *App) initScreens() {
 	a.libraryScreen = screens.NewLibraryScreen(a, a.library, a.config)
-	a.detailScreen = screens.NewDetailScreen(a, a.library, a.config, a.achievementManager, a.systemInfo.ConsoleID)
+	a.detailScreen = screens.NewDetailScreen(a, a.library, a.achievementManager, a.systemInfo.ConsoleID, a.cheatSystem(), a.systemInfo.BigEndianMemory)
 	a.settingsScreen = screens.NewSettingsScreen(a, a.library, a.config, a.achievementManager, a.systemInfo.SerializeSize, a.systemInfo, appIcon)
 	a.scanScreen = screens.NewScanProgressScreen(a)
 	a.errorScreen = screens.NewErrorScreen(a, a.errorFile, a.errorPath, a.handleDeleteAndContinue)
@@ -527,8 +531,9 @@ func (a *App) rebuildCurrentScreen() {
 		a.libraryScreen.SetConfig(a.config)
 		container = a.libraryScreen.Build()
 	case StateDetail:
-		// Save focused button before rebuild so async rebuilds (e.g., achievement
-		// loading) restore focus to the previously focused button.
+		// Save scroll position and focused button before rebuild so async
+		// rebuilds (e.g., achievement loading) restore both.
+		a.detailScreen.SaveScrollPosition()
 		if a.ui != nil {
 			a.detailScreen.SaveFocusState(a.ui.GetFocusedWidget())
 		}
@@ -729,6 +734,7 @@ func (a *App) Update() error {
 		}
 	case StateDetail:
 		nav := a.processUIInput()
+		a.detailScreen.Update()
 		a.ui.Update()
 		if a.state != StateDetail {
 			return nil
@@ -778,14 +784,13 @@ func (a *App) restoreFilePickerFocus() {
 	a.restorePendingFocus(a.filePicker)
 }
 
-// restorePendingFocus restores focus to a pending button if one exists.
+// restorePendingFocus restores focus to a pending target if one exists.
 // Uses SetFocusedWidget so ebitenui's focusedWidget is updated immediately
 // rather than via a deferred event. This prevents processUIInput from seeing
 // nil focus and falling back to ChangeFocus (which would focus the wrong widget).
 func (a *App) restorePendingFocus(screen screens.FocusRestorer) {
-	btn := screen.GetPendingFocusButton()
-	if btn != nil {
-		a.ui.SetFocusedWidget(btn)
+	if target := screen.GetPendingFocus(); target != nil {
+		a.ui.SetFocusedWidget(target)
 		screen.ClearPendingFocus()
 	}
 }
@@ -832,24 +837,47 @@ func (a *App) applySpatialNavigation(direction int) {
 	// Get the current focused widget
 	focused := a.ui.GetFocusedWidget()
 
-	// Try spatial navigation on the current screen
-	var nextBtn *widget.Button
-	// Linear fallback for the current screen, used when zone navigation has no
-	// target. The custom scroll view hides content from ebitenui's GetFocusers,
-	// so ChangeFocus cannot reach scrolled widgets; the screen's own ordered
-	// list can.
-	var linearFallback func(widget.Focuser, bool) *widget.Button
+	// A multi-line field takes directions as caret moves. Up on its first
+	// line and Down on its last fall through to move focus out; Left and
+	// Right stay in the field.
+	if field, ok := focused.(*widgets.MultiLineInput); ok {
+		switch direction {
+		case types.DirUp:
+			if field.MoveCaretUp() {
+				return
+			}
+		case types.DirDown:
+			if field.MoveCaretDown() {
+				return
+			}
+		case types.DirLeft:
+			field.MoveCaretLeft()
+			return
+		case types.DirRight:
+			field.MoveCaretRight()
+			return
+		}
+	}
+	// A single-line field moves its own caret with Left and Right, so
+	// only Up and Down move focus out of it.
+	if _, ok := focused.(*widget.TextInput); ok && (direction == types.DirLeft || direction == types.DirRight) {
+		return
+	}
 
+	// The screen whose zones handle navigation. StateError and
+	// StateScanProgress have none and use ebitenui's focus order.
+	var screen interface {
+		FindFocusInDirection(widget.Focuser, int) widget.Focuser
+		FindFocusLinear(widget.Focuser, bool) widget.Focuser
+		IsFocusTarget(widget.Focuser) bool
+	}
 	switch a.state {
 	case StateLibrary:
-		nextBtn = a.libraryScreen.FindFocusInDirection(focused, direction)
-		linearFallback = a.libraryScreen.FindFocusLinear
+		screen = a.libraryScreen
 	case StateDetail:
-		nextBtn = a.detailScreen.FindFocusInDirection(focused, direction)
-		linearFallback = a.detailScreen.FindFocusLinear
+		screen = a.detailScreen
 	case StateSettings:
-		nextBtn = a.settingsScreen.FindFocusInDirection(focused, direction)
-		linearFallback = a.settingsScreen.FindFocusLinear
+		screen = a.settingsScreen
 	case StateFilePicker:
 		if target, handled := a.filePicker.NavigatePath(focused, direction); handled {
 			if target != nil {
@@ -857,30 +885,37 @@ func (a *App) applySpatialNavigation(direction int) {
 			}
 			return
 		}
-		nextBtn = a.filePicker.FindFocusInDirection(focused, direction)
-		linearFallback = a.filePicker.FindFocusLinear
-		// StateError and StateScanProgress use linear navigation (simple layouts)
+		screen = a.filePicker
 	}
 
 	forward := !(direction == types.DirUp || direction == types.DirLeft)
 
-	if nextBtn == nil && linearFallback != nil {
-		nextBtn = linearFallback(focused, forward)
+	var next widget.Focuser
+	if screen != nil {
+		next = screen.FindFocusInDirection(focused, direction)
+		// Linear fallback when zone navigation has no target. The custom
+		// scroll view hides content from ebitenui's GetFocusers, so
+		// ChangeFocus cannot reach scrolled widgets; the screen's own
+		// ordered list can.
+		if next == nil {
+			next = screen.FindFocusLinear(focused, forward)
+		}
 	}
 
-	if nextBtn != nil {
+	switch {
+	case next != nil:
 		// Found a target - unfocus current first
 		if focused != nil {
 			focused.Focus(false)
 		}
-		nextBtn.Focus(true)
-	} else {
-		// Last resort for screens without a registered focus order.
-		if forward {
-			a.ui.ChangeFocus(widget.FOCUS_NEXT)
-		} else {
-			a.ui.ChangeFocus(widget.FOCUS_PREVIOUS)
-		}
+		next.Focus(true)
+	case screen != nil && screen.IsFocusTarget(focused):
+		// At the edge of the screen's navigation: focus stays put
+	case forward:
+		// Last resort for screens without a registered focus order
+		a.ui.ChangeFocus(widget.FOCUS_NEXT)
+	default:
+		a.ui.ChangeFocus(widget.FOCUS_PREVIOUS)
 	}
 }
 
@@ -934,6 +969,9 @@ func (a *App) handleGamepadBack() {
 		// Focus the first toolbar button for quick navigation to top
 		a.libraryScreen.SetPendingFocus("toolbar-icon")
 	case StateDetail:
+		if a.detailScreen.HandleBack() {
+			return
+		}
 		a.SwitchToLibrary()
 	case StateSettings:
 		if a.settingsScreen.HandleBack() {
@@ -959,6 +997,8 @@ func (a *App) ensureFocusedVisible() {
 	switch a.state {
 	case StateLibrary:
 		a.libraryScreen.EnsureFocusedVisible(focused)
+	case StateDetail:
+		a.detailScreen.EnsureFocusedVisible(focused)
 	case StateSettings:
 		a.settingsScreen.EnsureFocusedVisible(focused)
 	case StateFilePicker:
@@ -1225,6 +1265,22 @@ func contentExtensions(info coreif.SystemInfo) []string {
 // ShowNotification shows a brief notification message
 func (a *App) ShowNotification(msg string) {
 	a.notification.ShowDefault(msg)
+}
+
+// cheatSystem returns the core's cheat system, or 0 when the core has no
+// cheat support. Cheats need memory access (downloads.Cheats) and a system
+// the cheats package supports; the first metadata variant whose RDB name
+// it supports is used.
+func (a *App) cheatSystem() cheats.System {
+	if !a.downloads.Cheats {
+		return 0
+	}
+	for i := 0; i < a.metadata.VariantCount(); i++ {
+		if sys, err := cheats.SystemFromName(a.metadata.VariantRDBName(i)); err == nil {
+			return sys
+		}
+	}
+	return 0
 }
 
 // handleDeleteAndContinue handles the delete and continue button
