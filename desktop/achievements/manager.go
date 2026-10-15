@@ -92,8 +92,11 @@ func NewManager(notification Notification, config *storage.Config, appName, appV
 		gameImageCache:  make(map[uint32]*ebiten.Image),
 	}
 
-	// Create rcheevos client with memory and server callbacks
+	// Create rcheevos client with memory and server callbacks. The client
+	// starts in hardcore mode, which this emulator does not support, so
+	// turn it off before any login or game load.
 	m.client = rcheevos.NewClient(m.readMemory, m.serverCall)
+	m.client.SetHardcoreEnabled(false)
 
 	// Build User-Agent string: "AppName/Version rcheevos/X.X.X"
 	rcheevosUA := m.client.GetUserAgentClause()
@@ -552,26 +555,25 @@ func (m *Manager) handleEvent(event *rcheevos.Event) {
 		achievementID := event.Achievement.ID
 		badgeURL := m.client.GetAchievementImageURL(event.Achievement, rcheevos.AchievementStateUnlocked)
 
-		// Check if this is the hardcore warning and should be suppressed
-		isHardcoreWarning := strings.Contains(title, "Unknown Emulator") ||
-			strings.Contains(description, "Hardcore unlocks cannot be earned")
-		if m.config.RetroAchievements.SuppressHardcoreWarning && isHardcoreWarning {
+		// The server sends the "Unknown Emulator" hardcore warning as an
+		// achievement for every game. Hardcore mode is never on here, so
+		// the warning is dropped.
+		if strings.Contains(title, "Unknown Emulator") ||
+			strings.Contains(description, "Hardcore unlocks cannot be earned") {
 			return
 		}
 
-		// Mark progress as dirty, update cache, and notify callback (for real achievements only)
-		if !isHardcoreWarning {
-			m.mu.Lock()
-			m.progressDirty = true
-			onUnlock := m.onUnlockFunc
+		// Mark progress as dirty, update cache, and notify callback
+		m.mu.Lock()
+		m.progressDirty = true
+		onUnlock := m.onUnlockFunc
 
-			// Update cached achievement to mark as unlocked and move to end of list
-			m.updateCachedAchievementUnlocked(achievementID)
-			m.mu.Unlock()
+		// Update cached achievement to mark as unlocked and move to end of list
+		m.updateCachedAchievementUnlocked(achievementID)
+		m.mu.Unlock()
 
-			if onUnlock != nil {
-				onUnlock(achievementID)
-			}
+		if onUnlock != nil {
+			onUnlock(achievementID)
 		}
 
 		// Get cached badge

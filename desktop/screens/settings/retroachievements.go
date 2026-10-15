@@ -138,11 +138,6 @@ func (r *RetroAchievementsSection) Build(focus types.FocusManager) *widget.Conta
 			func() {
 				r.config.RetroAchievements.AutoScreenshot = !r.config.RetroAchievements.AutoScreenshot
 			}))
-		section.AddChild(r.buildToggleRow(focus, "ra-suppress", "Suppress Hardcore Warning", "Hide 'Unknown Emulator' notice",
-			r.config.RetroAchievements.SuppressHardcoreWarning,
-			func() {
-				r.config.RetroAchievements.SuppressHardcoreWarning = !r.config.RetroAchievements.SuppressHardcoreWarning
-			}))
 
 		// Advanced section
 		section.AddChild(widgets.SectionHeader("Advanced"))
@@ -211,7 +206,7 @@ func (r *RetroAchievementsSection) setupNavigation(focus types.FocusManager) {
 
 	if r.isLoggedIn() {
 		keys = append(keys, "ra-logout", "ra-enable",
-			"ra-notification", "ra-sound", "ra-screenshot", "ra-suppress", "ra-encore", "ra-spectator")
+			"ra-notification", "ra-sound", "ra-screenshot", "ra-encore", "ra-spectator")
 	} else {
 		keys = append(keys, "ra-login")
 	}
