@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync/atomic"
 
 	"github.com/ebitenui/ebitenui"
 	ebitenuiInput "github.com/ebitenui/ebitenui/input"
@@ -112,8 +113,9 @@ type App struct {
 	// Achievement manager for RetroAchievements integration
 	achievementManager *achievements.Manager
 
-	// Rebuild pending flag (set from goroutines, processed on main thread)
-	rebuildPending bool
+	// Rebuild pending flag, set from goroutines and cleared on the Ebiten
+	// thread each frame
+	rebuildPending atomic.Bool
 
 	// Guard to prevent input leaking from gameplay to UI screens.
 	// When the pause menu triggers a screen transition, the activation input
@@ -580,9 +582,10 @@ func (a *App) Update() error {
 		return ebiten.Termination
 	}
 
-	// Process any pending rebuild request (set from goroutines)
-	if a.rebuildPending {
-		a.rebuildPending = false
+	// Process any pending rebuild request (set from goroutines). Swap
+	// reads and clears the flag in one step so a request made in between
+	// is not lost.
+	if a.rebuildPending.Swap(false) {
 		a.rebuildCurrentScreen()
 
 		// Restore focus immediately after rebuild, before processUIInput
@@ -668,7 +671,7 @@ func (a *App) Update() error {
 		if a.state != StateSettings {
 			return nil
 		}
-		if !a.rebuildPending {
+		if !a.rebuildPending.Load() {
 			a.restorePendingFocus(a.settingsScreen)
 		}
 		if nav.FocusChanged {
@@ -723,7 +726,7 @@ func (a *App) Update() error {
 		}
 		// Update artwork graphics in place when background loader has new entries
 		a.libraryScreen.UpdateArtwork()
-		if !a.rebuildPending {
+		if !a.rebuildPending.Load() {
 			a.restorePendingFocus(a.libraryScreen)
 		}
 		// Finish top-aligning the selected icon card once real layout rects
@@ -739,7 +742,7 @@ func (a *App) Update() error {
 		if a.state != StateDetail {
 			return nil
 		}
-		if !a.rebuildPending {
+		if !a.rebuildPending.Load() {
 			a.restorePendingFocus(a.detailScreen)
 		}
 		if nav.FocusChanged {
@@ -753,7 +756,7 @@ func (a *App) Update() error {
 		if a.state != StateFilePicker {
 			return nil
 		}
-		if !a.rebuildPending {
+		if !a.rebuildPending.Load() {
 			a.restoreFilePickerFocus()
 		}
 		if nav.FocusChanged {
@@ -1090,7 +1093,7 @@ func (a *App) Layout(outsideWidth, outsideHeight int) (int, int) {
 	if s != a.currentDPIScale {
 		a.currentDPIScale = s
 		style.SetDPIScale(s)
-		a.rebuildPending = true
+		a.rebuildPending.Store(true)
 	}
 
 	// Return physical pixel dimensions so the game renders at full resolution
@@ -1237,7 +1240,7 @@ func (a *App) GetWindowWidth() int {
 // This is safe to call from goroutines - the rebuild happens on the main thread.
 // Focus restoration is handled in the Update loop after ui.Update()
 func (a *App) RequestRebuild() {
-	a.rebuildPending = true
+	a.rebuildPending.Store(true)
 }
 
 // GetMD5ByCRC32 returns the MD5 hash for a game by CRC32 from loaded RDBs
