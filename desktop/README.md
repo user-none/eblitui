@@ -191,15 +191,15 @@ Requires the core to implement `coreif.Memory`.
 
 ### Themes
 
-Supports a variety of built-in themes. Font size is configurable
-(10-32pt).
+Supports a variety of built-in themes. The UI, font included, scales with
+the window size so it stays readable from a desktop window up to a TV.
 
 ### Settings
 
 Organized in tabbed sections:
 
 - **Library** - Scan directories, add/remove folders, rescan
-- **Appearance** - Theme, font size
+- **Appearance** - Theme
 - **Video** - Shader effects for UI and gameplay
 - **Audio** - Volume, mute, fast-forward mute
 - **Input** - Button bindings, analog stick toggle, rumble level

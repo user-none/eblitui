@@ -225,19 +225,22 @@ const detailColumnFraction = 5
 
 // detailColumnMaxWidth is the widest the game column grows, in logical
 // pixels before scaling. Box art from the thumbnail repositories is about
-// 512 pixels on its long side, so a wider column would upscale it.
+// 512 pixels on its long side, so at scale 1.0 the column shows it at or
+// below its native size. The cap grows with the window scale, so on a
+// large display the art upscales along with the rest of the UI.
 const detailColumnMaxWidth = 400
 
-// detailSideBySideWidth is the window width, in logical pixels before
+// detailSideBySideWidth is the window width, in logical pixels before DPI
 // scaling, from which the page sidebar sits beside the box art instead of
 // under it. Narrower windows stack them and have no width to spare for a
-// wider column.
+// wider column. It measures room in the window, so it does not grow with
+// the window scale.
 const detailSideBySideWidth = 1200
 
 // sideBySide reports whether the sidebar goes beside the art rather than
 // under it
 func (s *DetailScreen) sideBySide() bool {
-	return s.callback.GetWindowWidth() >= style.Px(detailSideBySideWidth)
+	return s.callback.GetWindowWidth() >= style.PxDPI(detailSideBySideWidth)
 }
 
 // artWidth returns the box art width: a fifth of the window, kept between

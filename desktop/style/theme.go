@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"image/color"
 	"log"
+	"math"
 
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
@@ -224,25 +225,45 @@ func ApplyThemeByName(name string) {
 	ApplyTheme(GetThemeByName(name))
 }
 
-// currentFontSize is the current font size in points (default 14)
-var currentFontSize float64 = 14
-
 // dpiScale is the device pixel ratio (1.0 on non-retina, 2.0 on retina)
 var dpiScale float64 = 1.0
+
+// windowScale grows the whole UI with the window: 1.0 at the minimum window
+// size, larger as the window grows. See WindowScaleFor.
+var windowScale float64 = 1.0
 
 // DPIScale returns the current device scale factor.
 func DPIScale() float64 {
 	return dpiScale
 }
 
-// Px converts a logical pixel value to physical pixels using the current DPI scale.
-func Px(logical int) int {
-	return int(float64(logical) * dpiScale)
+// FontScale returns the window scale: how many times larger than the base
+// design the font and layout are drawn. Overlays cache on it.
+func FontScale() float64 {
+	return windowScale
 }
 
-// PxFont converts a logical pixel value to physical pixels scaled by both DPI and font size.
-func PxFont(logical int) int {
-	return int(float64(logical) * FontScale() * dpiScale)
+// WindowScaleFor returns the window scale for a window of the given logical
+// size: the smaller of the width and height ratios to the minimum window
+// size, so the layout always has at least the room it has at the minimum
+// window. Rounded to 1% and capped at maxWindowScale.
+func WindowScaleFor(logicalW, logicalH int) float64 {
+	scale := min(float64(logicalW)/MinWindowWidth, float64(logicalH)/MinWindowHeight)
+	scale = math.Round(scale*100) / 100
+	return max(1.0, min(scale, maxWindowScale))
+}
+
+// Px converts a logical pixel value to physical pixels using the DPI and
+// window scales.
+func Px(logical int) int {
+	return int(float64(logical) * windowScale * dpiScale)
+}
+
+// PxDPI converts a logical pixel value to physical pixels using the DPI
+// scale only. For measures of room in the window, such as a layout
+// breakpoint, that must not grow with the UI drawn in it.
+func PxDPI(logical int) int {
+	return int(float64(logical) * dpiScale)
 }
 
 // SetDPIScale sets the DPI scale factor and recalculates all spatial vars.
@@ -251,8 +272,18 @@ func SetDPIScale(scale float64) {
 		scale = 1.0
 	}
 	dpiScale = scale
+	applyScale()
+}
 
-	// Recalculate all non-font-dependent spatial vars from base constants
+// SetWindowScale sets the window scale and recalculates all spatial vars.
+func SetWindowScale(scale float64) {
+	windowScale = max(1.0, min(scale, maxWindowScale))
+	applyScale()
+}
+
+// applyScale recalculates every spatial var and the font faces from the base
+// constants at the current DPI and window scales.
+func applyScale() {
 	DefaultPadding = Px(baseDefaultPadding)
 	DefaultSpacing = Px(baseDefaultSpacing)
 	SmallSpacing = Px(baseSmallSpacing)
@@ -284,9 +315,45 @@ func SetDPIScale(scale float64) {
 	PauseMenuMinBtnHeight = Px(basePauseMinBtnH)
 	PauseMenuMaxBtnHeight = Px(basePauseMaxBtnH)
 	ListMinTitleWidth = Px(baseListMinTitleWidth)
+	ListRowHeight = Px(baseListRowHeight)
+	ListHeaderHeight = Px(baseListHeaderHeight)
+	IconCardTextHeight = Px(baseIconCardTextHeight)
+	AchievementOverlayWidth = Px(baseAchievementOverlayW)
+	AchievementOverlayPadding = Px(baseAchievementOverlayPad)
+	SettingsRowHeight = Px(baseSettingsRowHeight)
+	EstimatedViewportHeight = Px(baseEstimatedViewportHeight)
+	ListColGenre = Px(baseListColGenre)
+	ListColRegion = Px(baseListColRegion)
+	ListColPlayTime = Px(baseListColPlayTime)
+	ListColLastPlayed = Px(baseListColLastPlayed)
+	ListColFavorite = Px(baseListColFavorite)
 
-	// Recalculate font-dependent vars (they also incorporate DPI scale)
-	ApplyFontSize(int(currentFontSize))
+	// Badge and row use dampened scaling so they don't grow disproportionately.
+	// (1 + windowScale) / 2 grows slower than text: at 2x it's only 1.5x.
+	badgeScale := (1 + windowScale) / 2 * dpiScale
+	AchievementRowHeight = int(baseAchievementRowHeight * badgeScale)
+	AchievementBadgeSize = int(baseAchievementBadgeSize * badgeScale)
+
+	// Replace font faces in-place rather than nil-ing them. Existing widgets hold
+	// &fontFace (a pointer to the package var), so setting fontFace = nil would cause
+	// widgets to see a nil face and crash before the UI rebuild completes.
+	source := loadFontSource()
+	if source == nil {
+		return
+	}
+	fontFace = &text.GoTextFace{
+		Source: source,
+		Size:   fontSize(),
+	}
+	largeFontFace = &text.GoTextFace{
+		Source: source,
+		Size:   fontSize() * largeFontFactor,
+	}
+}
+
+// fontSize returns the font size in physical pixels at the current scales.
+func fontSize() float64 {
+	return baseFontSize * windowScale * dpiScale
 }
 
 // sharedFontSource is the cached TrueType font source shared by all font faces
@@ -320,7 +387,7 @@ func FontFace() *text.Face {
 		}
 		fontFace = &text.GoTextFace{
 			Source: source,
-			Size:   currentFontSize,
+			Size:   fontSize(),
 		}
 	}
 	return &fontFace
@@ -333,67 +400,12 @@ func LargeFontFace() *text.GoTextFace {
 		if source == nil {
 			return nil
 		}
-		largeSize := currentFontSize * 2
-		if largeSize > 48 {
-			largeSize = 48
-		}
 		largeFontFace = &text.GoTextFace{
 			Source: source,
-			Size:   largeSize,
+			Size:   fontSize() * largeFontFactor,
 		}
 	}
 	return largeFontFace
-}
-
-// FontScale returns the current font scale factor relative to the base size (14pt).
-func FontScale() float64 {
-	return currentFontSize / 14.0
-}
-
-// ApplyFontSize sets the font size and recalculates all font-dependent layout values.
-func ApplyFontSize(size int) {
-	s := float64(size)
-	currentFontSize = s
-
-	// Replace font faces in-place rather than nil-ing them. Existing widgets hold
-	// &fontFace (a pointer to the package var), so setting fontFace = nil would cause
-	// widgets to see a nil face and crash before the UI rebuild completes.
-	source := loadFontSource()
-	if source != nil {
-		fontFace = &text.GoTextFace{
-			Source: source,
-			Size:   s * dpiScale,
-		}
-		largeSize := s * 2
-		if largeSize > baseMaxLargeFontSize {
-			largeSize = baseMaxLargeFontSize
-		}
-		largeFontFace = &text.GoTextFace{
-			Source: source,
-			Size:   largeSize * dpiScale,
-		}
-	}
-
-	// Scale font-dependent layout constants (font scale * DPI scale)
-	scale := s / 14.0
-	d := dpiScale
-	ListRowHeight = int(baseListRowHeight * scale * d)
-	ListHeaderHeight = int(baseListHeaderHeight * scale * d)
-	IconCardTextHeight = int(baseIconCardTextHeight * scale * d)
-	// Badge and row use dampened scaling so they don't grow disproportionately.
-	// (1 + fontScale) / 2 grows slower than text: at 2x font it's only 1.5x.
-	badgeScale := (1 + scale) / 2
-	AchievementRowHeight = int(baseAchievementRowHeight * badgeScale * d)
-	AchievementBadgeSize = int(baseAchievementBadgeSize * badgeScale * d)
-	AchievementOverlayWidth = int(baseAchievementOverlayW * scale * d)
-	AchievementOverlayPadding = int(baseAchievementOverlayPad * scale * d)
-	SettingsRowHeight = int(baseSettingsRowHeight * scale * d)
-	EstimatedViewportHeight = int(baseEstimatedViewportHeight * scale * d)
-	ListColGenre = int(baseListColGenre * scale * d)
-	ListColRegion = int(baseListColRegion * scale * d)
-	ListColPlayTime = int(baseListColPlayTime * scale * d)
-	ListColLastPlayed = int(baseListColLastPlayed * scale * d)
-	ListColFavorite = int(baseListColFavorite * scale * d)
 }
 
 // ButtonImage creates a standard button image set

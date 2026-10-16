@@ -140,13 +140,13 @@ func TestFormatLastPlayed(t *testing.T) {
 	})
 }
 
-func TestApplyFontSize(t *testing.T) {
+func TestSetWindowScale(t *testing.T) {
 	// Ensure dpiScale is 1.0 for this test
 	origDPI := dpiScale
 	dpiScale = 1.0
 	defer func() {
 		dpiScale = origDPI
-		ApplyFontSize(14)
+		SetWindowScale(1.0)
 	}()
 
 	// Save original values
@@ -156,45 +156,67 @@ func TestApplyFontSize(t *testing.T) {
 	origAchievementOverlayWidth := AchievementOverlayWidth
 	origAchievementOverlayPadding := AchievementOverlayPadding
 
-	// Apply at default 14pt - values should match defaults
-	ApplyFontSize(14)
+	// At scale 1.0 values match the base constants
+	SetWindowScale(1.0)
 	if ListRowHeight != 40 {
-		t.Errorf("at 14pt, ListRowHeight = %d, want 40", ListRowHeight)
+		t.Errorf("at 1x, ListRowHeight = %d, want 40", ListRowHeight)
 	}
 	if AchievementRowHeight != 92 {
-		t.Errorf("at 14pt, AchievementRowHeight = %d, want 92", AchievementRowHeight)
+		t.Errorf("at 1x, AchievementRowHeight = %d, want 92", AchievementRowHeight)
+	}
+	if DefaultPadding != 16 {
+		t.Errorf("at 1x, DefaultPadding = %d, want 16", DefaultPadding)
 	}
 
-	// Apply at 28pt (2x scale)
-	ApplyFontSize(28)
+	// At 2x: spacing and text-coupled values double, badge values dampen
+	SetWindowScale(2.0)
 	if ListRowHeight != 80 {
-		t.Errorf("at 28pt, ListRowHeight = %d, want 80", ListRowHeight)
+		t.Errorf("at 2x, ListRowHeight = %d, want 80", ListRowHeight)
 	}
 	if ListHeaderHeight != 76 {
-		t.Errorf("at 28pt, ListHeaderHeight = %d, want 76", ListHeaderHeight)
+		t.Errorf("at 2x, ListHeaderHeight = %d, want 76", ListHeaderHeight)
+	}
+	if DefaultPadding != 32 {
+		t.Errorf("at 2x, DefaultPadding = %d, want 32", DefaultPadding)
 	}
 	if AchievementRowHeight != 138 {
-		t.Errorf("at 28pt, AchievementRowHeight = %d, want 138", AchievementRowHeight)
+		t.Errorf("at 2x, AchievementRowHeight = %d, want 138", AchievementRowHeight)
 	}
 	if AchievementBadgeSize != 84 {
-		t.Errorf("at 28pt, AchievementBadgeSize = %d, want 84", AchievementBadgeSize)
+		t.Errorf("at 2x, AchievementBadgeSize = %d, want 84", AchievementBadgeSize)
 	}
 	if AchievementOverlayWidth != 1000 {
-		t.Errorf("at 28pt, AchievementOverlayWidth = %d, want 1000", AchievementOverlayWidth)
+		t.Errorf("at 2x, AchievementOverlayWidth = %d, want 1000", AchievementOverlayWidth)
 	}
 	if AchievementOverlayPadding != 32 {
-		t.Errorf("at 28pt, AchievementOverlayPadding = %d, want 32", AchievementOverlayPadding)
+		t.Errorf("at 2x, AchievementOverlayPadding = %d, want 32", AchievementOverlayPadding)
+	}
+	face := FontFace()
+	if goFace, ok := (*face).(*text.GoTextFace); ok && goFace.Size != 28.0 {
+		t.Errorf("FontFace size at 2x = %f, want 28.0", goFace.Size)
+	}
+	if LargeFontFace().Size != 56.0 {
+		t.Errorf("LargeFontFace size at 2x = %f, want 56.0", LargeFontFace().Size)
 	}
 
-	// Apply at 10pt (scale = 10/14 ≈ 0.714)
-	ApplyFontSize(10)
-	// 40 * 10 / 14 = 28.57 -> int truncates to 28
-	if ListRowHeight != 28 {
-		t.Errorf("at 10pt, ListRowHeight = %d, want 28", ListRowHeight)
+	// Fractional scale flows through
+	SetWindowScale(1.5)
+	if ListRowHeight != 60 {
+		t.Errorf("at 1.5x, ListRowHeight = %d, want 60", ListRowHeight)
 	}
 
-	// Restore to 14
-	ApplyFontSize(14)
+	// Clamped to the valid range
+	SetWindowScale(0.5)
+	if FontScale() != 1.0 {
+		t.Errorf("FontScale() after setting 0.5 = %f, want 1.0", FontScale())
+	}
+	SetWindowScale(10.0)
+	if FontScale() != maxWindowScale {
+		t.Errorf("FontScale() after setting 10 = %f, want %f", FontScale(), maxWindowScale)
+	}
+
+	// Restore to 1.0
+	SetWindowScale(1.0)
 	if ListRowHeight != origListRowHeight {
 		t.Errorf("after restore, ListRowHeight = %d, want %d", ListRowHeight, origListRowHeight)
 	}
@@ -212,22 +234,27 @@ func TestApplyFontSize(t *testing.T) {
 	}
 }
 
-func TestFontScale(t *testing.T) {
-	defer ApplyFontSize(14) // Restore
-
-	ApplyFontSize(14)
-	if FontScale() != 1.0 {
-		t.Errorf("at 14pt, FontScale() = %f, want 1.0", FontScale())
+func TestWindowScaleFor(t *testing.T) {
+	tests := []struct {
+		name string
+		w, h int
+		want float64
+	}{
+		{"minimum window", MinWindowWidth, MinWindowHeight, 1.0},
+		{"below minimum clamps to 1", 800, 600, 1.0},
+		{"1080p is height limited", 1920, 1080, 1.66},
+		{"1440p", 2560, 1440, 2.22},
+		{"4K", 3840, 2160, 3.32},
+		{"tall window stays at width ratio", 900, 3000, 1.0},
+		{"wide window stays at height ratio", 3000, 650, 1.0},
+		{"huge window caps", 10000, 10000, maxWindowScale},
 	}
-
-	ApplyFontSize(28)
-	if FontScale() != 2.0 {
-		t.Errorf("at 28pt, FontScale() = %f, want 2.0", FontScale())
-	}
-
-	ApplyFontSize(7)
-	if FontScale() != 0.5 {
-		t.Errorf("at 7pt, FontScale() = %f, want 0.5", FontScale())
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := WindowScaleFor(tc.w, tc.h); got != tc.want {
+				t.Errorf("WindowScaleFor(%d, %d) = %f, want %f", tc.w, tc.h, got, tc.want)
+			}
+		})
 	}
 }
 
@@ -317,7 +344,7 @@ func TestSetDPIScale(t *testing.T) {
 	origDPI := dpiScale
 	defer func() {
 		dpiScale = origDPI
-		ApplyFontSize(14)
+		SetWindowScale(1.0)
 	}()
 
 	// Set to 2.0x and verify spatial vars double
@@ -344,10 +371,9 @@ func TestSetDPIScale(t *testing.T) {
 		t.Errorf("AchievementRowSpacing at 2x = %d, want 8", AchievementRowSpacing)
 	}
 
-	// Font-dependent vars at 14pt with 2x DPI should be 2x their 1x values
 	// ListRowHeight = int(40 * 1.0 * 2.0) = 80
 	if ListRowHeight != 80 {
-		t.Errorf("ListRowHeight at 14pt/2x = %d, want 80", ListRowHeight)
+		t.Errorf("ListRowHeight at 1x/2x DPI = %d, want 80", ListRowHeight)
 	}
 
 	// Font face should incorporate DPI scale
@@ -355,7 +381,7 @@ func TestSetDPIScale(t *testing.T) {
 	if face != nil && *face != nil {
 		goFace, ok := (*face).(*text.GoTextFace)
 		if ok && goFace.Size != 28.0 {
-			t.Errorf("FontFace size at 14pt/2x = %f, want 28.0", goFace.Size)
+			t.Errorf("FontFace size at 1x/2x DPI = %f, want 28.0", goFace.Size)
 		}
 	}
 
@@ -369,37 +395,40 @@ func TestSetDPIScale(t *testing.T) {
 	}
 }
 
-func TestPxFont(t *testing.T) {
+func TestPxScales(t *testing.T) {
 	origDPI := dpiScale
 	defer func() {
 		dpiScale = origDPI
-		ApplyFontSize(14)
+		SetWindowScale(1.0)
 	}()
 
-	// At 14pt / 1x DPI: FontScale()=1.0, dpiScale=1.0 → PxFont(80)=80
+	// Px applies both scales; PxDPI only the DPI scale
 	dpiScale = 1.0
-	ApplyFontSize(14)
-	if got := PxFont(80); got != 80 {
-		t.Errorf("PxFont(80) at 14pt/1x = %d, want 80", got)
+	SetWindowScale(1.0)
+	if got := Px(80); got != 80 {
+		t.Errorf("Px(80) at 1x/1x = %d, want 80", got)
 	}
 
-	// At 28pt / 1x DPI: FontScale()=2.0, dpiScale=1.0 → PxFont(80)=160
-	ApplyFontSize(28)
-	if got := PxFont(80); got != 160 {
-		t.Errorf("PxFont(80) at 28pt/1x = %d, want 160", got)
+	SetWindowScale(2.0)
+	if got := Px(80); got != 160 {
+		t.Errorf("Px(80) at 2x window/1x DPI = %d, want 160", got)
+	}
+	if got := PxDPI(80); got != 80 {
+		t.Errorf("PxDPI(80) at 2x window/1x DPI = %d, want 80", got)
 	}
 
-	// At 14pt / 2x DPI: FontScale()=1.0, dpiScale=2.0 → PxFont(80)=160
 	dpiScale = 2.0
-	ApplyFontSize(14)
-	if got := PxFont(80); got != 160 {
-		t.Errorf("PxFont(80) at 14pt/2x = %d, want 160", got)
+	SetWindowScale(1.0)
+	if got := Px(80); got != 160 {
+		t.Errorf("Px(80) at 1x window/2x DPI = %d, want 160", got)
 	}
 
-	// At 28pt / 2x DPI: FontScale()=2.0, dpiScale=2.0 → PxFont(80)=320
-	ApplyFontSize(28)
-	if got := PxFont(80); got != 320 {
-		t.Errorf("PxFont(80) at 28pt/2x = %d, want 320", got)
+	SetWindowScale(2.0)
+	if got := Px(80); got != 320 {
+		t.Errorf("Px(80) at 2x/2x = %d, want 320", got)
+	}
+	if got := PxDPI(80); got != 160 {
+		t.Errorf("PxDPI(80) at 2x/2x = %d, want 160", got)
 	}
 }
 
@@ -407,7 +436,7 @@ func TestSetDPIScaleNewVars(t *testing.T) {
 	origDPI := dpiScale
 	defer func() {
 		dpiScale = origDPI
-		ApplyFontSize(14)
+		SetWindowScale(1.0)
 	}()
 
 	SetDPIScale(2.0)
@@ -460,7 +489,7 @@ func TestSetDPIScaleClampsBelowOne(t *testing.T) {
 	origDPI := dpiScale
 	defer func() {
 		dpiScale = origDPI
-		ApplyFontSize(14)
+		SetWindowScale(1.0)
 	}()
 
 	SetDPIScale(0.5) // Should be clamped to 1.0

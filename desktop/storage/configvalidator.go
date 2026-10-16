@@ -21,7 +21,7 @@ func detectPresentKeys(jsonBytes []byte) map[string]bool {
 	}
 
 	// Top-level keys
-	topKeys := []string{"version", "theme", "fontSize"}
+	topKeys := []string{"version", "theme"}
 	for _, k := range topKeys {
 		if _, ok := raw[k]; ok {
 			present[k] = true
@@ -106,9 +106,6 @@ func ApplyMissingDefaults(config *Config, presentKeys map[string]bool) {
 	if !presentKeys["theme"] {
 		config.Theme = defaults.Theme
 	}
-	if !presentKeys["fontSize"] {
-		config.FontSize = defaults.FontSize
-	}
 	if !presentKeys["video.aspectRatio"] {
 		config.Video.AspectRatio = defaults.Video.AspectRatio
 	}
@@ -159,18 +156,6 @@ func ValidateConfig(config *Config, validThemes []string) []string {
 	}
 	if !themeValid {
 		errors = append(errors, fmt.Sprintf("theme: %q (valid: %v)", config.Theme, validThemes))
-	}
-
-	// fontSize
-	fontSizeValid := false
-	for _, p := range FontSizePresets {
-		if config.FontSize == p {
-			fontSizeValid = true
-			break
-		}
-	}
-	if !fontSizeValid {
-		errors = append(errors, fmt.Sprintf("fontSize: %d (valid: %v)", config.FontSize, FontSizePresets))
 	}
 
 	// video.aspectRatio
@@ -372,18 +357,6 @@ func CorrectConfig(config *Config, validThemes []string) *Config {
 	}
 	if !themeValid {
 		config.Theme = defaults.Theme
-	}
-
-	// fontSize
-	fontSizeValid := false
-	for _, p := range FontSizePresets {
-		if config.FontSize == p {
-			fontSizeValid = true
-			break
-		}
-	}
-	if !fontSizeValid {
-		config.FontSize = defaults.FontSize
 	}
 
 	// video.aspectRatio

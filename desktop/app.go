@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"sync/atomic"
+	"time"
 
 	"github.com/ebitenui/ebitenui"
 	ebitenuiInput "github.com/ebitenui/ebitenui/input"
@@ -125,6 +126,18 @@ type App struct {
 	// HiDPI: current device scale factor tracked across Layout calls
 	currentDPIScale float64
 
+	// Window scale for the current window size, computed in Layout and
+	// applied once the size settles. See settleResize.
+	targetWindowScale  float64
+	windowScaleApplied bool
+
+	// Resize settling: the window size last seen, when it changed to that,
+	// and whether the UI has been rebuilt for it
+	lastSeenWidth   int
+	lastSeenHeight  int
+	resizeChangedAt time.Time
+	resizeSettled   bool
+
 	// Fullscreen: track state so it can be saved on exit even if macOS
 	// has already left native fullscreen by the time saveWindowState runs.
 	lastFullscreenState bool
@@ -171,7 +184,7 @@ func Run(factory coreif.CoreFactory) error {
 	// exists. No-op on other platforms.
 	removeNativeAboutMenuItem()
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
-	ebiten.SetWindowSizeLimits(900, 650, -1, -1)
+	ebiten.SetWindowSizeLimits(style.MinWindowWidth, style.MinWindowHeight, -1, -1)
 
 	app, err := newApp(factory, info)
 	if err != nil {
@@ -180,12 +193,8 @@ func Run(factory coreif.CoreFactory) error {
 
 	// Restore window size from saved config (before RunGame to avoid resize flash)
 	width, height, x, y, fullscreen := app.GetWindowConfig()
-	if width < 900 {
-		width = 900
-	}
-	if height < 650 {
-		height = 650
-	}
+	width = max(width, style.MinWindowWidth)
+	height = max(height, style.MinWindowHeight)
 	ebiten.SetWindowSize(width, height)
 
 	// Restore window position if previously saved
@@ -312,12 +321,11 @@ func (a *App) loadConfig() bool {
 }
 
 // applyConfig applies a loaded, valid config: the achievement manager,
-// theme, font size, and saved controller mappings.
+// theme, and saved controller mappings.
 func (a *App) applyConfig() {
 	a.configLoadFailed = false
 	a.newAchievementManager()
 	style.ApplyThemeByName(a.config.Theme)
-	style.ApplyFontSize(storage.ValidFontSize(a.config.FontSize))
 	applySavedPadMappings(a.config.Input.PadMappings)
 }
 
@@ -616,24 +624,7 @@ func (a *App) Update() error {
 
 	a.updatePlayerAssignment()
 
-	// Check for window resize that needs UI rebuild (for responsive layouts)
-	// Rebuild when width changes for screens with responsive layout
-	needsResizeRebuild := false
-	if a.state == StateLibrary {
-		needsResizeRebuild = true
-	}
-	if a.state == StateDetail {
-		needsResizeRebuild = true
-	}
-	if a.state == StateSettings {
-		needsResizeRebuild = true
-	}
-	if a.state == StateFilePicker {
-		needsResizeRebuild = true
-	}
-	if needsResizeRebuild && a.windowWidth > 0 && a.windowWidth != a.lastBuildWidth {
-		a.rebuildCurrentScreen()
-	}
+	a.settleResize()
 
 	switch a.state {
 	case StatePlaying:
@@ -1079,6 +1070,37 @@ func (a *App) Draw(screen *ebiten.Image) {
 	a.screenshotManager.Flush(screen, a.gameplay.CurrentGameCRC())
 }
 
+// resizeSettleDelay is how long the window size must hold before the UI
+// is rebuilt for it, so a drag does not rebuild every frame
+const resizeSettleDelay = 170 * time.Millisecond
+
+// settleResize rebuilds the UI for a new window size once the size has
+// held for resizeSettleDelay. The window scale changes first so the
+// rebuild uses it. Screens with a responsive layout also rebuild for a
+// width change alone.
+func (a *App) settleResize() {
+	if a.windowWidth != a.lastSeenWidth || a.windowHeight != a.lastSeenHeight {
+		a.lastSeenWidth = a.windowWidth
+		a.lastSeenHeight = a.windowHeight
+		a.resizeChangedAt = time.Now()
+		a.resizeSettled = false
+		return
+	}
+	if a.resizeSettled || time.Since(a.resizeChangedAt) < resizeSettleDelay {
+		return
+	}
+	a.resizeSettled = true
+
+	scaleChanged := a.targetWindowScale != style.FontScale()
+	if scaleChanged {
+		style.SetWindowScale(a.targetWindowScale)
+	}
+	responsive := a.state == StateLibrary || a.state == StateDetail || a.state == StateSettings || a.state == StateFilePicker
+	if scaleChanged || (responsive && a.windowWidth != a.lastBuildWidth) {
+		a.rebuildCurrentScreen()
+	}
+}
+
 // Layout implements ebiten.Game
 func (a *App) Layout(outsideWidth, outsideHeight int) (int, int) {
 	// Query the device scale factor for HiDPI/Retina rendering
@@ -1086,6 +1108,16 @@ func (a *App) Layout(outsideWidth, outsideHeight int) (int, int) {
 	if s != a.currentDPIScale {
 		a.currentDPIScale = s
 		style.SetDPIScale(s)
+		a.rebuildPending.Store(true)
+	}
+
+	// The window scale follows the logical size. It is applied at once the
+	// first time so the first frame is drawn at the right scale, and after
+	// that once the size settles.
+	a.targetWindowScale = style.WindowScaleFor(outsideWidth, outsideHeight)
+	if !a.windowScaleApplied {
+		a.windowScaleApplied = true
+		style.SetWindowScale(a.targetWindowScale)
 		a.rebuildPending.Store(true)
 	}
 

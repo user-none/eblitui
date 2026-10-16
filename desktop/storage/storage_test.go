@@ -69,48 +69,6 @@ func containsSub(s, sub string) bool {
 	return false
 }
 
-func TestValidFontSize(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    int
-		expected int
-	}{
-		{"exact preset 10", 10, 10},
-		{"exact preset 14", 14, 14},
-		{"exact preset 32", 32, 32},
-		{"between 10 and 12 closer to 10", 10, 10},
-		{"between 10 and 12 equidistant picks lower", 11, 10},
-		{"between 14 and 16 closer to 14", 14, 14},
-		{"between 14 and 16 closer to 16", 15, 14},
-		{"between 16 and 18", 17, 16},
-		{"between 20 and 24 closer to 20", 21, 20},
-		{"between 20 and 24 closer to 24", 23, 24},
-		{"below minimum", 1, 10},
-		{"above maximum", 100, 32},
-		{"zero", 0, 10},
-		{"negative", -5, 10},
-		{"exact preset 24", 24, 24},
-		{"between 28 and 32", 30, 28},
-		{"between 28 and 32 closer to 32", 31, 32},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ValidFontSize(tc.input)
-			if got != tc.expected {
-				t.Errorf("ValidFontSize(%d) = %d, want %d", tc.input, got, tc.expected)
-			}
-		})
-	}
-}
-
-func TestDefaultConfigFontSize(t *testing.T) {
-	config := DefaultConfig()
-	if config.FontSize != 14 {
-		t.Errorf("expected default font size 14, got %d", config.FontSize)
-	}
-}
-
 func TestDefaultConfig(t *testing.T) {
 	config := DefaultConfig()
 
@@ -474,7 +432,7 @@ func TestApplyMissingDefaultsPreservesZeroVolume(t *testing.T) {
 
 	// All keys present in JSON
 	presentKeys := map[string]bool{
-		"version": true, "theme": true, "fontSize": true,
+		"version": true, "theme": true,
 		"audio.volume": true, "window.width": true, "window.height": true,
 		"library.viewMode": true, "library.sortBy": true,
 		"rewind.bufferSizeMB": true, "rewind.frameStep": true,
@@ -592,7 +550,7 @@ func TestApplyMissingDefaultsAlreadyCurrent(t *testing.T) {
 
 	// All keys present
 	presentKeys := map[string]bool{
-		"version": true, "theme": true, "fontSize": true,
+		"version": true, "theme": true,
 		"audio.volume": true, "window.width": true, "window.height": true,
 		"library.viewMode": true, "library.sortBy": true,
 		"rewind.bufferSizeMB": true, "rewind.frameStep": true,

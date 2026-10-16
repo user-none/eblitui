@@ -20,7 +20,6 @@ func TestDetectPresentKeys(t *testing.T) {
 			json: `{
 				"version": 1,
 				"theme": "Default",
-				"fontSize": 14,
 				"video": {"aspectRatio": "dar"},
 				"audio": {"volume": 1.0, "fastForwardMute": true},
 				"window": {"width": 900, "height": 650},
@@ -28,7 +27,7 @@ func TestDetectPresentKeys(t *testing.T) {
 				"rewind": {"bufferSizeMB": 40, "frameStep": 1}
 			}`,
 			expected: map[string]bool{
-				"version": true, "theme": true, "fontSize": true,
+				"version": true, "theme": true,
 				"video.aspectRatio": true,
 				"audio.volume":      true, "audio.fastForwardMute": true,
 				"window.width": true, "window.height": true,
@@ -42,7 +41,7 @@ func TestDetectPresentKeys(t *testing.T) {
 			expected: map[string]bool{},
 		},
 		{
-			name: "partial keys - missing fontSize and rewind",
+			name: "partial keys - missing video and rewind",
 			json: `{
 				"version": 1,
 				"theme": "Dark",
@@ -59,12 +58,11 @@ func TestDetectPresentKeys(t *testing.T) {
 		{
 			name: "zero values are still present",
 			json: `{
-				"fontSize": 0,
 				"audio": {"volume": 0},
 				"window": {"width": 0, "height": 0}
 			}`,
 			expected: map[string]bool{
-				"fontSize": true, "audio.volume": true,
+				"audio.volume": true,
 				"window.width": true, "window.height": true,
 			},
 		},
@@ -115,9 +113,6 @@ func TestApplyMissingDefaults(t *testing.T) {
 		}
 		if config.Theme != defaults.Theme {
 			t.Errorf("theme: got %q, want %q", config.Theme, defaults.Theme)
-		}
-		if config.FontSize != defaults.FontSize {
-			t.Errorf("fontSize: got %d, want %d", config.FontSize, defaults.FontSize)
 		}
 		if config.Audio.Volume != defaults.Audio.Volume {
 			t.Errorf("audio.volume: got %f, want %f", config.Audio.Volume, defaults.Audio.Volume)
@@ -180,24 +175,20 @@ func TestApplyMissingDefaults(t *testing.T) {
 		if config.Theme != defaults.Theme {
 			t.Errorf("theme should default to %q, got %q", defaults.Theme, config.Theme)
 		}
-		if config.FontSize != defaults.FontSize {
-			t.Errorf("fontSize should default to %d, got %d", defaults.FontSize, config.FontSize)
-		}
 	})
 
 	t.Run("all present keeps values", func(t *testing.T) {
 		config := &Config{
-			Version:  1,
-			Theme:    "Dark",
-			FontSize: 20,
-			Video:    VideoConfig{AspectRatio: "4:3"},
-			Audio:    AudioConfig{Volume: 0.5, FastForwardMute: false},
-			Window:   WindowConfig{Width: 1024, Height: 768},
-			Library:  LibraryView{ViewMode: "list", SortBy: "lastPlayed"},
-			Rewind:   RewindConfig{BufferSizeMB: 100, FrameStep: 5},
+			Version: 1,
+			Theme:   "Dark",
+			Video:   VideoConfig{AspectRatio: "4:3"},
+			Audio:   AudioConfig{Volume: 0.5, FastForwardMute: false},
+			Window:  WindowConfig{Width: 1024, Height: 768},
+			Library: LibraryView{ViewMode: "list", SortBy: "lastPlayed"},
+			Rewind:  RewindConfig{BufferSizeMB: 100, FrameStep: 5},
 		}
 		presentKeys := map[string]bool{
-			"version": true, "theme": true, "fontSize": true,
+			"version": true, "theme": true,
 			"video.aspectRatio": true,
 			"audio.volume":      true, "audio.fastForwardMute": true,
 			"window.width": true, "window.height": true,
@@ -212,9 +203,6 @@ func TestApplyMissingDefaults(t *testing.T) {
 		}
 		if config.Theme != "Dark" {
 			t.Errorf("theme should remain Dark, got %q", config.Theme)
-		}
-		if config.FontSize != 20 {
-			t.Errorf("fontSize should remain 20, got %d", config.FontSize)
 		}
 		if config.Audio.Volume != 0.5 {
 			t.Errorf("audio.volume should remain 0.5, got %f", config.Audio.Volume)
@@ -281,33 +269,6 @@ func TestValidateConfig(t *testing.T) {
 		errs := ValidateConfig(config, validTestThemes)
 		if len(errs) == 0 {
 			t.Error("expected error for invalid theme")
-		}
-	})
-
-	t.Run("invalid fontSize", func(t *testing.T) {
-		config := DefaultConfig()
-		config.FontSize = -5
-		errs := ValidateConfig(config, validTestThemes)
-		if len(errs) == 0 {
-			t.Error("expected error for negative fontSize")
-		}
-	})
-
-	t.Run("fontSize zero is invalid", func(t *testing.T) {
-		config := DefaultConfig()
-		config.FontSize = 0
-		errs := ValidateConfig(config, validTestThemes)
-		if len(errs) == 0 {
-			t.Error("expected error for fontSize=0")
-		}
-	})
-
-	t.Run("fontSize not in presets", func(t *testing.T) {
-		config := DefaultConfig()
-		config.FontSize = 15
-		errs := ValidateConfig(config, validTestThemes)
-		if len(errs) == 0 {
-			t.Error("expected error for fontSize=15 (not a preset)")
 		}
 	})
 
@@ -423,18 +384,17 @@ func TestValidateConfig(t *testing.T) {
 
 	t.Run("multiple errors at once", func(t *testing.T) {
 		config := &Config{
-			Version:  99,
-			Theme:    "BadTheme",
-			FontSize: -1,
-			Video:    VideoConfig{AspectRatio: "16:9"},
-			Audio:    AudioConfig{Volume: 999},
-			Window:   WindowConfig{Width: 0, Height: 0},
-			Library:  LibraryView{ViewMode: "grid", SortBy: "date"},
-			Rewind:   RewindConfig{BufferSizeMB: 0, FrameStep: 0},
+			Version: 99,
+			Theme:   "BadTheme",
+			Video:   VideoConfig{AspectRatio: "16:9"},
+			Audio:   AudioConfig{Volume: 999},
+			Window:  WindowConfig{Width: 0, Height: 0},
+			Library: LibraryView{ViewMode: "grid", SortBy: "date"},
+			Rewind:  RewindConfig{BufferSizeMB: 0, FrameStep: 0},
 		}
 		errs := ValidateConfig(config, validTestThemes)
-		if len(errs) != 11 {
-			t.Errorf("expected 11 errors, got %d: %v", len(errs), errs)
+		if len(errs) != 10 {
+			t.Errorf("expected 10 errors, got %d: %v", len(errs), errs)
 		}
 	})
 
@@ -515,13 +475,12 @@ func TestValidateConfig(t *testing.T) {
 func TestCorrectConfig(t *testing.T) {
 	t.Run("corrects only invalid fields", func(t *testing.T) {
 		config := &Config{
-			Version:  1,
-			Theme:    "Dark",                                            // valid
-			FontSize: -5,                                                // invalid
-			Audio:    AudioConfig{Volume: 999},                          // invalid
-			Window:   WindowConfig{Width: 1024, Height: 768},            // valid
-			Library:  LibraryView{ViewMode: "list", SortBy: "playTime"}, // valid
-			Rewind:   RewindConfig{BufferSizeMB: 100, FrameStep: 5},     // valid
+			Version: 1,
+			Theme:   "Dark",                                            // valid
+			Audio:   AudioConfig{Volume: 999},                          // invalid
+			Window:  WindowConfig{Width: 1024, Height: 768},            // valid
+			Library: LibraryView{ViewMode: "list", SortBy: "playTime"}, // valid
+			Rewind:  RewindConfig{BufferSizeMB: 100, FrameStep: 5},     // valid
 		}
 
 		corrected := CorrectConfig(config, validTestThemes)
@@ -551,9 +510,6 @@ func TestCorrectConfig(t *testing.T) {
 		}
 
 		// Invalid fields corrected
-		if corrected.FontSize != defaults.FontSize {
-			t.Errorf("fontSize should be corrected to %d, got %d", defaults.FontSize, corrected.FontSize)
-		}
 		if corrected.Audio.Volume != defaults.Audio.Volume {
 			t.Errorf("volume should be corrected to %f, got %f", defaults.Audio.Volume, corrected.Audio.Volume)
 		}
@@ -595,14 +551,13 @@ func TestCorrectConfig(t *testing.T) {
 
 	t.Run("all invalid resets all to defaults", func(t *testing.T) {
 		config := &Config{
-			Version:  99,
-			Theme:    "BadTheme",
-			FontSize: -1,
-			Video:    VideoConfig{AspectRatio: "bad"},
-			Audio:    AudioConfig{Volume: 999},
-			Window:   WindowConfig{Width: 0, Height: 0},
-			Library:  LibraryView{ViewMode: "grid", SortBy: "date"},
-			Rewind:   RewindConfig{BufferSizeMB: 0, FrameStep: 0},
+			Version: 99,
+			Theme:   "BadTheme",
+			Video:   VideoConfig{AspectRatio: "bad"},
+			Audio:   AudioConfig{Volume: 999},
+			Window:  WindowConfig{Width: 0, Height: 0},
+			Library: LibraryView{ViewMode: "grid", SortBy: "date"},
+			Rewind:  RewindConfig{BufferSizeMB: 0, FrameStep: 0},
 		}
 
 		corrected := CorrectConfig(config, validTestThemes)
@@ -613,9 +568,6 @@ func TestCorrectConfig(t *testing.T) {
 		}
 		if corrected.Theme != defaults.Theme {
 			t.Errorf("theme: got %q, want %q", corrected.Theme, defaults.Theme)
-		}
-		if corrected.FontSize != defaults.FontSize {
-			t.Errorf("fontSize: got %d, want %d", corrected.FontSize, defaults.FontSize)
 		}
 		if corrected.Audio.Volume != defaults.Audio.Volume {
 			t.Errorf("volume: got %f, want %f", corrected.Audio.Volume, defaults.Audio.Volume)
@@ -1109,48 +1061,8 @@ func TestDisableAnalogStickSerialization(t *testing.T) {
 }
 
 func TestPresentButZeroVsMissing(t *testing.T) {
-	// fontSize: 0 is present but invalid — should NOT get defaulted by ApplyMissingDefaults
-	// absent fontSize should get defaulted
-	t.Run("present fontSize=0 stays zero after ApplyMissingDefaults", func(t *testing.T) {
-		jsonBytes := []byte(`{"fontSize": 0}`)
-		config := &Config{}
-		json.Unmarshal(jsonBytes, config)
-
-		presentKeys := detectPresentKeys(jsonBytes)
-		ApplyMissingDefaults(config, presentKeys)
-
-		// fontSize was present (as 0), so ApplyMissingDefaults should NOT override it
-		if config.FontSize != 0 {
-			t.Errorf("fontSize should remain 0 (present-but-zero), got %d", config.FontSize)
-		}
-
-		// But ValidateConfig should catch it as invalid
-		errs := ValidateConfig(config, validTestThemes)
-		found := false
-		for _, e := range errs {
-			if len(e) > 8 && e[:8] == "fontSize" {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Error("expected fontSize validation error for value 0")
-		}
-	})
-
-	t.Run("absent fontSize gets defaulted to 14", func(t *testing.T) {
-		jsonBytes := []byte(`{"version": 1, "theme": "Default"}`)
-		config := &Config{}
-		json.Unmarshal(jsonBytes, config)
-
-		presentKeys := detectPresentKeys(jsonBytes)
-		ApplyMissingDefaults(config, presentKeys)
-
-		if config.FontSize != 14 {
-			t.Errorf("absent fontSize should default to 14, got %d", config.FontSize)
-		}
-	})
-
+	// A key present with a zero value is kept by ApplyMissingDefaults and
+	// left for ValidateConfig to judge; an absent key gets its default.
 	t.Run("present volume=0 preserved", func(t *testing.T) {
 		jsonBytes := []byte(`{"audio": {"volume": 0}}`)
 		config := &Config{}

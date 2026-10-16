@@ -38,6 +38,7 @@ type PauseMenu struct {
 	cache struct {
 		screenW, screenH int
 		themeName        string
+		fontScale        float64
 		panelW, panelH   int
 		buttonW, buttonH int
 		dimOverlay       *ebiten.Image
@@ -196,6 +197,7 @@ func (m *PauseMenu) rebuildCache(screenW, screenH int) {
 	m.cache.screenW = screenW
 	m.cache.screenH = screenH
 	m.cache.themeName = style.CurrentThemeName
+	m.cache.fontScale = style.FontScale()
 
 	// Create dim overlay
 	m.cache.dimOverlay = ebiten.NewImage(screenW, screenH)
@@ -279,8 +281,8 @@ func (m *PauseMenu) Draw(screen *ebiten.Image) {
 	screenW := bounds.Dx()
 	screenH := bounds.Dy()
 
-	// Rebuild cache if screen dimensions or theme changed
-	if m.cache.screenW != screenW || m.cache.screenH != screenH || m.cache.themeName != style.CurrentThemeName {
+	// Rebuild cache if screen dimensions, theme, or scale changed
+	if m.cache.screenW != screenW || m.cache.screenH != screenH || m.cache.themeName != style.CurrentThemeName || m.cache.fontScale != style.FontScale() {
 		m.rebuildCache(screenW, screenH)
 	}
 

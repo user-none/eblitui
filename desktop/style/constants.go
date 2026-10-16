@@ -5,8 +5,22 @@ package style
 
 import "time"
 
+// Window scaling. The layout is designed for the minimum window size and the
+// whole UI, font included, grows with the window from there.
+const (
+	MinWindowWidth  = 900
+	MinWindowHeight = 650
+	maxWindowScale  = 4.0
+
+	// baseFontSize is the font size in points at scale 1.0
+	baseFontSize = 14.0
+
+	// largeFontFactor is the large font size relative to the font size
+	largeFontFactor = 2.0
+)
+
 // Base constants (unexported) — these are the logical-pixel reference values.
-// The corresponding exported vars are recalculated by SetDPIScale.
+// The corresponding exported vars are recalculated whenever a scale changes.
 const (
 	baseDefaultPadding      = 16
 	baseDefaultSpacing      = 16
@@ -52,7 +66,6 @@ const (
 	// Library list view
 	baseListMinTitleWidth = 150
 
-	// Font-dependent base values (at 14pt, scale = 1.0)
 	baseListRowHeight           = 40
 	baseListHeaderHeight        = 38
 	baseIconCardTextHeight      = 34
@@ -67,10 +80,9 @@ const (
 	baseAchievementBadgeSize    = 56
 	baseAchievementOverlayW     = 500
 	baseAchievementOverlayPad   = 16
-	baseMaxLargeFontSize        = 48
 )
 
-// Layout vars used across screens — DPI-scaled at runtime via SetDPIScale.
+// Layout vars used across screens, scaled at runtime from the base constants.
 var (
 	// Standard spacing and padding values
 	DefaultPadding = baseDefaultPadding
@@ -87,7 +99,7 @@ var (
 	ButtonPaddingMedium = baseButtonPaddingMedium
 )
 
-// Font-dependent layout values (updated by ApplyFontSize)
+// List and icon view layout values
 var (
 	ListRowHeight    = baseListRowHeight
 	ListHeaderHeight = baseListHeaderHeight
@@ -120,7 +132,7 @@ var SidebarMinWidth = baseSidebarMinWidth
 // Settings screen vars
 var SettingsFolderListMinHeight = baseFolderListMinHeight
 
-// Font-dependent settings layout value (updated by ApplyFontSize)
+// Settings row height
 var SettingsRowHeight = baseSettingsRowHeight
 
 // Progress bar vars
@@ -129,7 +141,7 @@ var (
 	ProgressBarHeight = baseProgressBarHeight
 )
 
-// Font-dependent scroll estimation (updated by ApplyFontSize)
+// Scroll estimation viewport height
 var EstimatedViewportHeight = baseEstimatedViewportHeight
 
 // Gamepad navigation timing constants
@@ -182,7 +194,7 @@ var (
 	ListMinTitleWidth = baseListMinTitleWidth
 )
 
-// Font-dependent achievement values (updated by ApplyFontSize)
+// Achievement list and overlay values
 var (
 	AchievementBadgeSize      = baseAchievementBadgeSize
 	AchievementRowHeight      = baseAchievementRowHeight

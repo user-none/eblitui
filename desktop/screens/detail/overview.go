@@ -205,14 +205,14 @@ func (o *OverviewSection) Build(focus types.FocusManager) *widget.Container {
 
 	// Metadata uses the content area less the scrollbar
 	metadataWidth := widgets.PageRowWidth(o.contentWidth())
-	minMetadata := style.PxFont(200)
+	minMetadata := style.Px(200)
 	if metadataWidth < minMetadata {
 		metadataWidth = minMetadata
 	}
 
 	// Calculate pixel width for value text column
-	// Label width scales with font size; value column = metadataWidth - label - grid spacing - grid padding
-	labelWidth := style.PxFont(80)
+	// value column = metadataWidth - label - grid spacing - grid padding
+	labelWidth := style.Px(80)
 	valueWidth := metadataWidth - labelWidth - style.DefaultSpacing - style.SmallSpacing*2
 
 	// Inner metadata container with fixed width
@@ -404,7 +404,7 @@ func buildMetadataRow(label, value string, valuePixelWidth int) *widget.Containe
 			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
 				VerticalPosition: widget.GridLayoutPositionCenter,
 			}),
-			widget.WidgetOpts.MinSize(style.PxFont(80), 0),
+			widget.WidgetOpts.MinSize(style.Px(80), 0),
 		),
 	)
 	row.AddChild(labelText)

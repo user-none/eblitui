@@ -44,9 +44,6 @@ func (a *AppearanceSection) Build(focus types.FocusManager) *widget.Container {
 		)),
 	)
 
-	// Font size row: label left, stepper right
-	section.AddChild(a.buildFontSizeRow(focus))
-
 	// Theme label
 	section.AddChild(widgets.SectionHeader("Theme"))
 
@@ -68,136 +65,12 @@ func (a *AppearanceSection) Build(focus types.FocusManager) *widget.Container {
 
 // setupNavigation registers navigation zones for the appearance section
 func (a *AppearanceSection) setupNavigation(focus types.FocusManager) {
-	// Font size zone (horizontal)
-	focus.RegisterNavZone("font-size", types.NavZoneHorizontal, []string{"font-decrease", "font-increase"}, 0)
-
 	// Theme list zone (vertical)
 	themeKeys := make([]string, len(style.AvailableThemes))
 	for i, theme := range style.AvailableThemes {
 		themeKeys[i] = fmt.Sprintf("theme-%s", theme.Name)
 	}
 	focus.RegisterNavZone("theme-list", types.NavZoneVertical, themeKeys, 0)
-
-	// Vertical transitions between zones
-	focus.SetNavTransition("font-size", types.DirDown, "theme-list", 0)
-	focus.SetNavTransition("theme-list", types.DirUp, "font-size", 0)
-}
-
-// buildFontSizeRow creates the font size row with label left and +/- stepper right
-func (a *AppearanceSection) buildFontSizeRow(focus types.FocusManager) *widget.Container {
-	presets := storage.FontSizePresets
-	currentSize := storage.ValidFontSize(a.config.FontSize)
-
-	// Find current index in presets
-	currentIdx := 0
-	for i, p := range presets {
-		if p == currentSize {
-			currentIdx = i
-			break
-		}
-	}
-
-	row := widgets.SettingsRow(2)
-
-	// Label on left
-	labelText := widget.NewText(
-		widget.TextOpts.Text("Font Size", style.FontFace(), style.Text),
-		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
-	)
-	row.AddChild(labelText)
-
-	// Controls group: [-] value [+]
-	controls := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewRowLayout(
-			widget.RowLayoutOpts.Direction(widget.DirectionHorizontal),
-			widget.RowLayoutOpts.Spacing(style.SmallSpacing),
-		)),
-	)
-
-	// Decrease button
-	decImage := style.ButtonImage()
-	if currentIdx <= 0 {
-		decImage = style.DisabledButtonImage()
-	}
-	decBtn := widget.NewButton(
-		widget.ButtonOpts.Image(decImage),
-		widget.ButtonOpts.Text("-", style.FontFace(), style.ButtonTextColor()),
-		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
-		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{
-				Position: widget.RowLayoutPositionCenter,
-			}),
-		),
-		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			idx := 0
-			for i, p := range presets {
-				if p == storage.ValidFontSize(a.config.FontSize) {
-					idx = i
-					break
-				}
-			}
-			if idx > 0 {
-				a.config.FontSize = presets[idx-1]
-				style.ApplyFontSize(a.config.FontSize)
-				storage.SaveConfig(a.config)
-				focus.SetPendingFocus("font-decrease")
-				a.callback.RequestRebuild()
-			}
-		}),
-	)
-	focus.RegisterFocusButton("font-decrease", decBtn)
-	controls.AddChild(decBtn)
-
-	// Size value display
-	sizeLabel := widget.NewText(
-		widget.TextOpts.Text(fmt.Sprintf("%dpt", currentSize), style.FontFace(), style.Text),
-		widget.TextOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{
-				Position: widget.RowLayoutPositionCenter,
-			}),
-			widget.WidgetOpts.MinSize(style.Px(50), 0),
-		),
-		widget.TextOpts.Position(widget.TextPositionCenter, widget.TextPositionCenter),
-	)
-	controls.AddChild(sizeLabel)
-
-	// Increase button
-	incImage := style.ButtonImage()
-	if currentIdx >= len(presets)-1 {
-		incImage = style.DisabledButtonImage()
-	}
-	incBtn := widget.NewButton(
-		widget.ButtonOpts.Image(incImage),
-		widget.ButtonOpts.Text("+", style.FontFace(), style.ButtonTextColor()),
-		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
-		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.RowLayoutData{
-				Position: widget.RowLayoutPositionCenter,
-			}),
-		),
-		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			idx := 0
-			for i, p := range presets {
-				if p == storage.ValidFontSize(a.config.FontSize) {
-					idx = i
-					break
-				}
-			}
-			if idx < len(presets)-1 {
-				a.config.FontSize = presets[idx+1]
-				style.ApplyFontSize(a.config.FontSize)
-				storage.SaveConfig(a.config)
-				focus.SetPendingFocus("font-increase")
-				a.callback.RequestRebuild()
-			}
-		}),
-	)
-	focus.RegisterFocusButton("font-increase", incBtn)
-	controls.AddChild(incBtn)
-
-	row.AddChild(controls)
-
-	return row
 }
 
 // buildThemeCard creates a theme selection card with button and color preview
