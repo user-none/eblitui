@@ -576,6 +576,7 @@ func (a *App) Update() error {
 		a.lastFullscreenState = ebiten.IsFullscreen()
 
 		a.libraryScreen.HaltArtworkLoader()
+		a.screenshotManager.Close()
 		return ebiten.Termination
 	}
 
@@ -1218,6 +1219,7 @@ func (a *App) Exit() {
 	}
 
 	a.libraryScreen.HaltArtworkLoader()
+	a.screenshotManager.Close()
 
 	// Clean exit using os.Exit to avoid log.Fatal's stack trace
 	os.Exit(0)

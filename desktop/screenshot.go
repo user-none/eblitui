@@ -4,8 +4,10 @@
 package desktop
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"image"
 	"image/png"
 	"log"
 	"os"
@@ -38,21 +40,57 @@ const maxScreenshotTitleBytes = 192
 // name is already taken
 const maxScreenshotSuffix = 100
 
+// screenshotQueueDepth is how many captured frames may wait for the
+// encoder. Each holds a full window frame, so the depth bounds memory when
+// captures come faster than they can be encoded.
+const screenshotQueueDepth = 14
+
 // invalidFilenameChars are the characters a filename may not contain on
 // Windows, the strictest of the supported platforms
 const invalidFilenameChars = `<>:"/\|?*`
 
+// screenshotJob is one captured frame and the files to write from it
+type screenshotJob struct {
+	frame   *image.RGBA
+	ts      time.Time // capture time, used in the filenames
+	gameCRC string
+	tags    []string // one file per tag
+}
+
 // ScreenshotManager saves screenshots of gameplay. Captures are queued
-// from anywhere, including the emulation thread, and written from the
-// final drawn frame by Flush at the end of Draw.
+// from anywhere, including the emulation thread. Flush, at the end of
+// Draw, copies the final drawn frame out of the screen and hands it to an
+// encoder goroutine, which encodes and writes the files off the draw
+// thread.
 type ScreenshotManager struct {
 	mu     sync.Mutex
 	queued []string // filename tags of the captures waiting for the next Flush
+	closed bool     // Close has run; captures are dropped
+
+	jobs chan screenshotJob // captured frames for the encoder
+	done chan struct{}      // closed when the encoder exits
+
+	// gameDir returns a game's screenshot directory:
+	// storage.GetGameScreenshotDir
+	gameDir func(gameCRC string) (string, error)
 }
 
-// NewScreenshotManager creates a new screenshot manager
+// NewScreenshotManager creates a screenshot manager with its encoder
+// running. Close stops it.
 func NewScreenshotManager() *ScreenshotManager {
-	return &ScreenshotManager{}
+	m := newScreenshotManager(screenshotQueueDepth)
+	go m.run()
+	return m
+}
+
+// newScreenshotManager creates a manager that queues up to depth frames.
+// The encoder is not started.
+func newScreenshotManager(depth int) *ScreenshotManager {
+	return &ScreenshotManager{
+		jobs:    make(chan screenshotJob, depth),
+		done:    make(chan struct{}),
+		gameDir: storage.GetGameScreenshotDir,
+	}
 }
 
 // Queue requests a screenshot of the next drawn frame. tag is the filename
@@ -64,20 +102,33 @@ func (m *ScreenshotManager) Queue(tag string) {
 	m.mu.Unlock()
 }
 
-// Flush saves screen once per queued capture in the game's screenshot
-// directory and empties the queue. Captures queued while no game is loaded
-// are dropped. Capture is silent, with no notification; failures are
-// logged.
+// Flush copies screen for the queued captures and empties the queue. The
+// frame is encoded and written later, once per capture, in the game's
+// screenshot directory. Captures queued while no game is loaded are
+// dropped. Capture is silent, with no notification; failures are logged.
 func (m *ScreenshotManager) Flush(screen *ebiten.Image, gameCRC string) {
 	tags := m.drain()
-	if gameCRC == "" {
+	if len(tags) == 0 || gameCRC == "" {
 		return
 	}
-	for _, tag := range tags {
-		if err := takeScreenshot(screen, gameCRC, tag); err != nil {
-			log.Printf("Screenshot failed: %v", err)
-		}
+	b := screen.Bounds()
+	frame := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+	screen.ReadPixels(frame.Pix)
+	m.capture(frame, gameCRC, tags)
+}
+
+// Close stops the encoder once the queued frames are written. Captures
+// after Close are dropped.
+func (m *ScreenshotManager) Close() {
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return
 	}
+	m.closed = true
+	close(m.jobs)
+	m.mu.Unlock()
+	<-m.done
 }
 
 // drain returns the queued tags in order and empties the queue
@@ -89,10 +140,38 @@ func (m *ScreenshotManager) drain() []string {
 	return tags
 }
 
-// takeScreenshot saves screen as a PNG in the game's screenshot directory
-// under a name carrying tag
-func takeScreenshot(screen *ebiten.Image, gameCRC string, tag string) error {
-	dir, err := storage.GetGameScreenshotDir(gameCRC)
+// capture hands frame to the encoder to be written under gameCRC, one file
+// per tag. The frame is dropped when the encoder is too far behind or the
+// manager is closed.
+func (m *ScreenshotManager) capture(frame *image.RGBA, gameCRC string, tags []string) {
+	job := screenshotJob{frame: frame, ts: time.Now(), gameCRC: gameCRC, tags: tags}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return
+	}
+	select {
+	case m.jobs <- job:
+	default:
+		log.Printf("Screenshot dropped: %d frames already waiting to be saved", len(m.jobs))
+	}
+}
+
+// run encodes and writes jobs until the job channel is closed, logging
+// failures
+func (m *ScreenshotManager) run() {
+	defer close(m.done)
+	for job := range m.jobs {
+		if err := m.save(job); err != nil {
+			log.Printf("Screenshot failed: %v", err)
+		}
+	}
+}
+
+// save encodes the job's frame once and writes it to a file per tag. A
+// file that cannot be written is logged and the rest are still written.
+func (m *ScreenshotManager) save(job screenshotJob) error {
+	dir, err := m.gameDir(job.gameCRC)
 	if err != nil {
 		return err
 	}
@@ -100,7 +179,22 @@ func takeScreenshot(screen *ebiten.Image, gameCRC string, tag string) error {
 		return fmt.Errorf("failed to create screenshot directory: %w", err)
 	}
 
-	f, err := createScreenshotFile(dir, time.Now(), tag)
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, job.frame); err != nil {
+		return fmt.Errorf("failed to encode screenshot: %w", err)
+	}
+	for _, tag := range job.tags {
+		if err := writeScreenshot(dir, job.ts, tag, buf.Bytes()); err != nil {
+			log.Printf("Screenshot failed: %v", err)
+		}
+	}
+	return nil
+}
+
+// writeScreenshot writes encoded PNG data to a new file in dir named for
+// ts and tag
+func writeScreenshot(dir string, ts time.Time, tag string, data []byte) error {
+	f, err := createScreenshotFile(dir, ts, tag)
 	if err != nil {
 		return err
 	}
@@ -108,7 +202,7 @@ func takeScreenshot(screen *ebiten.Image, gameCRC string, tag string) error {
 	// Close before removing a failed write: an open file cannot be removed
 	// on every platform. Close reports write errors of its own, such as a
 	// full disk.
-	err = png.Encode(f, screen)
+	_, err = f.Write(data)
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
