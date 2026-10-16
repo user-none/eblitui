@@ -15,15 +15,27 @@ import (
 	"github.com/user-none/eblitui/desktop/widgets"
 )
 
-// fakeFocus records the targets and zones a section registers
+// fakeFocus records the targets, zones, and zone transitions a section
+// registers
 type fakeFocus struct {
-	targets map[string]widget.Focuser
-	zones   map[string][]string
-	pending string
+	targets     map[string]widget.Focuser
+	zones       map[string][]string
+	transitions map[string]map[int]navTarget // from zone -> direction -> target
+	pending     string
+}
+
+// navTarget is where a zone transition lands
+type navTarget struct {
+	zone  string
+	index int
 }
 
 func newFakeFocus() *fakeFocus {
-	return &fakeFocus{targets: make(map[string]widget.Focuser), zones: make(map[string][]string)}
+	return &fakeFocus{
+		targets:     make(map[string]widget.Focuser),
+		zones:       make(map[string][]string),
+		transitions: make(map[string]map[int]navTarget),
+	}
 }
 
 func (f *fakeFocus) RegisterFocusButton(key string, btn *widget.Button) { f.targets[key] = btn }
@@ -35,7 +47,12 @@ func (f *fakeFocus) RestoreScrollPosition()                             {}
 func (f *fakeFocus) RegisterNavZone(name string, _ string, keys []string, _ int) {
 	f.zones[name] = append([]string(nil), keys...)
 }
-func (f *fakeFocus) SetNavTransition(string, int, string, int) {}
+func (f *fakeFocus) SetNavTransition(from string, dir int, to string, index int) {
+	if f.transitions[from] == nil {
+		f.transitions[from] = make(map[int]navTarget)
+	}
+	f.transitions[from][dir] = navTarget{zone: to, index: index}
+}
 
 // fakeCallback counts rebuild requests; other callback methods are not
 // used by the section

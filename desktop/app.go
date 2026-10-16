@@ -1118,11 +1118,20 @@ func (a *App) SwitchToLibrary() {
 	if a.state == StatePlaying {
 		a.gameplayTransitionGuard = true
 	}
+	a.leaveDetail()
 	a.previousState = a.state
 	a.state = StateLibrary
 	a.libraryScreen.OnEnter()
 	a.rebuildCurrentScreen()
 	// Focus restoration is handled by the Update loop on the next frame
+}
+
+// leaveDetail lets the detail screen release what it holds for display
+// when the state is about to move away from it
+func (a *App) leaveDetail() {
+	if a.state == StateDetail {
+		a.detailScreen.OnExit()
+	}
 }
 
 // SwitchToDetail transitions to the detail screen
@@ -1138,6 +1147,7 @@ func (a *App) SwitchToDetail(gameCRC string) {
 // SwitchToSettings transitions to the settings screen
 func (a *App) SwitchToSettings() {
 	a.notification.Clear()
+	a.leaveDetail()
 	a.previousState = a.state
 	a.state = StateSettings
 	a.settingsScreen.OnEnter()
@@ -1148,6 +1158,7 @@ func (a *App) SwitchToSettings() {
 // given section selected
 func (a *App) SwitchToSettingsSection(focusKey string) {
 	a.notification.Clear()
+	a.leaveDetail()
 	a.previousState = a.state
 	a.state = StateSettings
 	a.settingsScreen.OnEnter()
@@ -1194,6 +1205,7 @@ func (a *App) LaunchGame(gameCRC string, resume bool, discIndex int) {
 	a.shaderManager.SetAspectRatioMode(a.config.Video.AspectRatio)
 
 	if a.gameplay.Launch(gameCRC, resume, discIndex) {
+		a.leaveDetail()
 		a.previousState = a.state
 		a.state = StatePlaying
 

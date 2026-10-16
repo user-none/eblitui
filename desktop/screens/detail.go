@@ -32,12 +32,17 @@ type DetailScreen struct {
 	pages sidebarSections // Page sidebar list and selection
 
 	// Encapsulated pages
-	overviewPage *detail.OverviewSection
-	cheatsPage   *detail.CheatsSection // nil when the core has no cheat support
+	overviewPage    *detail.OverviewSection
+	cheatsPage      *detail.CheatsSection // nil when the core has no cheat support
+	screenshotsPage *detail.ScreenshotsSection
 }
 
-// cheatsPageKey is the focus key of the Cheats page in the sidebar
-const cheatsPageKey = "page-cheats"
+// cheatsPageKey and screenshotsPageKey are the focus keys of the Cheats and
+// Screenshots pages in the sidebar
+const (
+	cheatsPageKey      = "page-cheats"
+	screenshotsPageKey = "page-screenshots"
+)
 
 // NewDetailScreen creates a new detail screen. cheatSystem is the core's
 // cheat system, or 0 when the core has no cheat support; the Cheats page
@@ -59,6 +64,8 @@ func NewDetailScreen(callback ScreenCallback, library *storage.Library, achievem
 		s.cheatsPage = detail.NewCheatsSection(callback, cheatSystem, cheatBigEndian, s.contentWidth)
 		s.pages.sections = append(s.pages.sections, sectionDescriptor{label: "Cheats", focusKey: cheatsPageKey, build: s.cheatsPage.Build, setupNav: s.setupCheatsNav})
 	}
+	s.screenshotsPage = detail.NewScreenshotsSection(callback, s.contentWidth)
+	s.pages.sections = append(s.pages.sections, sectionDescriptor{label: "Screenshots", focusKey: screenshotsPageKey, build: s.screenshotsPage.Build, setupNav: s.setupScreenshotsNav})
 	return s
 }
 
@@ -77,6 +84,7 @@ func (s *DetailScreen) SetGame(gameCRC string) {
 	if s.cheatsPage != nil {
 		s.cheatsPage.SetGame(s.game)
 	}
+	s.screenshotsPage.SetGame(s.game)
 }
 
 // Build creates the detail screen UI
@@ -211,10 +219,43 @@ func (s *DetailScreen) Build() *widget.Container {
 	return rootContainer
 }
 
-// columnWidth returns the game column width, wider when a page label needs
-// more room
+// detailColumnFraction is the share of the window width the game column
+// takes, between its minimum and maximum widths
+const detailColumnFraction = 5
+
+// detailColumnMaxWidth is the widest the game column grows, in logical
+// pixels before scaling. Box art from the thumbnail repositories is about
+// 512 pixels on its long side, so a wider column would upscale it.
+const detailColumnMaxWidth = 400
+
+// detailSideBySideWidth is the window width, in logical pixels before
+// scaling, from which the page sidebar sits beside the box art instead of
+// under it. Narrower windows stack them and have no width to spare for a
+// wider column.
+const detailSideBySideWidth = 1200
+
+// sideBySide reports whether the sidebar goes beside the art rather than
+// under it
+func (s *DetailScreen) sideBySide() bool {
+	return s.callback.GetWindowWidth() >= style.Px(detailSideBySideWidth)
+}
+
+// artWidth returns the box art width: a fifth of the window, kept between
+// DetailColumnWidth and detailColumnMaxWidth
+func (s *DetailScreen) artWidth() int {
+	width := s.callback.GetWindowWidth() / detailColumnFraction
+	return min(max(width, style.DetailColumnWidth), style.Px(detailColumnMaxWidth))
+}
+
+// columnWidth returns the game column width. Stacked, the art and the
+// sidebar share it: the art width, or wider when a page label needs more
+// room. Side by side, it is the sidebar at its fit width, the spacing, and
+// the art.
 func (s *DetailScreen) columnWidth() int {
-	return s.pages.sidebarWidth(style.DetailColumnWidth)
+	if s.sideBySide() {
+		return s.pages.sidebarWidth(style.SidebarMinWidth) + style.DefaultSpacing + s.artWidth()
+	}
+	return s.pages.sidebarWidth(s.artWidth())
 }
 
 // contentWidth returns the width of the page content area: the window
@@ -224,23 +265,47 @@ func (s *DetailScreen) contentWidth() int {
 }
 
 // buildGameColumn creates the left column shown on every page: the box art
-// above the page sidebar.
+// and the page sidebar. In a narrow window the sidebar sits directly under
+// the art, and on a window too short for the full 3:4 box the art shrinks
+// instead of pushing the sidebar off the bottom. From
+// detailSideBySideWidth the sidebar sits beside the art on the left, so
+// the art no longer limits how many pages fit.
 func (s *DetailScreen) buildGameColumn() *widget.Container {
-	width := s.columnWidth()
+	rebuild := func() { s.callback.RequestRebuild() }
 
+	if !s.sideBySide() {
+		width := s.columnWidth()
+		column := widget.NewContainer(
+			widget.ContainerOpts.Layout(widgets.NewShrinkFirstLayout(style.DefaultSpacing)),
+		)
+		column.AddChild(s.buildArtBox(width))
+		column.AddChild(s.pages.buildSidebar(&s.BaseScreen, width, rebuild))
+		return column
+	}
+
+	// The sidebar panel runs the full height like the settings sidebar.
+	// The art box keeps to the top and takes the height it has, up to 3:4.
 	column := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewRowLayout(
-			widget.RowLayoutOpts.Direction(widget.DirectionVertical),
-			widget.RowLayoutOpts.Spacing(style.DefaultSpacing),
+		widget.ContainerOpts.Layout(widget.NewGridLayout(
+			widget.GridLayoutOpts.Columns(2),
+			widget.GridLayoutOpts.Stretch([]bool{false, false}, []bool{true}),
+			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
 		)),
 	)
-	column.AddChild(s.buildArtBox(width))
-	column.AddChild(s.pages.buildSidebar(&s.BaseScreen, width, func() { s.callback.RequestRebuild() }))
+	column.AddChild(s.pages.buildSidebar(&s.BaseScreen, s.pages.sidebarWidth(style.SidebarMinWidth), rebuild))
+
+	artWidth := s.artWidth()
+	art := s.buildArtBox(artWidth)
+	art.GetWidget().MinHeight = 0
+	art.GetWidget().LayoutData = widget.GridLayoutData{MaxHeight: artWidth * 4 / 3}
+	column.AddChild(art)
 	return column
 }
 
 // buildArtBox creates the box art at the given width in a 3:4 black box.
-// Without artwork the game's name is shown in the box instead.
+// The art is drawn to fit the box, so it keeps its aspect ratio when the
+// column layout shrinks the box on a short window. Without artwork the
+// game's name is shown in the box instead.
 func (s *DetailScreen) buildArtBox(artWidth int) *widget.Container {
 	artHeight := artWidth * 4 / 3 // 3:4 aspect ratio for box art
 
@@ -256,17 +321,11 @@ func (s *DetailScreen) buildArtBox(artWidth int) *widget.Container {
 	// Try to load box art image (scaled to fit)
 	artImage := s.loadBoxArtScaled(artWidth, artHeight)
 	if artImage != nil {
-		// Display the actual artwork
-		artGraphic := widget.NewGraphic(
-			widget.GraphicOpts.Image(artImage),
-			widget.GraphicOpts.WidgetOpts(
-				widget.WidgetOpts.LayoutData(widget.AnchorLayoutData{
-					HorizontalPosition: widget.AnchorLayoutPositionCenter,
-					VerticalPosition:   widget.AnchorLayoutPositionCenter,
-				}),
-			),
-		)
-		artContainer.AddChild(artGraphic)
+		// Display the actual artwork, fit to whatever the box ends up
+		artContainer.AddChild(widgets.NewFitGraphic(artImage, widget.WidgetOpts.LayoutData(widget.AnchorLayoutData{
+			StretchHorizontal: true,
+			StretchVertical:   true,
+		})))
 	} else {
 		// Show placeholder text if no artwork. Wrap and truncate the
 		// title so it fits inside the fixed box instead of stretching
@@ -359,6 +418,23 @@ func (s *DetailScreen) setupPageNav(zones []string) {
 	}
 }
 
+// setupScreenshotsNav links the Screenshots page: the list, its first
+// zone, is entered from the sidebar at the selected row and leaves up to
+// the toolbar or left to the sidebar. The action row beside the list also
+// leaves up to the toolbar; its way back to the list is the page's own.
+func (s *DetailScreen) setupScreenshotsNav() {
+	zones := s.screenshotsPage.NavZones()
+	if len(zones) == 0 {
+		return
+	}
+	s.SetNavTransition(sidebarZone, types.DirRight, zones[0], s.screenshotsPage.SelectedRow())
+	s.SetNavTransition(zones[0], types.DirUp, "toolbar", toolbarActionIndex)
+	s.SetNavTransition(zones[0], types.DirLeft, sidebarZone, types.NavIndexFirst)
+	for _, zone := range zones[1:] {
+		s.SetNavTransition(zone, types.DirUp, "toolbar", toolbarActionIndex)
+	}
+}
+
 // Update runs each frame while the detail screen is shown
 func (s *DetailScreen) Update() {
 	if s.cheatsPage != nil && s.pages.currentKey() == cheatsPageKey {
@@ -367,9 +443,16 @@ func (s *DetailScreen) Update() {
 }
 
 // HandleBack handles Back on the selected page, reporting whether it was
-// used there. Back closes an open cheat form.
+// used there. Back closes an open cheat form or cancels an armed screenshot
+// delete.
 func (s *DetailScreen) HandleBack() bool {
-	return s.cheatsPage != nil && s.pages.currentKey() == cheatsPageKey && s.cheatsPage.HandleBack()
+	switch s.pages.currentKey() {
+	case cheatsPageKey:
+		return s.cheatsPage != nil && s.cheatsPage.HandleBack()
+	case screenshotsPageKey:
+		return s.screenshotsPage.HandleBack()
+	}
+	return false
 }
 
 // loadBoxArtScaled loads and scales the box art image for the current game
@@ -415,4 +498,10 @@ func (s *DetailScreen) OnEnter() {
 	} else {
 		s.SetPendingFocus("remove")
 	}
+}
+
+// OnExit is called when leaving the detail screen. It frees the screenshot
+// preview texture, which SetGame recreates on return.
+func (s *DetailScreen) OnExit() {
+	s.screenshotsPage.ReleasePreview()
 }

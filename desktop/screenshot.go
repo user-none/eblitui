@@ -13,28 +13,12 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/user-none/eblitui/desktop/storage"
 )
-
-// achievementTagPrefix starts the filename tag of a screenshot taken on an
-// achievement unlock. The achievement title follows it.
-const achievementTagPrefix = "achievement_"
-
-// maxScreenshotTitleLen is the most runes of an achievement title kept in a
-// screenshot filename
-const maxScreenshotTitleLen = 64
-
-// maxScreenshotTitleBytes is the most UTF-8 bytes of an achievement title
-// kept in a screenshot filename. It keeps the whole filename under the 255
-// byte component limit of common filesystems when the title is made of
-// wide runes.
-const maxScreenshotTitleBytes = 192
 
 // maxScreenshotSuffix is the highest "-n" suffix tried when a screenshot
 // name is already taken
@@ -44,10 +28,6 @@ const maxScreenshotSuffix = 100
 // encoder. Each holds a full window frame, so the depth bounds memory when
 // captures come faster than they can be encoded.
 const screenshotQueueDepth = 14
-
-// invalidFilenameChars are the characters a filename may not contain on
-// Windows, the strictest of the supported platforms
-const invalidFilenameChars = `<>:"/\|?*`
 
 // screenshotJob is one captured frame and the files to write from it
 type screenshotJob struct {
@@ -218,7 +198,7 @@ func writeScreenshot(dir string, ts time.Time, tag string, data []byte) error {
 // tried in turn.
 func createScreenshotFile(dir string, ts time.Time, tag string) (*os.File, error) {
 	for n := 0; n <= maxScreenshotSuffix; n++ {
-		path := filepath.Join(dir, screenshotFilename(ts, n, tag))
+		path := filepath.Join(dir, storage.ScreenshotFilename(ts, n, tag))
 		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 		if err == nil {
 			return f, nil
@@ -230,63 +210,13 @@ func createScreenshotFile(dir string, ts time.Time, tag string) (*os.File, error
 	return nil, fmt.Errorf("failed to create screenshot file: %d names taken", maxScreenshotSuffix+1)
 }
 
-// screenshotFilename returns the name of a screenshot taken at ts: the
-// millisecond Unix timestamp, "-n" when n is above zero, "_" and the tag
-// when one is set, and the .png extension
-func screenshotFilename(ts time.Time, n int, tag string) string {
-	var b strings.Builder
-	b.WriteString(strconv.FormatInt(ts.UnixMilli(), 10))
-	if n > 0 {
-		b.WriteByte('-')
-		b.WriteString(strconv.Itoa(n))
-	}
-	if tag != "" {
-		b.WriteByte('_')
-		b.WriteString(tag)
-	}
-	b.WriteString(".png")
-	return b.String()
-}
-
 // achievementTag returns the screenshot filename tag of an achievement
 // unlock: the achievement title made safe for a filename, or the
 // achievement id when nothing of the title is usable
 func achievementTag(title string, id uint32) string {
-	name := sanitizeFilename(title)
+	name := storage.SanitizeScreenshotTitle(title)
 	if name == "" {
 		name = strconv.FormatUint(uint64(id), 10)
 	}
-	return achievementTagPrefix + name
-}
-
-// sanitizeFilename reduces s to text usable in a filename on every
-// supported platform. Characters that are invalid on Windows and control
-// characters are dropped, runs of whitespace become one space, and the
-// result is trimmed and capped at maxScreenshotTitleLen runes and
-// maxScreenshotTitleBytes bytes.
-func sanitizeFilename(s string) string {
-	var b strings.Builder
-	pendingSpace := false
-	for _, r := range s {
-		switch {
-		case unicode.IsSpace(r):
-			pendingSpace = true
-		case unicode.IsControl(r), strings.ContainsRune(invalidFilenameChars, r):
-			// dropped
-		default:
-			if pendingSpace && b.Len() > 0 {
-				b.WriteByte(' ')
-			}
-			pendingSpace = false
-			b.WriteRune(r)
-		}
-	}
-	runes := []rune(b.String())
-	if len(runes) > maxScreenshotTitleLen {
-		runes = runes[:maxScreenshotTitleLen]
-	}
-	for len(string(runes)) > maxScreenshotTitleBytes {
-		runes = runes[:len(runes)-1]
-	}
-	return strings.TrimSpace(string(runes))
+	return storage.ScreenshotAchievementTag + name
 }
