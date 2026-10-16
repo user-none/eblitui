@@ -41,9 +41,10 @@ func NewInputManager() *InputManager {
 }
 
 // Update polls input state. Should be called once per frame.
-// Returns global key states: F12 screenshot and F11 fullscreen toggle.
+// Returns global key states: F12 screenshot and F11 fullscreen toggle. The
+// app acts on the screenshot request during gameplay only.
 func (im *InputManager) Update() (screenshotRequested, fullscreenToggle bool) {
-	// Check for F12 screenshot (global, works everywhere)
+	// Check for F12 screenshot
 	screenshotRequested = inpututil.IsKeyJustPressed(ebiten.KeyF12)
 	// Check for F11 fullscreen toggle (global, works everywhere)
 	fullscreenToggle = inpututil.IsKeyJustPressed(ebiten.KeyF11)

@@ -213,6 +213,15 @@ func GetScreenshotDir() (string, error) {
 	return filepath.Join(baseDir, screenshotDir), nil
 }
 
+// GetGameScreenshotDir returns the screenshot directory for a specific game (by CRC32)
+func GetGameScreenshotDir(gameCRC string) (string, error) {
+	dir, err := GetScreenshotDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, gameCRC), nil
+}
+
 // GetGameSaveDir returns the save directory for a specific game (by CRC32)
 func GetGameSaveDir(gameCRC string) (string, error) {
 	savesDir, err := GetSavesDir()

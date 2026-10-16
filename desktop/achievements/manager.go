@@ -27,8 +27,9 @@ type Notification interface {
 	PlaySound(soundData []byte)   // Play sound through notification audio stream
 }
 
-// ScreenshotFunc is called when an achievement triggers to capture a screenshot
-type ScreenshotFunc func()
+// ScreenshotFunc is called when an achievement triggers to capture a
+// screenshot. It receives the achievement's title and id.
+type ScreenshotFunc func(title string, id uint32)
 
 // Manager wraps the rcheevos client for RetroAchievements integration
 type Manager struct {
@@ -592,7 +593,7 @@ func (m *Manager) handleEvent(event *rcheevos.Event) {
 
 		// Take screenshot
 		if m.config.RetroAchievements.AutoScreenshot && m.screenshotFunc != nil {
-			m.screenshotFunc()
+			m.screenshotFunc(title, achievementID)
 		}
 
 		// Show notification

@@ -83,10 +83,6 @@ type GameplayManager struct {
 	autoSaving       bool
 	autoSaveWg       sync.WaitGroup
 
-	// Achievement screenshot (set by callback, processed in Draw)
-	achievementScreenshotPending bool
-	achievementScreenshotMu      sync.Mutex
-
 	// Rumble
 	// Rumble. Exactly one engine is active per game: rumbleEngine
 	// serves the game's .erumble file, rumbleCHT is the CHT fallback.
@@ -425,11 +421,10 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bo
 
 	// Set up RetroAchievements if enabled and logged in
 	if gm.achievementManager != nil && gm.achievementManager.IsEnabled() && gm.achievementManager.IsLoggedIn() {
-		// Set up screenshot callback
-		gm.achievementManager.SetScreenshotFunc(func() {
-			gm.achievementScreenshotMu.Lock()
-			gm.achievementScreenshotPending = true
-			gm.achievementScreenshotMu.Unlock()
+		// Set up screenshot callback. The capture is taken from the final
+		// drawn frame, so it carries the unlock notification.
+		gm.achievementManager.SetScreenshotFunc(func(title string, id uint32) {
+			gm.screenshotManager.Queue(achievementTag(title, id))
 		})
 
 		if gm.memoryInspector != nil {
@@ -786,18 +781,6 @@ func (gm *GameplayManager) Draw(screen *ebiten.Image) {
 	}
 	gm.renderer.SetPAR(par)
 	gm.renderer.DrawFramebuffer(screen, pixels, stride, height)
-
-	// Check for pending achievement screenshot
-	gm.achievementScreenshotMu.Lock()
-	takeScreenshot := gm.achievementScreenshotPending
-	gm.achievementScreenshotPending = false
-	gm.achievementScreenshotMu.Unlock()
-
-	if takeScreenshot && gm.screenshotManager != nil && gm.currentGame != nil {
-		if err := gm.screenshotManager.TakeScreenshot(screen, gm.currentGame.CRC32); err != nil {
-			log.Printf("Failed to take achievement screenshot: %v", err)
-		}
-	}
 }
 
 // DrawFramebuffer returns the native-resolution framebuffer and the pixel

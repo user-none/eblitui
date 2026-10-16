@@ -97,9 +97,6 @@ type App struct {
 	lastWindowedHeight int // Last non-fullscreen height (logical pixels)
 	lastBuildWidth     int // Track width used for last UI build
 
-	// Screenshot pending flag (set in Update, processed in Draw)
-	screenshotPending bool
-
 	// Input manager for UI navigation
 	inputManager *InputManager
 
@@ -283,7 +280,7 @@ func (a *App) initMetadata() {
 func (a *App) initManagers() {
 	a.notification = NewNotification()
 	a.saveStateManager = NewSaveStateManager(a.notification)
-	a.screenshotManager = NewScreenshotManager(a.notification)
+	a.screenshotManager = NewScreenshotManager()
 	a.inputManager = NewInputManager()
 	a.assignment = NewPlayerAssignment(a.systemInfo.Players)
 	a.shaderManager = shader.NewManager(a.systemInfo.PixelAspectRatio)
@@ -606,10 +603,11 @@ func (a *App) Update() error {
 		}
 	}
 
-	// Poll input manager for global keys (F12 screenshot, F11 fullscreen)
+	// Poll input manager for global keys (F12 screenshot, F11 fullscreen).
+	// Screenshots are of gameplay only, paused or not.
 	screenshotRequested, fullscreenToggle := a.inputManager.Update()
-	if screenshotRequested {
-		a.screenshotPending = true
+	if screenshotRequested && a.state == StatePlaying {
+		a.screenshotManager.Queue("")
 	}
 	if fullscreenToggle {
 		a.toggleFullscreen()
@@ -1076,14 +1074,8 @@ func (a *App) Draw(screen *ebiten.Image) {
 		a.shaderManager.ApplyShaders(screen, processed, shaderIDs, picture)
 	}
 
-	// Take screenshot if pending (after everything is drawn)
-	if a.screenshotPending {
-		a.screenshotPending = false
-		gameCRC := a.gameplay.CurrentGameCRC()
-		if err := a.screenshotManager.TakeScreenshot(screen, gameCRC); err != nil {
-			log.Printf("Screenshot failed: %v", err)
-		}
-	}
+	// Save queued screenshots of the final frame, after everything is drawn
+	a.screenshotManager.Flush(screen, a.gameplay.CurrentGameCRC())
 }
 
 // Layout implements ebiten.Game
