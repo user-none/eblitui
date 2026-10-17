@@ -67,8 +67,9 @@ type InputSection struct {
 	systemInfo coreif.SystemInfo
 	focus      types.FocusManager
 
-	view      inputView
-	profileID string // profile being edited in inputViewProfile
+	view          inputView
+	profileID     string                // profile being edited in inputViewProfile
+	confirmDelete widgets.ConfirmDelete // the two-press Delete of the profiles
 
 	rumbleValueText *widget.Text
 
@@ -198,10 +199,15 @@ func (s *InputSection) cancelCapture() {
 }
 
 // HandleBack handles back navigation within the section. Returns true when
-// the back action was consumed (capture cancelled or sub-view exited).
+// the back action was consumed (capture cancelled, delete confirmation
+// cancelled, or sub-view exited).
 func (s *InputSection) HandleBack() bool {
 	if s.capturing {
 		s.cancelCapture()
+		return true
+	}
+	if s.confirmDelete.Disarm() {
+		s.callback.RequestRebuild()
 		return true
 	}
 	if s.view == inputViewMain {

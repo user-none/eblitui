@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ebitenui/ebitenui/event"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/types"
@@ -214,53 +215,50 @@ func TestScreenshotsDeleteTwoStep(t *testing.T) {
 	focus := newFakeFocus()
 	newest := filepath.Join(dir, "1760540000300.png")
 
-	// First press arms the delete and keeps the file
-	s.deleteSelected(focus)
-	if !s.confirmDelete {
-		t.Fatal("delete not armed")
-	}
+	// First press arms the delete, keeps focus on it, and keeps the file
+	s.Build(focus)
+	pressButton(t, focus.targets[screenshotDeleteKey])
 	if focus.pending != screenshotDeleteKey {
 		t.Errorf("pending focus = %q", focus.pending)
 	}
 	if _, err := os.Stat(newest); err != nil {
 		t.Fatalf("file removed on first press: %v", err)
 	}
+	s.Build(focus)
+	if got := buttonLabel(t, focus.targets[screenshotDeleteKey]); got != "Confirm Delete" {
+		t.Fatalf("armed label = %q, want Confirm Delete", got)
+	}
 
 	// Back cancels the armed delete
 	if !s.HandleBack() {
 		t.Error("HandleBack did not report the cancel")
 	}
-	if s.confirmDelete {
-		t.Error("delete still armed after Back")
-	}
 	if s.HandleBack() {
 		t.Error("HandleBack handled with nothing armed")
 	}
-
-	// Selecting another screenshot also disarms
-	s.deleteSelected(focus)
-	s.selectShot(1, focus)
-	waitDecode(t, decoded)
-	if s.confirmDelete {
-		t.Error("delete still armed after selecting another screenshot")
+	s.Build(focus)
+	if got := buttonLabel(t, focus.targets[screenshotDeleteKey]); got != "Delete" {
+		t.Errorf("label after Back = %q, want Delete", got)
 	}
 
-	// So does selecting the selected screenshot again, without a decode
-	s.deleteSelected(focus)
-	s.selectShot(1, focus)
-	if s.confirmDelete {
-		t.Error("delete still armed after selecting the selected screenshot")
-	}
-	select {
-	case p := <-decoded:
-		t.Errorf("unexpected decode of %q", p)
-	case <-time.After(50 * time.Millisecond):
+	// Focus leaving the armed delete also cancels it
+	pressButton(t, focus.targets[screenshotDeleteKey])
+	s.Build(focus)
+	focus.targets[screenshotDeleteKey].Focus(false)
+	event.ExecuteDeferred()
+	s.Build(focus)
+	if got := buttonLabel(t, focus.targets[screenshotDeleteKey]); got != "Delete" {
+		t.Errorf("label after focus loss = %q, want Delete", got)
 	}
 
 	// Two presses delete the selected screenshot, and the selection moves
 	// to the next older one at the same position
-	s.deleteSelected(focus)
-	s.deleteSelected(focus)
+	s.selectShot(1, focus)
+	waitDecode(t, decoded)
+	s.Build(focus)
+	pressButton(t, focus.targets[screenshotDeleteKey])
+	s.Build(focus)
+	pressButton(t, focus.targets[screenshotDeleteKey])
 	if _, err := os.Stat(filepath.Join(dir, "1760540000200.png")); !os.IsNotExist(err) {
 		t.Errorf("selected file not removed: %v", err)
 	}
@@ -291,7 +289,6 @@ func TestScreenshotsDeleteAlreadyRemoved(t *testing.T) {
 	if err := os.Remove(filepath.Join(dir, "1760540000200.png")); err != nil {
 		t.Fatal(err)
 	}
-	s.deleteSelected(focus)
 	s.deleteSelected(focus)
 	if len(cb.notices) != 0 {
 		t.Errorf("notices = %q, want none", cb.notices)
@@ -329,7 +326,6 @@ func TestScreenshotsDeleteLast(t *testing.T) {
 	waitDecode(t, decoded)
 	focus := newFakeFocus()
 
-	s.deleteSelected(focus)
 	s.deleteSelected(focus)
 	if len(s.shots) != 0 || s.selected != -1 {
 		t.Fatalf("shots = %d, selected = %d", len(s.shots), s.selected)

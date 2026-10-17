@@ -56,8 +56,8 @@ type ScreenshotsSection struct {
 	dir           string               // the game's screenshot directory
 	shots         []storage.Screenshot // newest first
 	listErr       error
-	selected      int  // index into shots of the previewed screenshot, or -1
-	confirmDelete bool // Delete was pressed once; the next press deletes
+	selected      int                   // index into shots of the previewed screenshot, or -1
+	confirmDelete widgets.ConfirmDelete // the two-press Delete of the selected screenshot
 	zones         []string
 	graphic       *widgets.FitGraphic // shows the preview in the last Build, or nil
 
@@ -100,7 +100,7 @@ func (s *ScreenshotsSection) SetGame(game *storage.GameEntry) {
 	s.shots = nil
 	s.listErr = nil
 	s.selected = -1
-	s.confirmDelete = false
+	s.confirmDelete.Disarm()
 	if game == nil {
 		return
 	}
@@ -141,10 +141,9 @@ func (s *ScreenshotsSection) NavZones() []string {
 // HandleBack cancels a pending delete confirmation, reporting whether there
 // was one
 func (s *ScreenshotsSection) HandleBack() bool {
-	if !s.confirmDelete {
+	if !s.confirmDelete.Disarm() {
 		return false
 	}
-	s.confirmDelete = false
 	s.callback.RequestRebuild()
 	return true
 }
@@ -286,21 +285,12 @@ func (s *ScreenshotsSection) buildList(focus types.FocusManager, rowWidth int) (
 	return wrapper, outerWidth
 }
 
-// selectShot previews screenshot i and keeps focus on its row. Selecting
-// any row disarms a pending delete, the selected row included.
+// selectShot previews screenshot i and keeps focus on its row
 func (s *ScreenshotsSection) selectShot(i int, focus types.FocusManager) {
-	if i < 0 || i >= len(s.shots) {
-		return
-	}
-	if i == s.selected {
-		if s.confirmDelete {
-			s.confirmDelete = false
-			s.callback.RequestRebuild()
-		}
+	if i < 0 || i >= len(s.shots) || i == s.selected {
 		return
 	}
 	s.selected = i
-	s.confirmDelete = false
 	s.startPreview()
 	focus.SetPendingFocus(shotKey(i))
 	s.callback.RequestRebuild()
@@ -365,13 +355,9 @@ func (s *ScreenshotsSection) buildActions(focus types.FocusManager) *widget.Cont
 	})
 	focus.RegisterFocusButton(screenshotFolderKey, folder)
 
-	onDelete := func(*widget.ButtonClickedEventArgs) { s.deleteSelected(focus) }
-	var del *widget.Button
-	if s.confirmDelete {
-		del = widgets.PrimaryTextButton("Confirm Delete", style.ButtonPaddingSmall, onDelete)
-	} else {
-		del = widgets.TextButton("Delete", style.ButtonPaddingSmall, onDelete)
-	}
+	del := s.confirmDelete.Button(screenshotDeleteKey, style.ButtonPaddingSmall, focus, s.callback.RequestRebuild, func() {
+		s.deleteSelected(focus)
+	})
 	focus.RegisterFocusButton(screenshotDeleteKey, del)
 
 	focus.RegisterNavZone(screenshotActionsZone, types.NavZoneHorizontal, []string{screenshotFolderKey, screenshotDeleteKey}, 0)
@@ -390,20 +376,12 @@ func (s *ScreenshotsSection) revealSelected() {
 	}
 }
 
-// deleteSelected arms the delete on the first press and deletes the
-// selected screenshot on the second. The selection moves to the next older
-// screenshot.
+// deleteSelected deletes the selected screenshot, once its Delete is
+// confirmed. The selection moves to the next older screenshot.
 func (s *ScreenshotsSection) deleteSelected(focus types.FocusManager) {
 	if s.selected < 0 {
 		return
 	}
-	if !s.confirmDelete {
-		s.confirmDelete = true
-		focus.SetPendingFocus(screenshotDeleteKey)
-		s.callback.RequestRebuild()
-		return
-	}
-	s.confirmDelete = false
 	// A file already removed outside the app is the outcome asked for; the
 	// entry is dropped by the re-list
 	if err := storage.DeleteScreenshot(s.dir, s.shots[s.selected].Path); err != nil && !errors.Is(err, os.ErrNotExist) {

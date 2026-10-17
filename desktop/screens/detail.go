@@ -446,8 +446,8 @@ func (s *DetailScreen) Update() {
 }
 
 // HandleBack handles Back on the selected page, reporting whether it was
-// used there. Back closes an open cheat form or cancels an armed screenshot
-// delete.
+// used there. Back closes an open cheat form or cancels an armed cheat or
+// screenshot delete.
 func (s *DetailScreen) HandleBack() bool {
 	switch s.pages.currentKey() {
 	case cheatsPageKey:

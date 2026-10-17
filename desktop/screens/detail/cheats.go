@@ -55,12 +55,13 @@ type CheatsSection struct {
 	contentWidth func() int
 	game         *storage.GameEntry
 
-	set          gamecheats.Set
-	gameSettings *storage.GameSettingsFile // which cheats are on, and the custom cheats
-	form         *cheatForm
-	textInputs   *widgets.TextInputGroup
-	zones        []string           // navigation zones from the last Build, in order
-	focus        types.FocusManager // from the last Build; set before any row or form handler can run
+	set           gamecheats.Set
+	gameSettings  *storage.GameSettingsFile // which cheats are on, and the custom cheats
+	form          *cheatForm
+	confirmDelete widgets.ConfirmDelete // the two-press Delete of the custom cheats
+	textInputs    *widgets.TextInputGroup
+	zones         []string           // navigation zones from the last Build, in order
+	focus         types.FocusManager // from the last Build; set before any row or form handler can run
 
 	// save writes a game's settings file: storage.SaveGameSettings
 	save func(gameCRC string, settings *storage.GameSettingsFile) error
@@ -88,6 +89,7 @@ func (c *CheatsSection) SetGame(game *storage.GameEntry) {
 	c.set = gamecheats.Set{}
 	c.gameSettings = nil
 	c.form = nil
+	c.confirmDelete.Disarm()
 	if game == nil {
 		return
 	}
@@ -123,12 +125,17 @@ func (c *CheatsSection) Update() {
 	}
 }
 
-// HandleBack closes an open form, reporting whether there was one
+// HandleBack closes an open form or cancels a pending delete
+// confirmation, reporting whether there was either
 func (c *CheatsSection) HandleBack() bool {
-	if c.form == nil {
+	if c.form != nil {
+		c.closeForm()
+		c.callback.RequestRebuild()
+		return true
+	}
+	if !c.confirmDelete.Disarm() {
 		return false
 	}
-	c.closeForm()
 	c.callback.RequestRebuild()
 	return true
 }
@@ -165,11 +172,12 @@ func (c *CheatsSection) buildLists(focus types.FocusManager, content *widget.Con
 	rowWidth := widgets.PageRowWidth(c.contentWidth())
 
 	content.AddChild(widgets.SectionHeader("Custom Cheats"))
-	customWidth := widgets.SettingsRowLabelWidth(rowWidth, widgets.OnOffButtonWidth(),
-		widgets.ButtonWidth("Edit"), widgets.ButtonWidth("Delete"))
 	var customKeys []string
 	for i, ch := range c.set.Custom {
-		content.AddChild(c.buildCustomRow(focus, i, ch, customWidth))
+		// An armed Delete is wider and leaves its row's label less room
+		labelWidth := widgets.SettingsRowLabelWidth(rowWidth, widgets.OnOffButtonWidth(),
+			widgets.ButtonWidth("Edit"), widgets.ButtonWidth(c.confirmDelete.Label(customKey(i, "delete"))))
+		content.AddChild(c.buildCustomRow(focus, i, ch, labelWidth))
 		customKeys = append(customKeys, customKey(i, "edit"), customKey(i, "delete"), customKey(i, "toggle"))
 	}
 	content.AddChild(c.buildAddRow(focus))
@@ -215,11 +223,12 @@ func (c *CheatsSection) buildCustomRow(focus types.FocusManager, i int, ch gamec
 	edit := widgets.TextButton("Edit", style.ButtonPaddingSmall, func(*widget.ButtonClickedEventArgs) {
 		c.openForm(i)
 	})
-	del := widgets.TextButton("Delete", style.ButtonPaddingSmall, func(*widget.ButtonClickedEventArgs) {
+	delKey := customKey(i, "delete")
+	del := c.confirmDelete.Button(delKey, style.ButtonPaddingSmall, focus, c.callback.RequestRebuild, func() {
 		c.deleteCustom(i)
 	})
 	focus.RegisterFocusButton(customKey(i, "edit"), edit)
-	focus.RegisterFocusButton(customKey(i, "delete"), del)
+	focus.RegisterFocusButton(delKey, del)
 
 	code := strings.Join(strings.Fields(ch.Code), " ")
 	if ch.Err != nil {
@@ -435,8 +444,9 @@ func (c *CheatsSection) saveForm(focus types.FocusManager) {
 	c.callback.RequestRebuild()
 }
 
-// deleteCustom deletes custom cheat i without confirmation, turning its
-// code off unless another cheat has the same code, and focuses Add Cheat.
+// deleteCustom deletes custom cheat i, once its Delete is confirmed,
+// turning its code off unless another cheat has the same code, and
+// focuses Add Cheat.
 // An index past the list, from a row built before a delete, is ignored.
 func (c *CheatsSection) deleteCustom(i int) {
 	if i < 0 || i >= len(c.set.Custom) {

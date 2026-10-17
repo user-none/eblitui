@@ -7,6 +7,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/ebitenui/ebitenui/event"
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/user-none/eblitui/desktop/cheats"
 	"github.com/user-none/eblitui/desktop/gamecheats"
@@ -90,6 +91,17 @@ func buttonLabel(t *testing.T, f widget.Focuser) string {
 	// The text widget is created when the button is validated for layout
 	btn.Validate()
 	return btn.Text().Label
+}
+
+// pressButton clicks the button f and runs its handlers
+func pressButton(t *testing.T, f widget.Focuser) {
+	t.Helper()
+	btn, ok := f.(*widget.Button)
+	if !ok {
+		t.Fatalf("%T is not a button", f)
+	}
+	btn.Click()
+	event.ExecuteDeferred()
 }
 
 func TestCheatRowShowsStoredState(t *testing.T) {
@@ -322,6 +334,44 @@ func TestCheatDelete(t *testing.T) {
 	}
 	if c.focus.(*fakeFocus).pending != addKey {
 		t.Errorf("pending focus = %q, want Add Cheat", c.focus.(*fakeFocus).pending)
+	}
+}
+
+func TestCheatDeleteTwoPresses(t *testing.T) {
+	c, focus := newTestCheatsSection(t, nil, []storage.CustomCheat{{Name: "A", Code: "160EF100 0000"}})
+	delKey := customKey(0, "delete")
+
+	// The first press arms the delete and keeps focus on it
+	pressButton(t, focus.targets[delKey])
+	if len(c.gameSettings.Cheats.Custom) != 1 {
+		t.Fatal("cheat deleted on the first press")
+	}
+	if focus.pending != delKey {
+		t.Errorf("pending focus = %q, want %q", focus.pending, delKey)
+	}
+	c.Build(focus)
+	if got := buttonLabel(t, focus.targets[delKey]); got != "Confirm Delete" {
+		t.Fatalf("armed label = %q, want Confirm Delete", got)
+	}
+
+	// Back cancels the armed delete
+	if !c.HandleBack() {
+		t.Error("HandleBack did not report the cancel")
+	}
+	if c.HandleBack() {
+		t.Error("HandleBack handled with nothing armed")
+	}
+	c.Build(focus)
+	if got := buttonLabel(t, focus.targets[delKey]); got != "Delete" {
+		t.Errorf("label after Back = %q, want Delete", got)
+	}
+
+	// Two presses delete the cheat
+	pressButton(t, focus.targets[delKey])
+	c.Build(focus)
+	pressButton(t, focus.targets[delKey])
+	if len(c.gameSettings.Cheats.Custom) != 0 {
+		t.Errorf("custom = %+v after confirming, want none", c.gameSettings.Cheats.Custom)
 	}
 }
 

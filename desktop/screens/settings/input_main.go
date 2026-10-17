@@ -163,17 +163,18 @@ func (s *InputSection) buildProfileRow(focus types.FocusManager, p *storage.Cont
 	focus.RegisterFocusButton("input-profile-"+p.ID+"-edit", editBtn)
 	row.AddChild(editBtn)
 
-	deleteBtn := widgets.TextButton("Delete", style.ButtonPaddingSmall, func(args *widget.ButtonClickedEventArgs) {
+	deleteKey := "input-profile-" + p.ID + "-delete"
+	deleteBtn := s.confirmDelete.Button(deleteKey, style.ButtonPaddingSmall, focus, s.callback.RequestRebuild, func() {
 		s.deleteProfile(profileID)
 	})
-	focus.RegisterFocusButton("input-profile-"+p.ID+"-delete", deleteBtn)
+	focus.RegisterFocusButton(deleteKey, deleteBtn)
 	row.AddChild(deleteBtn)
 
 	return row
 }
 
-// deleteProfile removes a profile immediately. Players referencing it are
-// set to no controller.
+// deleteProfile removes a profile, once its Delete is confirmed. Players
+// referencing it are set to no controller.
 func (s *InputSection) deleteProfile(id string) {
 	profs := s.config.Input.Profiles
 	for i := range profs {

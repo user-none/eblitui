@@ -571,6 +571,16 @@ func (a *App) rebuildCurrentScreen() {
 	a.lastBuildWidth = a.windowWidth // Track width for responsive rebuild detection
 }
 
+// mouseClickInProgress reports whether the left mouse button is held or
+// was released this frame. A button clicks on release, and only when it
+// also saw the press, so a rebuild in between replaces it and loses the
+// click. ebitenui takes focus from the focused widget on the press, which
+// is one way a rebuild gets requested mid-click.
+func mouseClickInProgress() bool {
+	return ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) ||
+		inpututil.IsMouseButtonJustReleased(ebiten.MouseButtonLeft)
+}
+
 // Update implements ebiten.Game
 func (a *App) Update() error {
 	// Handle manual window close: halt background goroutines while still
@@ -590,8 +600,8 @@ func (a *App) Update() error {
 
 	// Process any pending rebuild request (set from goroutines). Swap
 	// reads and clears the flag in one step so a request made in between
-	// is not lost.
-	if a.rebuildPending.Swap(false) {
+	// is not lost. A rebuild waits for a mouse click to finish.
+	if !mouseClickInProgress() && a.rebuildPending.Swap(false) {
 		a.rebuildCurrentScreen()
 
 		// Restore focus immediately after rebuild, before processUIInput
