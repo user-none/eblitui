@@ -67,7 +67,7 @@ func (l *LibrarySection) Build(focus types.FocusManager) *widget.Container {
 	// Track folder count for navigation setup
 	folderCount := len(l.library.ScanDirectories)
 
-	// Button row: Add Folder | Scan Library | Remove (centered)
+	// Button row: Add Folder | Remove Folder | Scan Library | Clean Library (centered)
 	buttonRow := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
 			widget.RowLayoutOpts.Direction(widget.DirectionHorizontal),
@@ -87,21 +87,14 @@ func (l *LibrarySection) Build(focus types.FocusManager) *widget.Container {
 	focus.RegisterFocusButton("lib-add", addDirBtn)
 	buttonRow.AddChild(addDirBtn)
 
-	// Scan Library button
-	scanBtn := widgets.PrimaryTextButton("Scan Library", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
-		l.callback.SwitchToScanProgress(true)
-	})
-	focus.RegisterFocusButton("lib-scan", scanBtn)
-	buttonRow.AddChild(scanBtn)
-
-	// Remove button - disabled when nothing selected, removes all selected folders
+	// Remove Folder button - disabled when nothing selected, removes all selected folders
 	removeButtonImage := style.ButtonImage()
 	if len(l.selectedDirs) == 0 {
 		removeButtonImage = style.DisabledButtonImage()
 	}
 	removeBtn := widget.NewButton(
 		widget.ButtonOpts.Image(removeButtonImage),
-		widget.ButtonOpts.Text("Remove", style.FontFace(), style.ButtonTextColor()),
+		widget.ButtonOpts.Text("Remove Folder", style.FontFace(), style.ButtonTextColor()),
 		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingMedium)),
 		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
 			if len(l.selectedDirs) > 0 {
@@ -120,6 +113,20 @@ func (l *LibrarySection) Build(focus types.FocusManager) *widget.Container {
 	)
 	focus.RegisterFocusButton("lib-remove", removeBtn)
 	buttonRow.AddChild(removeBtn)
+
+	// Scan Library button
+	scanBtn := widgets.PrimaryTextButton("Scan Library", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
+		l.callback.SwitchToScanProgress()
+	})
+	focus.RegisterFocusButton("lib-scan", scanBtn)
+	buttonRow.AddChild(scanBtn)
+
+	// Clean Library button - removes missing discs and games
+	cleanBtn := widgets.TextButton("Clean Library", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
+		l.callback.SwitchToCleanProgress()
+	})
+	focus.RegisterFocusButton("lib-clean", cleanBtn)
+	buttonRow.AddChild(cleanBtn)
 
 	section.AddChild(buttonRow)
 
@@ -160,7 +167,7 @@ func (l *LibrarySection) setupNavigation(focus types.FocusManager, folderCount i
 	}
 
 	// Button row zone (horizontal)
-	buttonKeys := []string{"lib-add", "lib-scan", "lib-remove"}
+	buttonKeys := []string{"lib-add", "lib-remove", "lib-scan", "lib-clean"}
 	focus.RegisterNavZone("lib-buttons", types.NavZoneHorizontal, buttonKeys, 0)
 
 	// Transitions

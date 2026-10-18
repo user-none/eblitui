@@ -61,7 +61,6 @@ type ScanProgress struct {
 
 // ScanResult represents the final scan result
 type ScanResult struct {
-	NewGames  int
 	Errors    []error
 	Cancelled bool
 }
@@ -79,8 +78,7 @@ type Scanner struct {
 	directories   []storage.ScanDirectory
 	excludedPaths map[string]bool
 	existingGames map[string]*storage.GameEntry // Full existing entries to preserve user data
-	rescanAll     bool
-	extensions    []string // Supported ROM file extensions
+	extensions    []string                      // Supported ROM file extensions
 
 	// Disc-based systems identify and group games by the on-disc
 	// product number instead of a whole-file CRC32. discID
@@ -129,8 +127,10 @@ type resolvedJob struct {
 	validateImage bool
 }
 
-// NewScanner creates a new scanner instance
-func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[string]*storage.GameEntry, rescanAll bool, extensions []string, md *metadata.MetadataManager, defaultConsoleID int, disc bool, discID coreif.DiscIdentifier, downloads Downloads) *Scanner {
+// NewScanner creates a new scanner instance. existing holds the entries
+// whose user data a scan keeps when it finds their game: the library and
+// the removed games.
+func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[string]*storage.GameEntry, extensions []string, md *metadata.MetadataManager, defaultConsoleID int, disc bool, discID coreif.DiscIdentifier, downloads Downloads) *Scanner {
 	excludedMap := make(map[string]bool)
 	for _, p := range excluded {
 		excludedMap[p] = true
@@ -140,7 +140,6 @@ func NewScanner(dirs []storage.ScanDirectory, excluded []string, existing map[st
 		directories:      dirs,
 		excludedPaths:    excludedMap,
 		existingGames:    existing, // Keep full map to preserve user data
-		rescanAll:        rescanAll,
 		extensions:       extensions,
 		disc:             disc,
 		discID:           discID,
@@ -242,7 +241,6 @@ func (s *Scanner) Run() {
 
 	if s.isCancelled() {
 		s.done <- ScanResult{
-			NewGames:  s.gamesCount(),
 			Errors:    s.getErrors(),
 			Cancelled: true,
 		}
@@ -288,7 +286,6 @@ func (s *Scanner) Run() {
 
 	// Send final result
 	s.done <- ScanResult{
-		NewGames:  s.gamesCount(),
 		Errors:    s.getErrors(),
 		Cancelled: s.isCancelled(),
 	}
@@ -364,13 +361,8 @@ func (s *Scanner) processCartridge(path string) {
 	filename := fn
 	game, variantIdx := s.metadata.LookupByCRC32(crcValue)
 
-	// Check if game already exists in library
+	// Library or removed entry whose user data is kept
 	existingEntry := s.existingGames[crcHex]
-
-	// Skip if already in library and not rescanning all
-	if !s.rescanAll && existingEntry != nil {
-		return
-	}
 
 	var entry *storage.GameEntry
 
@@ -382,11 +374,10 @@ func (s *Scanner) processCartridge(path string) {
 			Favorite:        existingEntry.Favorite,
 			PlayTimeSeconds: existingEntry.PlayTimeSeconds,
 			LastPlayed:      existingEntry.LastPlayed,
-			Added:           existingEntry.Added,
+			Added:           addedTime(existingEntry),
 
 			// Update file path (may have moved)
-			File:    path,
-			Missing: false,
+			File: path,
 
 			// Will be updated with metadata below or from existing
 			Name:        existingEntry.Name,
@@ -404,10 +395,9 @@ func (s *Scanner) processCartridge(path string) {
 	} else {
 		// Create new entry - Name/DisplayName left empty so RDB lookup can fill them
 		entry = &storage.GameEntry{
-			CRC32:   crcHex,
-			File:    path,
-			Added:   time.Now().Unix(),
-			Missing: false,
+			CRC32: crcHex,
+			File:  path,
+			Added: time.Now().Unix(),
 		}
 	}
 
@@ -464,7 +454,7 @@ func (s *Scanner) processDisc(path string) {
 	perDiscName := discLabelFromFilename(filename)
 
 	// Find-or-merge keyed by product number: an in-progress entry from another
-	// disc this scan takes precedence over the library entry.
+	// disc this scan takes precedence over the library or removed entry.
 	s.mu.Lock()
 	entry := s.games[productNumber]
 	s.mu.Unlock()
@@ -478,8 +468,7 @@ func (s *Scanner) processDisc(path string) {
 				Favorite:        existingEntry.Favorite,
 				PlayTimeSeconds: existingEntry.PlayTimeSeconds,
 				LastPlayed:      existingEntry.LastPlayed,
-				Added:           existingEntry.Added,
-				Missing:         false,
+				Added:           addedTime(existingEntry),
 				Name:            existingEntry.Name,
 				DisplayName:     existingEntry.DisplayName,
 				Region:          existingEntry.Region,
@@ -496,17 +485,14 @@ func (s *Scanner) processDisc(path string) {
 			}
 		} else {
 			entry = &storage.GameEntry{
-				CRC32:   productNumber,
-				Added:   time.Now().Unix(),
-				Missing: false,
+				CRC32: productNumber,
+				Added: time.Now().Unix(),
 			}
 		}
 	}
 
 	entry.Discs = upsertDisc(entry.Discs, storage.GameDisc{Index: idx0, File: path, Name: perDiscName})
-	if entry.SelectedDisc < 0 || entry.SelectedDisc >= len(entry.Discs) {
-		entry.SelectedDisc = 0
-	}
+	entry.SelectedDisc = entry.SelectedDiscIndex()
 
 	// Game ID for disc systems is the on-disc product number.
 	entry.Serial = productNumber
@@ -535,6 +521,16 @@ func (s *Scanner) processDisc(path string) {
 	s.mu.Lock()
 	s.games[productNumber] = entry
 	s.mu.Unlock()
+}
+
+// addedTime returns when an existing entry was added to the library, or
+// now when it has no added time: a removed game being restored is added
+// again when it is found.
+func addedTime(existing *storage.GameEntry) int64 {
+	if existing.Added == 0 {
+		return time.Now().Unix()
+	}
+	return existing.Added
 }
 
 // lookupDiscMetadata resolves the RDB row for one disc. The libretro

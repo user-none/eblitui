@@ -16,9 +16,9 @@ func TestOverviewFinishLoadDropsRetiredLookup(t *testing.T) {
 	o := NewOverviewSection(cb, storage.DefaultLibrary(), nil, 0, func() int { return 800 })
 
 	// Each SetGame retires the lookups started before it
-	o.SetGame(&storage.GameEntry{CRC32: "A"})
+	o.SetGame(&storage.GameEntry{CRC32: "A"}, storage.FileStatus{})
 	staleGen := o.loadGen
-	o.SetGame(&storage.GameEntry{CRC32: "B"})
+	o.SetGame(&storage.GameEntry{CRC32: "B"}, storage.FileStatus{})
 	o.achLoading = true
 
 	o.finishLoad(staleGen, true, &rcheevos.UserProgressEntry{NumAchievements: 5}, nil)
@@ -45,7 +45,7 @@ func TestOverviewSetGameWithoutManager(t *testing.T) {
 	o.achLoading = true
 	o.achFound = true
 
-	o.SetGame(&storage.GameEntry{CRC32: "A", Discs: []storage.GameDisc{{File: "a.cue"}}})
+	o.SetGame(&storage.GameEntry{CRC32: "A", Discs: []storage.GameDisc{{File: "a.cue"}}}, storage.FileStatus{})
 
 	// No manager: state is reset and no lookup starts
 	if o.achLoading || o.achFound || o.loadGen != 1 {

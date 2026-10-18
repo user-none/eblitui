@@ -27,30 +27,46 @@ func CleanGameKey(key string) string {
 // SanitizeLibraryEntries silently corrects invalid game entry fields.
 // This runs on load so invalid values never reach the UI or emulator.
 func SanitizeLibraryEntries(lib *Library) {
+	sanitizeGameEntries(lib.Games)
+}
+
+// SanitizeRemovedGames silently corrects invalid removed game entries the
+// same way as library entries, and clears any files and added time so a
+// restored entry only gets the files a scan finds and is added when found.
+func SanitizeRemovedGames(removed *RemovedGames) {
+	sanitizeGameEntries(removed.Games)
+	for _, game := range removed.Games {
+		stripRemoved(game)
+	}
+}
+
+// sanitizeGameEntries corrects invalid entries in a map of game entries
+// keyed by game key.
+func sanitizeGameEntries(games map[string]*GameEntry) {
 	// Game keys are used in file paths. Re-key entries whose key needs
 	// cleaning, and drop entries with no usable key or whose cleaned key
 	// collides with an existing entry.
-	for key, game := range lib.Games {
+	for key, game := range games {
 		if game == nil {
-			delete(lib.Games, key)
+			delete(games, key)
 			continue
 		}
 		cleaned := CleanGameKey(key)
 		if cleaned == key && game.CRC32 == key {
 			continue
 		}
-		delete(lib.Games, key)
+		delete(games, key)
 		if cleaned == "" {
 			continue
 		}
-		if _, exists := lib.Games[cleaned]; exists {
+		if _, exists := games[cleaned]; exists {
 			continue
 		}
 		game.CRC32 = cleaned
-		lib.Games[cleaned] = game
+		games[cleaned] = game
 	}
 
-	for _, game := range lib.Games {
+	for _, game := range games {
 		if game.PlayTimeSeconds < 0 {
 			game.PlayTimeSeconds = 0
 		}

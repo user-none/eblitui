@@ -6,6 +6,7 @@ package screens
 import (
 	"fmt"
 	goimage "image"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -28,6 +29,7 @@ type DetailScreen struct {
 	callback ScreenCallback
 	library  *storage.Library
 	game     *storage.GameEntry
+	files    storage.FileStatus // Which of the game's files are missing, checked in SetGame
 
 	pages sidebarSections // Page sidebar list and selection
 
@@ -72,6 +74,10 @@ func NewDetailScreen(callback ScreenCallback, library *storage.Library, achievem
 // SetGame sets the game to display
 func (s *DetailScreen) SetGame(gameCRC string) {
 	s.game = s.library.GetGame(gameCRC)
+	s.files = storage.FileStatus{}
+	if s.game != nil {
+		s.files = s.game.CheckFiles()
+	}
 
 	// A different game starts on Overview at the top. The scroll container
 	// belongs to the previous game's build, so drop it to keep its offset
@@ -80,7 +86,7 @@ func (s *DetailScreen) SetGame(gameCRC string) {
 	s.scrollContainer = nil
 	s.scrollTop = 0
 
-	s.overviewPage.SetGame(s.game)
+	s.overviewPage.SetGame(s.game, s.files)
 	if s.cheatsPage != nil {
 		s.cheatsPage.SetGame(s.game)
 	}
@@ -152,7 +158,7 @@ func (s *DetailScreen) Build() *widget.Container {
 
 	hasResume := s.hasResumeState()
 
-	if !s.game.Missing {
+	if s.playable() {
 		playButton := widgets.PrimaryTextButton("Play", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
 			s.callback.LaunchGame(s.game.CRC32, false, -1)
 		})
@@ -177,10 +183,14 @@ func (s *DetailScreen) Build() *widget.Container {
 		s.RegisterFocusButton("resume", resumeButton)
 		buttonContainer.AddChild(resumeButton)
 	} else {
-		removeButton := widgets.TextButton("Remove from Library", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
-			s.library.RemoveGame(s.game.CRC32)
-			storage.SaveLibrary(s.library)
-			s.callback.SwitchToLibrary()
+		// No file at all removes the game; a missing selected disc
+		// removes that disc
+		label, handler := "Remove Disc", s.removeSelectedDisc
+		if s.files.Missing {
+			label, handler = "Remove from Library", s.removeGame
+		}
+		removeButton := widgets.TextButton(label, style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
+			handler()
 		})
 		s.RegisterFocusButton("remove", removeButton)
 		buttonContainer.AddChild(removeButton)
@@ -380,8 +390,47 @@ func (s *DetailScreen) EnsureFocusedVisible(focused widget.Focuser) {
 	s.BaseScreen.EnsureFocusedVisible(focused, nil)
 }
 
+// playable reports whether the selected disc, or the cartridge, has its
+// file. When it does not, the toolbar offers Remove in place of Play.
+func (s *DetailScreen) playable() bool {
+	return !s.files.MissingAt(s.game.SelectedDiscIndex())
+}
+
+// actionKey returns the focus key of the toolbar action: Play, or Remove
+// when the selected file is missing
+func (s *DetailScreen) actionKey() string {
+	if s.playable() {
+		return "play"
+	}
+	return "remove"
+}
+
+// removeGame moves the game out of the library into the removed games and
+// returns to the library
+func (s *DetailScreen) removeGame() {
+	if err := s.library.RemoveGames(s.game.CRC32); err != nil {
+		log.Printf("Failed to remove game: %v", err)
+		s.callback.ShowNotification("Failed to remove game")
+		return
+	}
+	s.callback.SwitchToLibrary()
+}
+
+// removeSelectedDisc removes the selected disc, whose file is missing, and
+// refreshes the screen for the remaining discs
+func (s *DetailScreen) removeSelectedDisc() {
+	s.game.RemoveDisc(s.game.SelectedDiscIndex())
+	if err := storage.SaveLibrary(s.library); err != nil {
+		log.Printf("Failed to save library: %v", err)
+	}
+	s.files = s.game.CheckFiles()
+	s.overviewPage.SetGame(s.game, s.files)
+	s.SetPendingFocus(s.actionKey())
+	s.callback.RequestRebuild()
+}
+
 // toolbarActionIndex is the toolbar zone index of Play, or Remove when the
-// game is missing, directly after Back
+// selected file is missing, directly after Back
 const toolbarActionIndex = 1
 
 // setupNavigation registers the detail screen navigation zones. The toolbar
@@ -389,7 +438,7 @@ const toolbarActionIndex = 1
 // zones.
 func (s *DetailScreen) setupNavigation() {
 	toolbarKeys := []string{"detail-back", "play", "resume", "favorite"}
-	if s.game.Missing {
+	if !s.playable() {
 		toolbarKeys = []string{"detail-back", "remove", "favorite"}
 	}
 	s.RegisterNavZone("toolbar", types.NavZoneHorizontal, toolbarKeys, 0)
@@ -496,10 +545,8 @@ func (s *DetailScreen) hasResumeState() bool {
 
 // OnEnter is called when entering the detail screen
 func (s *DetailScreen) OnEnter() {
-	if s.game != nil && !s.game.Missing {
-		s.SetPendingFocus("play")
-	} else {
-		s.SetPendingFocus("remove")
+	if s.game != nil {
+		s.SetPendingFocus(s.actionKey())
 	}
 }
 

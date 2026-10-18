@@ -198,7 +198,7 @@ the window size so it stays readable from a desktop window up to a TV.
 
 Organized in tabbed sections:
 
-- **Library** - Scan directories, add/remove folders, rescan
+- **Library** - Add/remove folders, scan, clean missing games
 - **Appearance** - Theme
 - **Video** - Shader effects for UI and gameplay
 - **Audio** - Volume, mute, fast-forward mute
@@ -223,6 +223,7 @@ Directory structure:
 <DataDirName>/
     config.json      - Application settings
     library.json     - Game library and scan state
+    removed.json     - User data of games removed from the library
     gamesettings/    - Per-game settings (save state slot, cheat choices)
     metadata/        - RDB databases and artwork index
     artwork/         - Game artwork images
@@ -235,6 +236,14 @@ Directory structure:
 Per-game settings live in one JSON file per game under `gamesettings/`,
 with a section per feature. The library file holds no per-game settings;
 a version 1 library's save slots are moved there on first load.
+
+Scanning never removes games. The detail screen offers Remove Disc when
+the selected disc's file is missing and Remove from Library when every
+file of the game is missing. Clean Library in settings does both for the
+whole library. A removed game's entry, without its file locations and
+added time, moves to `removed.json`, and a scan that finds the game again
+restores its play time, favorite, and other user data. An unreadable
+`removed.json` is treated as empty and overwritten on the next removal.
 
 All JSON writes are atomic (write to temp, rename) to prevent
 corruption.

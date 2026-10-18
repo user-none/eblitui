@@ -22,6 +22,7 @@ func Init(dataDirName string) {
 const (
 	configFile      = "config.json"
 	libraryFile     = "library.json"
+	removedFile     = "removed.json"
 	metadataDir     = "metadata"
 	artworkDir      = "artwork"
 	rumbleDir       = "rumble"
@@ -112,6 +113,15 @@ func GetLibraryPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(baseDir, libraryFile), nil
+}
+
+// GetRemovedGamesPath returns the full path to removed.json
+func GetRemovedGamesPath() (string, error) {
+	baseDir, err := GetBaseDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(baseDir, removedFile), nil
 }
 
 // GetMetadataDir returns the full path to the metadata directory

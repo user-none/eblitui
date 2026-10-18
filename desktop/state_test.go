@@ -11,6 +11,7 @@ func TestAppStateString(t *testing.T) {
 		{StateDetail, "Detail"},
 		{StateSettings, "Settings"},
 		{StateScanProgress, "ScanProgress"},
+		{StateCleanProgress, "CleanProgress"},
 		{StateError, "Error"},
 		{StatePlaying, "Playing"},
 		{StateFilePicker, "FilePicker"},

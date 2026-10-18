@@ -1,10 +1,13 @@
 package scanner
 
 import (
+	"fmt"
+	"hash/crc32"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/desktop/metadata"
@@ -232,7 +235,7 @@ func TestNewScanner(t *testing.T) {
 	}
 
 	md := metadata.NewMetadataManager(nil)
-	s := NewScanner(dirs, excluded, existing, false, []string{".sms"}, md, 0, false, nil, Downloads{})
+	s := NewScanner(dirs, excluded, existing, []string{".sms"}, md, 0, false, nil, Downloads{})
 
 	if len(s.directories) != 2 {
 		t.Errorf("expected 2 directories, got %d", len(s.directories))
@@ -245,9 +248,6 @@ func TestNewScanner(t *testing.T) {
 	}
 	if !s.excludedPaths["/skip/that"] {
 		t.Error("excluded path /skip/that not set")
-	}
-	if s.rescanAll {
-		t.Error("rescanAll should be false")
 	}
 	if s.existingGames == nil {
 		t.Fatal("existingGames should not be nil")
@@ -350,7 +350,7 @@ func TestScanDirectoryWithExclusions(t *testing.T) {
 
 func TestScannerCancellation(t *testing.T) {
 	md := metadata.NewMetadataManager(nil)
-	s := NewScanner(nil, nil, nil, false, nil, md, 0, false, nil, Downloads{})
+	s := NewScanner(nil, nil, nil, nil, md, 0, false, nil, Downloads{})
 
 	if s.isCancelled() {
 		t.Error("new scanner should not be cancelled")
@@ -367,7 +367,7 @@ func TestScannerCancellation(t *testing.T) {
 
 func TestScannerGamesCount(t *testing.T) {
 	md := metadata.NewMetadataManager(nil)
-	s := NewScanner(nil, nil, nil, false, nil, md, 0, false, nil, Downloads{})
+	s := NewScanner(nil, nil, nil, nil, md, 0, false, nil, Downloads{})
 
 	if s.gamesCount() != 0 {
 		t.Errorf("expected 0 games, got %d", s.gamesCount())
@@ -381,7 +381,7 @@ func TestScannerGamesCount(t *testing.T) {
 
 func TestNewScannerDefaultConsoleID(t *testing.T) {
 	md := metadata.NewMetadataManager(nil)
-	s := NewScanner(nil, nil, nil, false, nil, md, 42, false, nil, Downloads{})
+	s := NewScanner(nil, nil, nil, nil, md, 42, false, nil, Downloads{})
 	if s.defaultConsoleID != 42 {
 		t.Errorf("expected defaultConsoleID 42, got %d", s.defaultConsoleID)
 	}
@@ -394,7 +394,7 @@ func TestRumbleDownloadsGated(t *testing.T) {
 	game := &rdb.Game{Name: "Rumble Gate Test (USA)"}
 
 	for _, rumble := range []bool{false, true} {
-		s := NewScanner(nil, nil, nil, false, nil, md, 0, false, nil, Downloads{Rumble: rumble})
+		s := NewScanner(nil, nil, nil, nil, md, 0, false, nil, Downloads{Rumble: rumble})
 		s.applyMetadata(&storage.GameEntry{}, game, 0, "RUMBLEGATETEST", "Rumble Gate Test (USA).sms")
 
 		want := 0
@@ -415,12 +415,60 @@ func TestSupportsCheats(t *testing.T) {
 		{Name: "Saturn", RDBName: "Sega - Saturn"},
 		{Name: "Other", RDBName: "Other - System"},
 	})
-	s := NewScanner(nil, nil, nil, false, nil, md, 0, false, nil, Downloads{Cheats: true})
+	s := NewScanner(nil, nil, nil, nil, md, 0, false, nil, Downloads{Cheats: true})
 
 	if !s.supportsCheats(0) {
 		t.Error("Saturn variant: supportsCheats = false, want true")
 	}
 	if s.supportsCheats(1) {
 		t.Error("unsupported system: supportsCheats = true, want false")
+	}
+}
+
+func TestProcessCartridgeUsesExistingEntry(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dir)
+	t.Setenv("HOME", dir)
+	t.Setenv("APPDATA", dir)
+	rom := []byte("cartridge data")
+	path := filepath.Join(dir, "Game (USA).sms")
+	if err := os.WriteFile(path, rom, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	key := fmt.Sprintf("%08x", crc32.ChecksumIEEE(rom))
+
+	// A removed entry has no added time, so it is added again when found
+	start := time.Now().Unix()
+	tests := []struct {
+		name      string
+		existing  *storage.GameEntry
+		keepAdded bool
+	}{
+		{"moved library entry", &storage.GameEntry{CRC32: key, File: "/old/Game (USA).sms", DisplayName: "Game", Favorite: true, PlayTimeSeconds: 90, LastPlayed: 7, Added: 3}, true},
+		{"removed entry", &storage.GameEntry{CRC32: key, DisplayName: "Game", Favorite: true, PlayTimeSeconds: 90, LastPlayed: 7}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			existing := map[string]*storage.GameEntry{key: tt.existing}
+			s := NewScanner(nil, nil, existing, []string{".sms"}, metadata.NewMetadataManager(nil), 0, false, nil, Downloads{})
+			s.processCartridge(path)
+
+			got := s.Games()[key]
+			if got == nil {
+				t.Fatal("game not found by scan")
+			}
+			if got.File != path {
+				t.Errorf("File = %q, want %q", got.File, path)
+			}
+			if !got.Favorite || got.PlayTimeSeconds != 90 || got.LastPlayed != 7 || got.DisplayName != "Game" {
+				t.Errorf("user data not kept: %+v", got)
+			}
+			if tt.keepAdded && got.Added != 3 {
+				t.Errorf("Added = %d, want 3", got.Added)
+			}
+			if !tt.keepAdded && got.Added < start {
+				t.Errorf("Added = %d, want the scan time (>= %d)", got.Added, start)
+			}
+		})
 	}
 }

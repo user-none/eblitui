@@ -15,6 +15,8 @@ const (
 	StateSettings
 	// StateScanProgress shows ROM scanning progress
 	StateScanProgress
+	// StateCleanProgress shows Clean Library progress
+	StateCleanProgress
 	// StateError shows a startup error (corrupted config)
 	StateError
 	// StatePlaying is active gameplay
@@ -34,6 +36,8 @@ func (s AppState) String() string {
 		return "Settings"
 	case StateScanProgress:
 		return "ScanProgress"
+	case StateCleanProgress:
+		return "CleanProgress"
 	case StateError:
 		return "Error"
 	case StatePlaying:

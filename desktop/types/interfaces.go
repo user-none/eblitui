@@ -50,7 +50,10 @@ type ScreenCallback interface {
 	// SwitchToSettingsSection opens settings with the section identified
 	// by focusKey selected.
 	SwitchToSettingsSection(focusKey string)
-	SwitchToScanProgress(rescanAll bool)
+	SwitchToScanProgress()
+	// SwitchToCleanProgress shows the progress screen and runs Clean
+	// Library, which removes the library's missing discs and games.
+	SwitchToCleanProgress()
 	// OpenFilePicker shows the full-screen file/folder picker. The current
 	// screen is restored when the picker closes.
 	OpenFilePicker(req FilePickerRequest)

@@ -146,7 +146,7 @@ func TestAtomicWriteJSON(t *testing.T) {
 	}
 }
 
-func TestLibraryAddGetRemoveGame(t *testing.T) {
+func TestLibraryAddGetGame(t *testing.T) {
 	lib := DefaultLibrary()
 
 	game := &GameEntry{
@@ -170,12 +170,6 @@ func TestLibraryAddGetRemoveGame(t *testing.T) {
 	}
 	if retrieved.DisplayName != "Test Game" {
 		t.Errorf("expected 'Test Game', got '%s'", retrieved.DisplayName)
-	}
-
-	// Remove game
-	lib.RemoveGame("12345678")
-	if lib.GameCount() != 0 {
-		t.Errorf("expected 0 games after removal, got %d", lib.GameCount())
 	}
 }
 
@@ -666,7 +660,10 @@ func TestLibraryNilGamesMap(t *testing.T) {
 		t.Errorf("expected nil, got %+v", g)
 	}
 
-	lib.RemoveGame("test") // Should not panic
+	// No matching game, so nothing is read or written
+	if err := lib.RemoveGames("test"); err != nil {
+		t.Errorf("RemoveGames: %v", err)
+	}
 
 	games := lib.GetGamesSorted("title", false)
 	if games != nil {

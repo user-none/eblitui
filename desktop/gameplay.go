@@ -208,8 +208,9 @@ func (gm *GameplayManager) CurrentGameCRC() string {
 }
 
 // Launch starts the emulator with the specified game. discIndex selects
-// which disc of a multi-disc game to launch; -1 uses the entry's
-// remembered SelectedDisc. Ignored for single-disc and cartridge games.
+// which disc of a multi-disc game to launch; -1, or any index out of
+// range, uses the entry's remembered SelectedDisc. Ignored for single-disc
+// and cartridge games.
 func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bool {
 	// Rebuild input mappings from current config (settings may have changed)
 	gm.mappings = buildPlayerMappings(gm.systemInfo, &gm.config.Input)
@@ -246,39 +247,28 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bo
 	var romData []byte
 	if gm.systemInfo.Disc {
 		// Resolve which disc to load. Disc games carry a Discs list and
-		// SelectedDisc is the slice index into it; discIndex == -1 means
-		// use the remembered SelectedDisc.
+		// SelectedDisc is the slice index into it; a discIndex out of
+		// range, such as -1, uses the remembered SelectedDisc.
 		if len(game.Discs) == 0 {
-			game.Missing = true
-			storage.SaveLibrary(gm.library)
 			gm.notification.ShowDefault("Failed to load disc")
 			return false
 		}
-		idx := discIndex
-		if idx < 0 {
-			idx = game.SelectedDisc
-		}
-		if idx < 0 || idx >= len(game.Discs) {
-			idx = 0
+		idx := game.SelectedDiscIndex()
+		if discIndex >= 0 && discIndex < len(game.Discs) {
+			idx = discIndex
 		}
 		disc, derr := romloader.OpenDisc(game.Discs[idx].File)
 		if derr != nil {
-			game.Missing = true
-			storage.SaveLibrary(gm.library)
 			gm.notification.ShowDefault("Failed to load disc")
 			return false
 		}
 		gm.disc = disc
 		emu.SetDisc(disc)
 		// Persist the chosen disc so it is remembered next launch.
-		if game.SelectedDisc != idx {
-			game.SelectedDisc = idx
-		}
+		game.SelectedDisc = idx
 	} else {
 		data, _, lerr := romloader.Load(game.File, gm.systemInfo.Extensions)
 		if lerr != nil {
-			game.Missing = true
-			storage.SaveLibrary(gm.library)
 			gm.notification.ShowDefault("Failed to load ROM")
 			return false
 		}

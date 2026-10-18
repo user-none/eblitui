@@ -78,8 +78,9 @@ type App struct {
 	screenshotManager *ScreenshotManager
 	searchOverlay     *SearchOverlay
 
-	// Scan manager
-	scanManager *ScanManager
+	// Scan and clean managers
+	scanManager  *ScanManager
+	cleanManager *CleanManager
 
 	// Error state
 	errorFile        string
@@ -417,6 +418,7 @@ func (a *App) finishStartup() {
 	// Window dimensions are set by main before RunGame, so they're already correct
 	a.initScreens()
 	a.scanManager = a.newScanManager()
+	a.cleanManager = a.newCleanManager()
 
 	a.state = StateLibrary
 	a.libraryScreen.OnEnter()
@@ -463,6 +465,23 @@ func (a *App) newScanManager() *ScanManager {
 		func() { a.rebuildCurrentScreen() }, // onProgress
 		func(msg string) { // onComplete
 			a.libraryScreen.ClearArtworkCache()
+			a.state = StateSettings
+			a.rebuildCurrentScreen()
+			if msg != "" {
+				a.notification.ShowDefault(msg)
+			}
+		},
+	)
+}
+
+// newCleanManager creates the clean manager. It shares the scan screen, so
+// it is created after initScreens.
+func (a *App) newCleanManager() *CleanManager {
+	return NewCleanManager(
+		a.library,
+		a.scanScreen,
+		func() { a.rebuildCurrentScreen() }, // onProgress
+		func(msg string) { // onComplete
 			a.state = StateSettings
 			a.rebuildCurrentScreen()
 			if msg != "" {
@@ -521,7 +540,7 @@ func (a *App) initScreens() {
 	a.libraryScreen = screens.NewLibraryScreen(a, a.library, a.config)
 	a.detailScreen = screens.NewDetailScreen(a, a.library, a.achievementManager, a.systemInfo.ConsoleID, a.cheatSystem(), a.systemInfo.BigEndianMemory)
 	a.settingsScreen = screens.NewSettingsScreen(a, a.library, a.config, a.achievementManager, a.systemInfo.SerializeSize, a.systemInfo, appIcon)
-	a.scanScreen = screens.NewScanProgressScreen(a)
+	a.scanScreen = screens.NewScanProgressScreen()
 	a.errorScreen = screens.NewErrorScreen(a, a.errorFile, a.errorPath, a.handleDeleteAndContinue)
 	a.filePicker = screens.NewFilePickerScreen(a, a.closeFilePicker)
 }
@@ -552,7 +571,7 @@ func (a *App) rebuildCurrentScreen() {
 			a.settingsScreen.SaveFocusState(a.ui.GetFocusedWidget())
 		}
 		container = a.settingsScreen.Build()
-	case StateScanProgress:
+	case StateScanProgress, StateCleanProgress:
 		container = a.scanScreen.Build()
 	case StateError:
 		container = a.errorScreen.Build()
@@ -653,6 +672,11 @@ func (a *App) Update() error {
 		// No scroll containers in scan screen
 		_ = nav
 		return nil
+	case StateCleanProgress:
+		a.processUIInput()
+		a.ui.Update()
+		a.cleanManager.Update()
+		return nil
 	case StateSettings:
 		// Skip UI navigation during input capture mode
 		if a.settingsScreen.IsInputCaptureActive() {
@@ -680,7 +704,7 @@ func (a *App) Update() error {
 		// Check if settings screen triggered a scan (after adding directory)
 		if a.settingsScreen.HasPendingScan() {
 			a.settingsScreen.ClearPendingScan()
-			a.SwitchToScanProgress(false)
+			a.SwitchToScanProgress()
 		}
 	case StateLibrary:
 		// Guard: suppress UI processing until activation inputs from the
@@ -867,8 +891,9 @@ func (a *App) applySpatialNavigation(direction int) {
 		return
 	}
 
-	// The screen whose zones handle navigation. StateError and
-	// StateScanProgress have none and use ebitenui's focus order.
+	// The screen whose zones handle navigation. StateError,
+	// StateScanProgress, and StateCleanProgress have none and use
+	// ebitenui's focus order.
 	var screen interface {
 		FindFocusInDirection(widget.Focuser, int) widget.Focuser
 		FindFocusLinear(widget.Focuser, bool) widget.Focuser
@@ -984,6 +1009,9 @@ func (a *App) handleGamepadBack() {
 	case StateScanProgress:
 		// Cancel scan and return to settings
 		a.scanManager.Cancel()
+	case StateCleanProgress:
+		// Cancel clean and return to settings
+		a.cleanManager.Cancel()
 	case StateFilePicker:
 		a.filePicker.Cancel()
 	}
@@ -1227,13 +1255,25 @@ func (a *App) closeFilePicker() {
 }
 
 // SwitchToScanProgress transitions to the scan progress screen
-func (a *App) SwitchToScanProgress(rescanAll bool) {
+func (a *App) SwitchToScanProgress() {
 	a.notification.Clear()
 	a.previousState = a.state
 	a.state = StateScanProgress
 
 	// Start scan via manager
-	a.scanManager.Start(rescanAll)
+	a.scanManager.Start()
+	a.scanScreen.OnEnter()
+	a.rebuildCurrentScreen()
+}
+
+// SwitchToCleanProgress transitions to the progress screen and starts
+// Clean Library
+func (a *App) SwitchToCleanProgress() {
+	a.notification.Clear()
+	a.previousState = a.state
+	a.state = StateCleanProgress
+
+	a.cleanManager.Start()
 	a.scanScreen.OnEnter()
 	a.rebuildCurrentScreen()
 }

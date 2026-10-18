@@ -192,13 +192,6 @@ func (lib *Library) GetGame(gameCRC string) *GameEntry {
 	return lib.Games[gameCRC]
 }
 
-// RemoveGame removes a game from the library
-func (lib *Library) RemoveGame(gameCRC string) {
-	if lib.Games != nil {
-		delete(lib.Games, gameCRC)
-	}
-}
-
 // GameCount returns the number of games in the library
 func (lib *Library) GameCount() int {
 	if lib.Games == nil {

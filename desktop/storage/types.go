@@ -261,7 +261,6 @@ type GameEntry struct {
 	System          string `json:"system,omitempty"`      // Variant name (e.g. "Neo Geo Pocket") - set when >1 RDB variant
 	ConsoleID       int    `json:"consoleID,omitempty"`   // RetroAchievements console ID; 0 = use system default
 	Favorite        bool   `json:"favorite"`              // User marked as favorite
-	Missing         bool   `json:"missing"`               // true if ROM file not found
 	PlayTimeSeconds int64  `json:"playTimeSeconds"`       // Total play time
 	LastPlayed      int64  `json:"lastPlayed"`            // Unix timestamp
 	Added           int64  `json:"added"`                 // Unix timestamp when added to library
@@ -274,6 +273,14 @@ type GameEntry struct {
 	// Persisted so the chosen disc is remembered. Ignored when Discs is
 	// empty.
 	SelectedDisc int `json:"selectedDisc,omitempty"`
+}
+
+// RemovedGames represents the games removed from the library, stored in
+// removed.json. Each entry keeps its user data without its files so a
+// scan that finds the game again restores it.
+type RemovedGames struct {
+	Version int                   `json:"version"`
+	Games   map[string]*GameEntry `json:"games"` // Library key -> entry without File, Discs, and Added
 }
 
 // GameDisc is one disc of a multi-disc disc-based game.

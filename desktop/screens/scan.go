@@ -12,40 +12,36 @@ import (
 	"github.com/user-none/eblitui/desktop/widgets"
 )
 
-// ScanProgress represents progress updates from the scanner
-// This mirrors the ui.ScanProgress type
+// ScanProgress represents progress updates from a library scan or clean
 type ScanProgress struct {
 	Phase            int
 	Progress         float64
-	GamesFound       int
+	CountText        string // Games counted so far, such as "Found: 3 games"
 	DownloadTotal    int
 	DownloadComplete int
 	StatusText       string
 }
 
-// Scanner interface for decoupling
+// Scanner is the running scan or clean the Cancel button stops
 type Scanner interface {
 	Cancel()
 }
 
-// ScanProgressScreen displays ROM scanning progress
+// ScanProgressScreen displays library scan and clean progress
 type ScanProgressScreen struct {
-	callback         ScreenCallback
 	scanner          Scanner
 	phase            int
 	progress         float64
-	gamesFound       int
+	countText        string
 	downloadTotal    int
 	downloadComplete int
 	statusText       string
 	cancelPending    bool
-	cancelled        bool
 }
 
 // NewScanProgressScreen creates a new scan progress screen
-func NewScanProgressScreen(callback ScreenCallback) *ScanProgressScreen {
+func NewScanProgressScreen() *ScanProgressScreen {
 	return &ScanProgressScreen{
-		callback:   callback,
 		statusText: "Initializing...",
 	}
 }
@@ -59,15 +55,10 @@ func (s *ScanProgressScreen) SetScanner(scanner Scanner) {
 func (s *ScanProgressScreen) UpdateProgress(p ScanProgress) {
 	s.phase = p.Phase
 	s.progress = p.Progress
-	s.gamesFound = p.GamesFound
+	s.countText = p.CountText
 	s.downloadTotal = p.DownloadTotal
 	s.downloadComplete = p.DownloadComplete
 	s.statusText = p.StatusText
-}
-
-// IsCancelled returns true if cancel was requested
-func (s *ScanProgressScreen) IsCancelled() bool {
-	return s.cancelled
 }
 
 // Build creates the scan progress screen UI
@@ -124,13 +115,12 @@ func (s *ScanProgressScreen) Build() *widget.Container {
 	)
 	centerContent.AddChild(percentLabel)
 
-	// Found count
-	foundText := fmt.Sprintf("Found: %d games", s.gamesFound)
-	foundLabel := widget.NewText(
-		widget.TextOpts.Text(foundText, style.FontFace(), style.Text),
+	// Game count
+	countLabel := widget.NewText(
+		widget.TextOpts.Text(s.countText, style.FontFace(), style.Text),
 		widget.TextOpts.Position(widget.TextPositionCenter, widget.TextPositionCenter),
 	)
-	centerContent.AddChild(foundLabel)
+	centerContent.AddChild(countLabel)
 
 	// Download status (during the artwork and rumble download phases)
 	if s.phase >= 2 && s.downloadTotal > 0 {
@@ -155,7 +145,6 @@ func (s *ScanProgressScreen) Build() *widget.Container {
 		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
 			if !s.cancelPending {
 				s.cancelPending = true
-				s.cancelled = true
 				if s.scanner != nil {
 					s.scanner.Cancel()
 				}
@@ -172,15 +161,9 @@ func (s *ScanProgressScreen) Build() *widget.Container {
 // OnEnter is called when entering the scan progress screen
 func (s *ScanProgressScreen) OnEnter() {
 	s.cancelPending = false
-	s.cancelled = false
 	s.progress = 0
-	s.gamesFound = 0
+	s.countText = ""
 	s.downloadTotal = 0
 	s.downloadComplete = 0
 	s.statusText = "Initializing..."
-}
-
-// OnExit is called when leaving the scan progress screen
-func (s *ScanProgressScreen) OnExit() {
-	s.scanner = nil
 }

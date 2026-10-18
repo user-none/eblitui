@@ -4,6 +4,8 @@
 package screens
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/user-none/eblitui/desktop/cheats"
@@ -106,6 +108,108 @@ func TestDetailColumnWidthFollowsWindow(t *testing.T) {
 	}
 	if got, want := s.columnWidth(), sidebar+style.DefaultSpacing+style.Px(detailColumnMaxWidth); got != want {
 		t.Errorf("4000 wide: column = %d, want %d", got, want)
+	}
+}
+
+// removeCallback records the callbacks the remove actions use; other
+// callback methods are not used by them
+type removeCallback struct {
+	types.ScreenCallback
+	rebuilds      int
+	toLibrary     int
+	notifications []string
+}
+
+func (c *removeCallback) RequestRebuild()             { c.rebuilds++ }
+func (c *removeCallback) SwitchToLibrary()            { c.toLibrary++ }
+func (c *removeCallback) ShowNotification(msg string) { c.notifications = append(c.notifications, msg) }
+
+// useTempDataDir points the data directory at a temporary directory
+func useTempDataDir(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dir)
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+	t.Setenv("APPDATA", dir)
+}
+
+func TestDetailRemoveMissingDisc(t *testing.T) {
+	useTempDataDir(t)
+	roms := t.TempDir()
+	present := filepath.Join(roms, "d1.chd")
+	if err := os.WriteFile(present, nil, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	lib := storage.DefaultLibrary()
+	lib.AddGame(&storage.GameEntry{
+		CRC32:        "T-1",
+		Discs:        []storage.GameDisc{{Index: 0, File: present}, {Index: 1, File: filepath.Join(roms, "d2.chd")}},
+		SelectedDisc: 1,
+	})
+	cb := &removeCallback{}
+	s := NewDetailScreen(cb, lib, nil, 0, 0, true)
+	s.SetGame("T-1")
+
+	if s.playable() || s.actionKey() != "remove" {
+		t.Fatalf("missing selected disc: playable %v action %q, want remove", s.playable(), s.actionKey())
+	}
+
+	s.removeSelectedDisc()
+
+	g := lib.GetGame("T-1")
+	if len(g.Discs) != 1 || g.Discs[0].File != present || g.SelectedDisc != 0 {
+		t.Errorf("game after remove = %+v, want only the present disc selected", g)
+	}
+	if !s.playable() || s.actionKey() != "play" {
+		t.Errorf("after remove: playable %v action %q, want play", s.playable(), s.actionKey())
+	}
+	if cb.rebuilds != 1 {
+		t.Errorf("rebuilds = %d, want 1", cb.rebuilds)
+	}
+}
+
+func TestDetailRemoveGameMovesToRemoved(t *testing.T) {
+	useTempDataDir(t)
+	lib := storage.DefaultLibrary()
+	lib.AddGame(&storage.GameEntry{CRC32: "aaaa", File: filepath.Join(t.TempDir(), "gone.sms"), PlayTimeSeconds: 60})
+	cb := &removeCallback{}
+	s := NewDetailScreen(cb, lib, nil, 0, 0, true)
+	s.SetGame("aaaa")
+
+	if !s.files.Missing || s.actionKey() != "remove" {
+		t.Fatalf("missing game: files %+v action %q, want missing and remove", s.files, s.actionKey())
+	}
+
+	s.removeGame()
+
+	if lib.GetGame("aaaa") != nil {
+		t.Error("game still in library")
+	}
+	if cb.toLibrary != 1 {
+		t.Errorf("SwitchToLibrary calls = %d, want 1", cb.toLibrary)
+	}
+	removed, err := storage.LoadRemovedGames()
+	if err != nil {
+		t.Fatalf("LoadRemovedGames: %v", err)
+	}
+	if g := removed.Games["aaaa"]; g == nil || g.PlayTimeSeconds != 60 {
+		t.Errorf("removed entry = %+v, want play time kept", g)
+	}
+}
+
+func TestDetailPlayableCartridge(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a.sms")
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	lib := storage.DefaultLibrary()
+	lib.AddGame(&storage.GameEntry{CRC32: "aaaa", File: path})
+	s := NewDetailScreen(nil, lib, nil, 0, 0, true)
+	s.SetGame("aaaa")
+
+	if !s.playable() || s.actionKey() != "play" {
+		t.Errorf("present cartridge: playable %v action %q, want play", s.playable(), s.actionKey())
 	}
 }
 

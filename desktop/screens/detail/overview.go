@@ -32,6 +32,7 @@ type OverviewSection struct {
 	defaultConsoleID   int
 	contentWidth       func() int
 	game               *storage.GameEntry
+	files              storage.FileStatus // Which of the game's files are missing
 
 	// Achievement loading state. loadGen counts SetGame calls; a lookup
 	// started for an earlier game carries an older generation and its
@@ -53,8 +54,8 @@ type progressRequest struct {
 	gen       int    // loadGen when the lookup started
 	crc32     string // game key, for the RDB MD5 lookup
 	consoleID uint32 // console used to hash the game when not in the RDB
-	discFile  string // selected disc to hash, for disc games
-	romFile   string // ROM to hash, for cartridge games
+	discFile  string // selected disc to hash, for disc games; empty when missing
+	romFile   string // ROM to hash, for cartridge games; empty when missing
 }
 
 // NewOverviewSection creates the Overview page. contentWidth returns the
@@ -69,10 +70,11 @@ func NewOverviewSection(callback types.ScreenCallback, library *storage.Library,
 	}
 }
 
-// SetGame sets the game to show and starts loading its achievement
-// progress when logged in
-func (o *OverviewSection) SetGame(game *storage.GameEntry) {
+// SetGame sets the game to show, with which of its files are missing, and
+// starts loading its achievement progress when logged in
+func (o *OverviewSection) SetGame(game *storage.GameEntry, files storage.FileStatus) {
 	o.game = game
+	o.files = files
 
 	// Reset achievement state and retire any lookup still running
 	o.achMu.Lock()
@@ -94,13 +96,13 @@ func (o *OverviewSection) SetGame(game *storage.GameEntry) {
 	if game.ConsoleID != 0 {
 		req.consoleID = uint32(game.ConsoleID)
 	}
-	if len(game.Discs) > 0 {
-		idx := game.SelectedDisc
-		if idx < 0 || idx >= len(game.Discs) {
-			idx = 0
-		}
-		req.discFile = game.Discs[idx].File
-	} else {
+	// A missing file is left empty so the lookup does not try to hash it
+	sel := game.SelectedDiscIndex()
+	switch {
+	case files.MissingAt(sel):
+	case len(game.Discs) > 0:
+		req.discFile = game.Discs[sel].File
+	default:
 		req.romFile = game.File
 	}
 
@@ -163,9 +165,10 @@ func (o *OverviewSection) loadAchievementProgress(req progressRequest) {
 
 	// Fallback: compute the hash directly when not in the RDB. Disc games hash
 	// the selected disc (rcheevos reads sectors through it); cartridge games
-	// hash the ROM file.
+	// hash the ROM file. A game whose file is missing cannot be hashed.
 	if md5Hash == "" {
-		if req.discFile != "" {
+		switch {
+		case req.discFile != "":
 			disc, err := romloader.OpenDisc(req.discFile)
 			if err != nil {
 				o.finishLoad(req.gen, false, nil, err)
@@ -173,13 +176,16 @@ func (o *OverviewSection) loadAchievementProgress(req progressRequest) {
 			}
 			md5Hash = o.achievementManager.ComputeGameHashFromDisc(disc, req.consoleID)
 			disc.Close()
-		} else {
+		case req.romFile != "":
 			romData, _, err := romloader.Load(req.romFile, o.callback.GetExtensions())
 			if err != nil {
 				o.finishLoad(req.gen, false, nil, err)
 				return
 			}
 			md5Hash = o.achievementManager.ComputeGameHash(romData, req.consoleID)
+		default:
+			o.finishLoad(req.gen, false, nil, nil)
+			return
 		}
 	}
 
@@ -236,7 +242,7 @@ func (o *OverviewSection) Build(focus types.FocusManager) *widget.Container {
 
 	// Title (with warning icon if missing)
 	titleText := o.game.DisplayName
-	if o.game.Missing {
+	if o.files.Missing {
 		titleText = "[!] " + titleText
 	}
 	metadataContainer.AddChild(buildMetadataRow("Title", titleText, valueWidth))
@@ -260,19 +266,20 @@ func (o *OverviewSection) Build(focus types.FocusManager) *widget.Container {
 	// Discs section (multi-disc disc-based games only). Each disc is a
 	// focusable selection button; activating it only marks that disc as
 	// the selected disc (persisted) - it does not launch. The toolbar
-	// Play button launches the selected disc. With no prior selection the
-	// first disc is selected by default.
-	if len(o.game.Discs) > 1 && !o.game.Missing {
+	// Play button launches the selected disc, or removes it when its file
+	// is missing. With no prior selection the first disc is selected by
+	// default.
+	if len(o.game.Discs) > 1 && !o.files.Missing {
 		metadataContainer.AddChild(widgets.SectionHeader("Discs"))
-		sel := o.game.SelectedDisc
-		if sel < 0 || sel >= len(o.game.Discs) {
-			sel = 0
-		}
+		sel := o.game.SelectedDiscIndex()
 		for i, d := range o.game.Discs {
 			i, d := i, d
 			label := d.Name
 			if label == "" {
 				label = fmt.Sprintf("Disc %d", d.Index+1)
+			}
+			if o.files.MissingAt(i) {
+				label = "[!] " + label
 			}
 			if i == sel {
 				label = "> " + label
@@ -333,8 +340,14 @@ func (o *OverviewSection) Build(focus types.FocusManager) *widget.Container {
 		metadataContainer.AddChild(o.buildAchievementSection(valueWidth))
 	}
 
-	// Missing ROM warning
-	if o.game.Missing {
+	// Missing file warning: the whole game, or the selected disc
+	warning := ""
+	if o.files.Missing {
+		warning = "ROM file not found"
+	} else if o.files.MissingAt(o.game.SelectedDiscIndex()) {
+		warning = "Disc file not found"
+	}
+	if warning != "" {
 		metadataContainer.AddChild(widgets.SectionHeader("Warning"))
 		warningRow := widget.NewContainer(
 			widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
@@ -346,7 +359,7 @@ func (o *OverviewSection) Build(focus types.FocusManager) *widget.Container {
 			),
 		)
 		warningLabel := widget.NewText(
-			widget.TextOpts.Text("ROM file not found", style.FontFace(), style.Accent),
+			widget.TextOpts.Text(warning, style.FontFace(), style.Accent),
 		)
 		warningRow.AddChild(warningLabel)
 		metadataContainer.AddChild(warningRow)
