@@ -7,9 +7,6 @@ complete desktop experience with a game library, settings, shader
 effects, save states, rewind, cheats, RetroAchievements, and gamepad
 navigation.
 
-Build tag: `!libretro` (excluded from libretro builds).
-
-
 ## Usage
 
 ```go
