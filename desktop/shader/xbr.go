@@ -14,14 +14,17 @@ import (
 var xbrShaderSrc []byte
 
 // XBRScaler handles xBR pixel art scaling with cascaded 2x passes.
-// Supports 2x (1 pass), 4x (2 passes), and 8x (3 passes) scaling.
-// Buffers are pooled and reused to avoid per-frame GPU allocations.
+// Supports 2x (1 pass), 4x (2 passes), and 8x (3 passes) scaling, with
+// fewer passes when a pass's output would exceed the maximum image size.
+// Buffers are pooled and reused to avoid per-frame GPU allocations, and
+// only the buffers of the passes run are kept.
 type XBRScaler struct {
 	shader          *ebiten.Shader // Cached compiled shader
 	par             float64        // Pixel aspect ratio
 	aspectRatioMode string         // "dar", "4:3", "1:1", "stretch"
 
-	// Pooled buffers (reused when dimensions match)
+	// Pooled buffers (reused when dimensions match). The pass buffers past
+	// the passes run are nil, and normalizedSrc is nil when no pass runs.
 	normalizedSrc *ebiten.Image
 	passBuffers   [3]*ebiten.Image // Max 3 passes for 8x
 	screenBuffer  *ebiten.Image
@@ -47,8 +50,10 @@ func NewXBRScaler(par float64) *XBRScaler {
 }
 
 // Apply runs xBR scaling on the source and returns a screen-sized image.
-// Automatically selects 2x, 4x, or 8x scaling based on screen size. par is the
-// pixel aspect ratio delivered with this frame, used for the final scale.
+// Automatically selects 2x, 4x, or 8x scaling based on screen size, then
+// drops passes whose output would exceed the maximum image size; with no
+// pass left the source is scaled to the screen directly. par is the pixel
+// aspect ratio delivered with this frame, used for the final scale.
 func (x *XBRScaler) Apply(src *ebiten.Image, par float64, screenW, screenH int) *ebiten.Image {
 	if src == nil {
 		return nil
@@ -66,22 +71,26 @@ func (x *XBRScaler) Apply(src *ebiten.Image, par float64, screenW, screenH int) 
 		return x.scaleToScreen(src, screenW, screenH)
 	}
 
-	// Determine number of passes needed
+	// Determine number of passes needed, limited to those that fit
 	scaleFactor := selectOptimalScale(srcW, srcH, screenW, screenH)
-	passes := scaleFactorToPasses(scaleFactor)
+	passes := fitPasses(srcW, srcH, scaleFactorToPasses(scaleFactor), ebiten.MaxImageSize())
 
-	// Ensure all buffers are ready (creates or clears as needed)
-	x.ensureBufferPool(srcW, srcH, screenW, screenH)
+	// Ensure the buffers are ready (creates or clears as needed)
+	x.ensureSourceBuffers(srcW, srcH, passes)
+	x.ensureScreenBuffer(screenW, screenH)
 
-	// Copy SubImage to regular image at (0,0) to fix coordinate issues
-	// SubImages have non-zero bounds that break DrawTrianglesShader srcPos interpolation
-	x.normalizedSrc.DrawImage(src, nil)
+	currentInput := src
+	if passes > 0 {
+		// Copy SubImage to regular image at (0,0) to fix coordinate issues
+		// SubImages have non-zero bounds that break DrawTrianglesShader srcPos interpolation
+		x.normalizedSrc.DrawImage(src, nil)
 
-	// Execute cascade passes
-	currentInput := x.normalizedSrc
-	for pass := 0; pass < passes; pass++ {
-		x.runShaderPass(currentInput, x.passBuffers[pass])
-		currentInput = x.passBuffers[pass]
+		// Execute cascade passes
+		currentInput = x.normalizedSrc
+		for pass := 0; pass < passes; pass++ {
+			x.runShaderPass(currentInput, x.passBuffers[pass])
+			currentInput = x.passBuffers[pass]
+		}
 	}
 
 	// Scale final xBR output to the pooled screen buffer with centering
@@ -90,42 +99,61 @@ func (x *XBRScaler) Apply(src *ebiten.Image, par float64, screenW, screenH int) 
 	return x.screenBuffer
 }
 
-// ensureBufferPool ensures all pooled buffers are ready for the given dimensions.
-// Creates new buffers if dimensions changed, otherwise clears existing ones.
-func (x *XBRScaler) ensureBufferPool(srcW, srcH, screenW, screenH int) {
-	// Check if source dimensions changed
+// ensureSourceBuffers ensures the source copy and the buffers of the first
+// passes passes are ready for a srcW x srcH source, and frees the rest.
+// Buffers are created when missing or when the source dimensions changed,
+// otherwise cleared for reuse. With no passes every source buffer is freed.
+func (x *XBRScaler) ensureSourceBuffers(srcW, srcH, passes int) {
 	srcChanged := x.normalizedSrc == nil ||
 		x.normalizedSrc.Bounds().Dx() != srcW ||
 		x.normalizedSrc.Bounds().Dy() != srcH
+	if srcChanged || passes == 0 {
+		x.releaseSourceBuffers()
+	}
+	if passes == 0 {
+		return
+	}
 
-	if srcChanged {
-		// Deallocate old source-derived buffers
-		if x.normalizedSrc != nil {
-			x.normalizedSrc.Deallocate()
-		}
-		for i := range x.passBuffers {
+	if x.normalizedSrc == nil {
+		x.normalizedSrc = display.NewUnmanagedImage(srcW, srcH)
+	} else {
+		x.normalizedSrc.Clear()
+	}
+
+	w, h := srcW, srcH
+	for i := range x.passBuffers {
+		w, h = w*2, h*2
+		switch {
+		case i >= passes:
 			if x.passBuffers[i] != nil {
 				x.passBuffers[i].Deallocate()
 				x.passBuffers[i] = nil
 			}
-		}
-
-		// Create all pass buffers
-		x.normalizedSrc = display.NewUnmanagedImage(srcW, srcH)
-		w, h := srcW, srcH
-		for i := range x.passBuffers {
-			w, h = w*2, h*2
+		case x.passBuffers[i] == nil:
 			x.passBuffers[i] = display.NewUnmanagedImage(w, h)
-		}
-	} else {
-		// Clear existing buffers for reuse
-		x.normalizedSrc.Clear()
-		for i := range x.passBuffers {
+		default:
 			x.passBuffers[i].Clear()
 		}
 	}
+}
 
-	// Handle screen buffer separately (depends on window size, not source)
+// releaseSourceBuffers frees the source copy and every pass buffer
+func (x *XBRScaler) releaseSourceBuffers() {
+	if x.normalizedSrc != nil {
+		x.normalizedSrc.Deallocate()
+		x.normalizedSrc = nil
+	}
+	for i := range x.passBuffers {
+		if x.passBuffers[i] != nil {
+			x.passBuffers[i].Deallocate()
+			x.passBuffers[i] = nil
+		}
+	}
+}
+
+// ensureScreenBuffer ensures the screen buffer is screenW x screenH,
+// creating it when missing or resized, otherwise clearing it for reuse
+func (x *XBRScaler) ensureScreenBuffer(screenW, screenH int) {
 	screenChanged := x.screenBuffer == nil ||
 		x.screenBuffer.Bounds().Dx() != screenW ||
 		x.screenBuffer.Bounds().Dy() != screenH
@@ -170,6 +198,16 @@ func selectOptimalScale(srcW, srcH, screenW, screenH int) int {
 		return 4
 	}
 	return 8
+}
+
+// fitPasses returns passes reduced until the output of the last pass, the
+// srcW x srcH source doubled once per pass, is at most maxSize on both
+// sides. A maxSize of 0, before the size is known, gives 0 passes.
+func fitPasses(srcW, srcH, passes, maxSize int) int {
+	for passes > 0 && (srcW<<passes > maxSize || srcH<<passes > maxSize) {
+		passes--
+	}
+	return passes
 }
 
 // scaleFactorToPasses converts scale factor to number of 2x passes

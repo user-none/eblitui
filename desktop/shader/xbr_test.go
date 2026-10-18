@@ -60,3 +60,33 @@ func TestScaleFactorToPasses(t *testing.T) {
 		})
 	}
 }
+
+func TestFitPasses(t *testing.T) {
+	tests := []struct {
+		name                        string
+		srcW, srcH, passes, maxSize int
+		expected                    int
+	}{
+		{"all passes fit", 352, 224, 3, 16384, 3},
+		{"output at the limit", 8192, 224, 1, 16384, 1},
+		{"one over the limit", 8193, 224, 1, 16384, 0},
+		{"16x low-res keeps one pass", 5632, 3584, 1, 16384, 1},
+		{"16x hi-res drops every pass", 11264, 3584, 1, 16384, 0},
+		{"three reduced to two", 4096, 224, 3, 16384, 2},
+		{"three reduced to one", 4097, 224, 3, 16384, 1},
+		{"height over", 352, 5000, 2, 16384, 1},
+		{"8192 limit", 5632, 3584, 1, 8192, 0},
+		{"no passes requested", 352, 224, 0, 16384, 0},
+		{"size unknown", 352, 224, 3, 0, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := fitPasses(tt.srcW, tt.srcH, tt.passes, tt.maxSize)
+			if got != tt.expected {
+				t.Errorf("fitPasses(%d, %d, %d, %d) = %d, want %d",
+					tt.srcW, tt.srcH, tt.passes, tt.maxSize, got, tt.expected)
+			}
+		})
+	}
+}
