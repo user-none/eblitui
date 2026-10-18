@@ -6,6 +6,7 @@ package desktop
 import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/user-none/eblitui/desktop/display"
+	"github.com/user-none/eblitui/desktop/shader"
 )
 
 // FramebufferRenderer owns the ebiten offscreen buffer and handles
@@ -52,11 +53,14 @@ func NewFramebufferRenderer(par float64) *FramebufferRenderer {
 }
 
 // DrawFramebuffer renders pixel data to the screen with PAR-corrected
-// aspect ratio scaling.
-func (r *FramebufferRenderer) DrawFramebuffer(screen *ebiten.Image, pixels []byte, stride, activeHeight int) {
+// aspect ratio scaling. It returns the picture's placement in screen, zero
+// when nothing was drawn.
+func (r *FramebufferRenderer) DrawFramebuffer(screen *ebiten.Image, pixels []byte, stride, activeHeight int) shader.Picture {
+	var p shader.Picture
 	if img := r.frameImage(pixels, stride, activeHeight); img != nil {
-		display.DrawScaled(screen, img, r.aspectRatioMode, r.par)
+		p.Left, p.Top, p.Width, p.Height = display.DrawScaled(screen, img, r.aspectRatioMode, r.par)
 	}
+	return p
 }
 
 // GetFramebufferImage returns pixel data as an ebiten.Image at native

@@ -94,7 +94,7 @@ func (x *XBRScaler) Apply(src *ebiten.Image, par float64, screenW, screenH int) 
 	}
 
 	// Scale final xBR output to the pooled screen buffer with centering
-	_, x.picture.Top, _, x.picture.Height = display.DrawScaled(x.screenBuffer, currentInput, x.aspectRatioMode, x.par)
+	x.picture.Left, x.picture.Top, x.picture.Width, x.picture.Height = display.DrawScaled(x.screenBuffer, currentInput, x.aspectRatioMode, x.par)
 
 	return x.screenBuffer
 }
@@ -258,6 +258,6 @@ func (x *XBRScaler) runShaderPass(input, output *ebiten.Image) {
 // shader fails.
 func (x *XBRScaler) scaleToScreen(src *ebiten.Image, screenW, screenH int) *ebiten.Image {
 	x.ensureScreenBuffer(screenW, screenH)
-	_, x.picture.Top, _, x.picture.Height = display.DrawScaled(x.screenBuffer, src, x.aspectRatioMode, x.par)
+	x.picture.Left, x.picture.Top, x.picture.Width, x.picture.Height = display.DrawScaled(x.screenBuffer, src, x.aspectRatioMode, x.par)
 	return x.screenBuffer
 }

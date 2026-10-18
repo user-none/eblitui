@@ -118,7 +118,7 @@ func TestScreenshotQueue(t *testing.T) {
 	// Flushing with no game drops the queue without reading the screen or
 	// queuing a frame
 	m.Queue("achievement_C")
-	m.Flush(nil, "")
+	m.Flush(nil, image.Rectangle{}, "")
 	if tags := m.drain(); len(tags) != 0 {
 		t.Errorf("queue kept after flush with no game: %v", tags)
 	}
@@ -127,9 +127,29 @@ func TestScreenshotQueue(t *testing.T) {
 	}
 
 	// Flushing with nothing queued reads nothing
-	m.Flush(nil, "ABCD1234")
+	m.Flush(nil, image.Rectangle{}, "ABCD1234")
 	if len(m.jobs) != 0 {
 		t.Errorf("frame queued with no captures")
+	}
+}
+
+func TestScreenshotCaptureRect(t *testing.T) {
+	screen := image.Rect(0, 0, 3840, 2160)
+	tests := []struct {
+		name    string
+		picture image.Rectangle
+		want    image.Rectangle
+	}{
+		{"inside", image.Rect(480, 0, 3360, 2160), image.Rect(480, 0, 3360, 2160)},
+		{"clipped to screen", image.Rect(-10, -5, 3850, 2170), screen},
+		{"partly outside", image.Rect(3000, 100, 4000, 2500), image.Rect(3000, 100, 3840, 2160)},
+		{"empty uses screen", image.Rectangle{}, screen},
+		{"outside uses screen", image.Rect(4000, 0, 5000, 100), screen},
+	}
+	for _, tt := range tests {
+		if got := screenshotCaptureRect(tt.picture, screen); got != tt.want {
+			t.Errorf("%s: got %v, want %v", tt.name, got, tt.want)
+		}
 	}
 }
 

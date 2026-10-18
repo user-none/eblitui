@@ -82,19 +82,31 @@ func (m *ScreenshotManager) Queue(tag string) {
 	m.mu.Unlock()
 }
 
-// Flush copies screen for the queued captures and empties the queue. The
+// Flush copies the picture region of screen for the queued captures and
+// empties the queue, so letterbox and pillarbox bars are left out. The
 // frame is encoded and written later, once per capture, in the game's
 // screenshot directory. Captures queued while no game is loaded are
 // dropped. Capture is silent, with no notification; failures are logged.
-func (m *ScreenshotManager) Flush(screen *ebiten.Image, gameCRC string) {
+func (m *ScreenshotManager) Flush(screen *ebiten.Image, picture image.Rectangle, gameCRC string) {
 	tags := m.drain()
 	if len(tags) == 0 || gameCRC == "" {
 		return
 	}
-	b := screen.Bounds()
-	frame := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
-	screen.ReadPixels(frame.Pix)
+	r := screenshotCaptureRect(picture, screen.Bounds())
+	frame := image.NewRGBA(image.Rect(0, 0, r.Dx(), r.Dy()))
+	screen.SubImage(r).(*ebiten.Image).ReadPixels(frame.Pix)
 	m.capture(frame, gameCRC, tags)
+}
+
+// screenshotCaptureRect returns the region of a screen with the bounds to
+// capture: the picture clipped to the screen, or the whole screen when no
+// part of the picture is on it.
+func screenshotCaptureRect(picture, bounds image.Rectangle) image.Rectangle {
+	r := picture.Intersect(bounds)
+	if r.Empty() {
+		return bounds
+	}
+	return r
 }
 
 // Close stops the encoder once the queued frames are written. Captures

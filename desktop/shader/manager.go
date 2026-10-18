@@ -6,7 +6,9 @@ package shader
 import (
 	_ "embed"
 	"fmt"
+	"image"
 	"log"
+	"math"
 	"sort"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -391,22 +393,34 @@ func (m *Manager) ensureScaleBuffer(width, height int) {
 func (m *Manager) basicScale(src *ebiten.Image, screenW, screenH int) *ebiten.Image {
 	m.ensureScaleBuffer(screenW, screenH)
 	m.scaleBuffer.Clear()
-	_, m.picture.Top, _, m.picture.Height = display.DrawScaled(m.scaleBuffer, src, m.aspectRatioMode, m.par)
+	m.picture.Left, m.picture.Top, m.picture.Width, m.picture.Height = display.DrawScaled(m.scaleBuffer, src, m.aspectRatioMode, m.par)
 	return m.scaleBuffer
 }
 
-// Picture is the vertical placement of the game picture within a
-// screen-sized image, in pixels: the rows the picture covers, with any
-// letterbox bars outside them. Shaders that draw a line structure
-// place it over the picture.
+// Picture is the placement of the game picture within a screen-sized
+// image, in pixels, with any letterbox or pillarbox bars outside it.
+// Shaders that draw a line structure place it over the picture's rows.
 type Picture struct {
+	Left   float64
 	Top    float64
+	Width  float64
 	Height float64
 }
 
 // FullPicture is the placement of a picture covering the whole of a
-// screen-sized image of the height.
-func FullPicture(screenH int) Picture { return Picture{Height: float64(screenH)} }
+// screen-sized image of the size.
+func FullPicture(screenW, screenH int) Picture {
+	return Picture{Width: float64(screenW), Height: float64(screenH)}
+}
+
+// Rect returns the whole pixels the picture covers, each edge rounded to
+// the nearest pixel boundary.
+func (p Picture) Rect() image.Rectangle {
+	return image.Rect(
+		int(math.Round(p.Left)), int(math.Round(p.Top)),
+		int(math.Round(p.Left+p.Width)), int(math.Round(p.Top+p.Height)),
+	)
+}
 
 // ApplyPreprocessEffects runs the native-frame effects pipeline and returns a
 // screen-sized image with the picture's placement in it. src must be the

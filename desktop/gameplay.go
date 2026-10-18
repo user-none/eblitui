@@ -17,6 +17,7 @@ import (
 	"github.com/user-none/eblitui/desktop/achievements"
 	"github.com/user-none/eblitui/desktop/cheats"
 	"github.com/user-none/eblitui/desktop/metadata"
+	"github.com/user-none/eblitui/desktop/shader"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/romloader"
@@ -763,18 +764,19 @@ func (gm *GameplayManager) Update() (pauseMenuOpened bool, err error) {
 	return false, nil
 }
 
-// Draw renders the gameplay screen from the shared framebuffer.
-func (gm *GameplayManager) Draw(screen *ebiten.Image) {
+// Draw renders the gameplay screen from the shared framebuffer and returns
+// the picture's placement in screen, zero when nothing was drawn.
+func (gm *GameplayManager) Draw(screen *ebiten.Image) shader.Picture {
 	if gm.emulator == nil || gm.sharedFramebuffer == nil || gm.renderer == nil {
-		return
+		return shader.Picture{}
 	}
 
 	pixels, stride, height, par := gm.sharedFramebuffer.Read()
 	if height == 0 {
-		return
+		return shader.Picture{}
 	}
 	gm.renderer.SetPAR(par)
-	gm.renderer.DrawFramebuffer(screen, pixels, stride, height)
+	return gm.renderer.DrawFramebuffer(screen, pixels, stride, height)
 }
 
 // DrawFramebuffer returns the native-resolution framebuffer and the pixel

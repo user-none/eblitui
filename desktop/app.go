@@ -1048,11 +1048,15 @@ func (a *App) Draw(screen *ebiten.Image) {
 	// Determine which shaders to apply based on state and application mode
 	shaderIDs := a.getActiveShaders()
 
+	// Placement of the game picture in screen, for the screenshot crop
+	sw, sh := screen.Bounds().Dx(), screen.Bounds().Dy()
+	picture := shader.FullPicture(sw, sh)
+
 	if len(shaderIDs) == 0 {
 		// No shaders/effects - direct draw
 		switch a.state {
 		case StatePlaying:
-			a.gameplay.Draw(screen)
+			picture = a.gameplay.Draw(screen)
 			a.gameplay.DrawPauseMenu(screen)
 			a.gameplay.DrawAchievementOverlay(screen)
 			a.gameplay.DrawPerfOverlay(screen)
@@ -1065,10 +1069,7 @@ func (a *App) Draw(screen *ebiten.Image) {
 		}
 	} else {
 		// With effects/shaders - use preprocessing pipeline
-		sw, sh := screen.Bounds().Dx(), screen.Bounds().Dy()
-
 		var processed *ebiten.Image
-		var picture shader.Picture
 		switch a.state {
 		case StatePlaying:
 			// Run the full native-frame pipeline: overscan crop, xBR/scale,
@@ -1082,7 +1083,6 @@ func (a *App) Draw(screen *ebiten.Image) {
 			buffer.Clear()
 			a.ui.Draw(buffer)
 			processed = buffer
-			picture = shader.FullPicture(sh)
 		}
 
 		// No frame yet (e.g. before the first emulated frame); skip this draw.
@@ -1107,8 +1107,9 @@ func (a *App) Draw(screen *ebiten.Image) {
 		a.shaderManager.ApplyShaders(screen, processed, shaderIDs, picture)
 	}
 
-	// Save queued screenshots of the final frame, after everything is drawn
-	a.screenshotManager.Flush(screen, a.gameplay.CurrentGameCRC())
+	// Save queued screenshots of the final frame's picture, after everything
+	// is drawn
+	a.screenshotManager.Flush(screen, picture.Rect(), a.gameplay.CurrentGameCRC())
 }
 
 // resizeSettleDelay is how long the window size must hold before the UI
