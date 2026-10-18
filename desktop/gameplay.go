@@ -909,7 +909,10 @@ func (gm *GameplayManager) Exit(saveResume bool) {
 	gm.saveStater = nil
 	gm.batterySaver = nil
 	gm.memoryInspector = nil
-	gm.renderer = nil
+	if gm.renderer != nil {
+		gm.renderer.Release()
+		gm.renderer = nil
+	}
 	gm.currentGame = nil
 	gm.rumbleEngine = nil
 	gm.rumbleCHT = nil

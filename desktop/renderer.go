@@ -16,7 +16,17 @@ type FramebufferRenderer struct {
 	par             float64
 	aspectRatioMode string
 	offscreen       *ebiten.Image
-	scaled          []byte // pixels of a frame downscaled to fit the maximum image size, reused across frames
+	downscaler      boxDownscaler // downscales frames larger than the maximum image size
+}
+
+// Release frees the offscreen image and the downscale buffers. Call when
+// gameplay ends.
+func (r *FramebufferRenderer) Release() {
+	if r.offscreen != nil {
+		r.offscreen.Deallocate()
+		r.offscreen = nil
+	}
+	r.downscaler = boxDownscaler{}
 }
 
 // SetAspectRatioMode sets the aspect ratio scaling mode ("dar", "4:3", "1:1", "stretch").
@@ -73,8 +83,7 @@ func (r *FramebufferRenderer) frameImage(pixels []byte, stride, activeHeight int
 
 	width, height := stride/4, activeHeight
 	if k := downscaleFactor(width, height, ebiten.MaxImageSize()); k > 1 {
-		r.scaled, width, height = downscaleBox(r.scaled, pixels, width, height, k)
-		pixels = r.scaled
+		pixels, width, height = r.downscaler.downscale(pixels, width, height, k)
 	}
 
 	if r.offscreen == nil || r.offscreen.Bounds().Dx() != width || r.offscreen.Bounds().Dy() != height {
@@ -99,19 +108,29 @@ func downscaleFactor(width, height, maxSize int) int {
 	return max(1, ceilDiv(width, maxSize), ceilDiv(height, maxSize))
 }
 
-// downscaleBox reduces a width x height RGBA frame by k on both sides,
-// each output pixel the average of a k x k block. Blocks at the right and
-// bottom edges average the pixels the frame has. dst is reused when large
-// enough. It returns the output pixels and their width and height.
-func downscaleBox(dst, src []byte, width, height, k int) ([]byte, int, int) {
+// boxDownscaler reduces RGBA frames by averaging blocks of pixels. Its
+// buffers are reused across frames and grow to the largest frame seen.
+type boxDownscaler struct {
+	out  []byte   // output pixels
+	sums []uint32 // per channel sums of one output row
+}
+
+// downscale reduces a width x height RGBA frame by k on both sides, each
+// output pixel the average of a k x k block. Blocks at the right and
+// bottom edges average the pixels the frame has. It returns the output
+// pixels, valid until the next call, and their width and height.
+func (d *boxDownscaler) downscale(src []byte, width, height, k int) ([]byte, int, int) {
 	outW, outH := ceilDiv(width, k), ceilDiv(height, k)
 	n := outW * outH * 4
-	if cap(dst) < n {
-		dst = make([]byte, n)
+	if cap(d.out) < n {
+		d.out = make([]byte, n)
 	}
-	dst = dst[:n]
+	dst := d.out[:n]
 
-	sums := make([]uint32, outW*4)
+	if cap(d.sums) < outW*4 {
+		d.sums = make([]uint32, outW*4)
+	}
+	sums := d.sums[:outW*4]
 	for oy := range outH {
 		clear(sums)
 		y0, y1 := oy*k, min((oy+1)*k, height)

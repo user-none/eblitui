@@ -408,8 +408,11 @@ func (a *App) finishStartup() {
 		a.achievementManager,
 		a.metadata,
 		a.cheatSystem(),
-		func() { a.SwitchToLibrary() }, // onExitToLibrary
-		func() { a.Exit() },            // onExitApp
+		func() { // onExitToLibrary
+			a.shaderManager.ReleaseGameBuffers()
+			a.SwitchToLibrary()
+		},
+		func() { a.Exit() }, // onExitApp
 	)
 
 	a.startAchievementAutoLogin()

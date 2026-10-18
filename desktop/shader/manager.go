@@ -159,6 +159,21 @@ func (m *Manager) ResetBuffers() {
 	}
 }
 
+// ReleaseGameBuffers frees the buffers only gameplay uses: the ghosting
+// and scale buffers and the xBR buffers. The shader chain buffers are kept
+// since the UI uses them too. Call when gameplay ends.
+func (m *Manager) ReleaseGameBuffers() {
+	if m.ghostingBuffer != nil {
+		m.ghostingBuffer.Deallocate()
+		m.ghostingBuffer = nil
+	}
+	if m.scaleBuffer != nil {
+		m.scaleBuffer.Deallocate()
+		m.scaleBuffer = nil
+	}
+	m.xbrScaler.Release()
+}
+
 // IncrementFrame advances the frame counter for animated shaders
 func (m *Manager) IncrementFrame() {
 	m.frame++

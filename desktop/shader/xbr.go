@@ -137,6 +137,16 @@ func (x *XBRScaler) ensureSourceBuffers(srcW, srcH, passes int) {
 	}
 }
 
+// Release frees every buffer. Call when gameplay ends; the next Apply
+// creates the buffers again.
+func (x *XBRScaler) Release() {
+	x.releaseSourceBuffers()
+	if x.screenBuffer != nil {
+		x.screenBuffer.Deallocate()
+		x.screenBuffer = nil
+	}
+}
+
 // releaseSourceBuffers frees the source copy and every pass buffer
 func (x *XBRScaler) releaseSourceBuffers() {
 	if x.normalizedSrc != nil {
@@ -243,10 +253,11 @@ func (x *XBRScaler) runShaderPass(input, output *ebiten.Image) {
 	output.DrawTrianglesShader(vertices, indices, x.shader, op)
 }
 
-// scaleToScreen scales src into a new screen-sized image using the configured
-// display aspect ratio, centered. Used as fallback when the shader fails.
+// scaleToScreen scales src into the pooled screen buffer using the
+// configured display aspect ratio, centered. Used as fallback when the
+// shader fails.
 func (x *XBRScaler) scaleToScreen(src *ebiten.Image, screenW, screenH int) *ebiten.Image {
-	screenBuffer := display.NewUnmanagedImage(screenW, screenH)
-	_, x.picture.Top, _, x.picture.Height = display.DrawScaled(screenBuffer, src, x.aspectRatioMode, x.par)
-	return screenBuffer
+	x.ensureScreenBuffer(screenW, screenH)
+	_, x.picture.Top, _, x.picture.Height = display.DrawScaled(x.screenBuffer, src, x.aspectRatioMode, x.par)
+	return x.screenBuffer
 }

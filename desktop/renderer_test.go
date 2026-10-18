@@ -47,7 +47,8 @@ func TestDownscaleBoxAverages(t *testing.T) {
 		return [4]byte{v, v + 1, v + 2, 255}
 	})
 
-	got, w, h := downscaleBox(nil, src, 4, 2, 2)
+	var d boxDownscaler
+	got, w, h := d.downscale(src, 4, 2, 2)
 	if w != 2 || h != 1 {
 		t.Fatalf("size = %dx%d, want 2x1", w, h)
 	}
@@ -65,7 +66,8 @@ func TestDownscaleBoxPartialEdgeBlocks(t *testing.T) {
 		return [4]byte{byte(x * 10), byte(y * 10), 0, 255}
 	})
 
-	got, w, h := downscaleBox(nil, src, 3, 3, 2)
+	var d boxDownscaler
+	got, w, h := d.downscale(src, 3, 3, 2)
 	if w != 2 || h != 2 {
 		t.Fatalf("size = %dx%d, want 2x2", w, h)
 	}
@@ -80,21 +82,31 @@ func TestDownscaleBoxPartialEdgeBlocks(t *testing.T) {
 	}
 }
 
-func TestDownscaleBoxReusesBuffer(t *testing.T) {
-	src := rgba(4, 4, func(x, y int) [4]byte { return [4]byte{1, 2, 3, 4} })
-	buf := make([]byte, 64)
+func TestDownscaleBoxReusesBuffers(t *testing.T) {
+	var d boxDownscaler
+	large := rgba(8, 8, func(x, y int) [4]byte { return [4]byte{200, 200, 200, 255} })
+	d.downscale(large, 8, 8, 2)
+	out, sums := &d.out[0], &d.sums[0]
 
-	got, _, _ := downscaleBox(buf, src, 4, 4, 2)
-	if &got[0] != &buf[0] {
-		t.Error("large enough buffer not reused")
+	// A smaller frame reuses both buffers, and the sums left by the larger
+	// frame do not carry into its averages
+	small := rgba(4, 4, func(x, y int) [4]byte { return [4]byte{10, 20, 30, 255} })
+	got, w, h := d.downscale(small, 4, 4, 2)
+	if &d.out[0] != out || &d.sums[0] != sums {
+		t.Error("buffers not reused")
 	}
-	if len(got) != 16 {
-		t.Errorf("len = %d, want 16", len(got))
+	if w != 2 || h != 2 || len(got) != 16 {
+		t.Fatalf("size = %dx%d len %d, want 2x2 len 16", w, h, len(got))
+	}
+	for i := 0; i < len(got); i += 4 {
+		if p := got[i : i+4]; !bytes.Equal(p, []byte{10, 20, 30, 255}) {
+			t.Errorf("pixel %d = %v, want [10 20 30 255]", i/4, p)
+		}
 	}
 
-	small := make([]byte, 4)
-	got, _, _ = downscaleBox(small, src, 4, 4, 2)
-	if len(got) != 16 {
-		t.Errorf("grown len = %d, want 16", len(got))
+	// A larger frame grows them
+	d.downscale(rgba(16, 16, func(x, y int) [4]byte { return [4]byte{} }), 16, 16, 2)
+	if len(d.out) < 8*8*4 || len(d.sums) < 8*4 {
+		t.Errorf("buffers not grown: out %d sums %d", len(d.out), len(d.sums))
 	}
 }
