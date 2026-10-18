@@ -39,7 +39,7 @@ The app is a state machine that transitions between screens:
 | State | Screen | Description |
 |---|---|---|
 | `StateLibrary` | Library | Game grid/list with artwork, search, and sorting |
-| `StateDetail` | Detail | Artwork and page sidebar: Overview (game info, discs, achievement progress) and Cheats |
+| `StateDetail` | Detail | Artwork and page sidebar: Overview (game info, discs, achievement progress), Cheats, Settings, and Screenshots |
 | `StateSettings` | Settings | Tabbed configuration (Library, Appearance, Video, Audio, Rewind, RetroAchievements) |
 | `StateScanProgress` | Scan Progress | ROM scanning with discovery, artwork, rumble, and cheat phases |
 | `StateError` | Error | Startup error handling (corrupted config recovery) |
@@ -141,6 +141,18 @@ Cheat support is available when the core implements `coreif.Memory` and
 the `cheats` package knows the system's code formats. Currently that is
 the Sega Saturn.
 
+### Per-Game Settings
+
+The detail screen's Settings page overrides global settings for one game.
+It lists the core options the core marks `PerGame` (Bool and Select
+options) under the name of the settings page each is on, and the
+preprocessing shader effects under Video. Each setting cycles through
+Inherit, which uses the global setting, then the setting's values. Reset
+All to Global removes every override of the game.
+
+Overrides are stored in the game's settings file and apply when the game
+launches.
+
 ### Shader Effects
 
 Shader effects can be enabled independently for the UI and gameplay
@@ -221,7 +233,7 @@ Directory structure:
     config.json      - Application settings
     library.json     - Game library and scan state
     removed.json     - User data of games removed from the library
-    gamesettings/    - Per-game settings (save state slot, cheat choices)
+    gamesettings/    - Per-game settings (save state slot, cheat choices, setting overrides)
     metadata/        - RDB databases and artwork index
     artwork/         - Game artwork images
     rumble/          - CHT rumble definition files
@@ -251,7 +263,7 @@ corruption.
 | Package | Description |
 |---|---|
 | `screens` | UI screens (library, detail, settings, scan, error, file picker) |
-| `screens/detail` | Detail screen pages: Overview and Cheats |
+| `screens/detail` | Detail screen pages: Overview, Cheats, Settings, and Screenshots |
 | `screens/settings` | Settings screen sections |
 | `cheats` | CHT cheat file and code string decoding into memory operations (standard library only) |
 | `gamecheats` | A game's database and custom cheats, shared by the Cheats page and the cheat engine |

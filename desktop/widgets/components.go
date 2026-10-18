@@ -122,6 +122,50 @@ func TextButton(text string, padding int, handler func(*widget.ButtonClickedEven
 	)
 }
 
+// EnabledTextButton creates a text button in the normal style, or in the
+// disabled style when not enabled. The handler runs only when enabled.
+func EnabledTextButton(text string, padding int, enabled bool, handler func(*widget.ButtonClickedEventArgs)) *widget.Button {
+	buttonImage := style.ButtonImage()
+	if !enabled {
+		buttonImage = style.DisabledButtonImage()
+	}
+	return widget.NewButton(
+		widget.ButtonOpts.Image(buttonImage),
+		widget.ButtonOpts.Text(text, style.FontFace(), style.ButtonTextColor()),
+		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(padding)),
+		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
+			if enabled {
+				handler(args)
+			}
+		}),
+	)
+}
+
+// CycleButton creates a settings row button that steps through count
+// values, showing label for the current one. Pressing it calls handler
+// with the index after current, wrapping to the first; a current of -1,
+// a value not in the list, steps to the first. With no values pressing it
+// does nothing. It is at least minWidth wide and vertically centered in
+// its grid cell.
+func CycleButton(label string, current, count, minWidth int, handler func(next int)) *widget.Button {
+	return widget.NewButton(
+		widget.ButtonOpts.Image(style.ButtonImage()),
+		widget.ButtonOpts.Text(label, style.FontFace(), style.ButtonTextColor()),
+		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
+		widget.ButtonOpts.WidgetOpts(
+			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
+				VerticalPosition: widget.GridLayoutPositionCenter,
+			}),
+			widget.WidgetOpts.MinSize(minWidth, 0),
+		),
+		widget.ButtonOpts.ClickedHandler(func(*widget.ButtonClickedEventArgs) {
+			if count > 0 {
+				handler((current + 1) % count)
+			}
+		}),
+	)
+}
+
 // PrimaryTextButton creates a prominent text button with primary styling.
 // Use for main actions like "Play", "Save", "Scan Library".
 func PrimaryTextButton(text string, padding int, handler func(*widget.ButtonClickedEventArgs)) *widget.Button {

@@ -6,6 +6,7 @@ package widgets
 import (
 	"testing"
 
+	"github.com/ebitenui/ebitenui/widget"
 	"github.com/user-none/eblitui/desktop/style"
 )
 
@@ -18,6 +19,41 @@ func TestRowLabelWidth(t *testing.T) {
 
 	if got := RowLabelWidth(100, 10, 200); got != minRowLabelWidth {
 		t.Errorf("narrow row: RowLabelWidth = %d, want %d", got, minRowLabelWidth)
+	}
+}
+
+func TestEnabledTextButton(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		calls := 0
+		press(EnabledTextButton("Reset", style.ButtonPaddingSmall, enabled, func(*widget.ButtonClickedEventArgs) { calls++ }))
+		if want := map[bool]int{true: 1, false: 0}[enabled]; calls != want {
+			t.Errorf("enabled %v: handler calls = %d, want %d", enabled, calls, want)
+		}
+	}
+}
+
+func TestCycleButtonNext(t *testing.T) {
+	tests := []struct {
+		current, count int
+		want           int
+	}{
+		{0, 3, 1},
+		{2, 3, 0},
+		{-1, 3, 0},
+		{0, 1, 0},
+	}
+	for _, tt := range tests {
+		got := -1
+		press(CycleButton("x", tt.current, tt.count, 0, func(next int) { got = next }))
+		if got != tt.want {
+			t.Errorf("current %d of %d: next = %d, want %d", tt.current, tt.count, got, tt.want)
+		}
+	}
+
+	called := false
+	press(CycleButton("x", -1, 0, 0, func(int) { called = true }))
+	if called {
+		t.Error("no values: handler called")
 	}
 }
 

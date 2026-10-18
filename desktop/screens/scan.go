@@ -133,24 +133,12 @@ func (s *ScanProgressScreen) Build() *widget.Container {
 	}
 
 	// Cancel button
-	cancelBtnImage := style.ButtonImage()
-	if s.cancelPending {
-		cancelBtnImage = style.DisabledButtonImage()
-	}
-
-	cancelButton := widget.NewButton(
-		widget.ButtonOpts.Image(cancelBtnImage),
-		widget.ButtonOpts.Text("Cancel", style.FontFace(), style.ButtonTextColor()),
-		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingMedium)),
-		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			if !s.cancelPending {
-				s.cancelPending = true
-				if s.scanner != nil {
-					s.scanner.Cancel()
-				}
-			}
-		}),
-	)
+	cancelButton := widgets.EnabledTextButton("Cancel", style.ButtonPaddingMedium, !s.cancelPending, func(args *widget.ButtonClickedEventArgs) {
+		s.cancelPending = true
+		if s.scanner != nil {
+			s.scanner.Cancel()
+		}
+	})
 	centerContent.AddChild(cancelButton)
 
 	rootContainer.AddChild(centerContent)

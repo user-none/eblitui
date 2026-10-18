@@ -49,6 +49,7 @@ type GameplayManager struct {
 	framePacer      *framePacer
 	currentGame     *storage.GameEntry
 	disc            *romloader.Disc // open streaming disc (disc-based systems)
+	gameShaders     []string        // game shaders of the running game, its overrides applied
 
 	// Emulation goroutine control
 	emuControl        *EmuControl
@@ -207,6 +208,12 @@ func (gm *GameplayManager) CurrentGameCRC() string {
 	return ""
 }
 
+// GameShaders returns the game shaders of the running game: the global
+// game shaders with the game's overrides applied
+func (gm *GameplayManager) GameShaders() []string {
+	return gm.gameShaders
+}
+
 // Launch starts the emulator with the specified game. discIndex selects
 // which disc of a multi-disc game to launch; -1, or any index out of
 // range, uses the entry's remembered SelectedDisc. Ignored for single-disc
@@ -276,16 +283,13 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bo
 		emu.SetRom(romData)
 	}
 
-	// Apply core options: use config value if set, otherwise declared default
+	// Apply core options and resolve the game shaders, with the game's
+	// overrides of the global settings
+	overrides := loadOverrides(gameCRC)
 	for _, opt := range gm.systemInfo.CoreOptions {
-		if gm.config.CoreOptions != nil {
-			if v, ok := gm.config.CoreOptions[opt.Key]; ok {
-				emu.SetOption(opt.Key, v)
-				continue
-			}
-		}
-		emu.SetOption(opt.Key, opt.Default)
+		emu.SetOption(opt.Key, launchCoreOption(opt, gm.config.CoreOptions, overrides))
 	}
+	gm.gameShaders = launchGameShaders(gm.config.Shaders.GameShaders, overrides)
 
 	// Load BIOS files
 	for _, opt := range gm.systemInfo.BIOSOptions {

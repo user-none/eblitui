@@ -110,7 +110,7 @@ func (c *CoreSection) buildBIOSOption(section *widget.Container, focus types.Foc
 		}
 	}
 
-	// Find next cycle value
+	// Find the current cycle value
 	currentIdx := 0
 	for i, val := range cycleOptions {
 		if val == activeLabel {
@@ -118,7 +118,6 @@ func (c *CoreSection) buildBIOSOption(section *widget.Container, focus types.Foc
 			break
 		}
 	}
-	nextIdx := (currentIdx + 1) % len(cycleOptions)
 
 	activeRow := widgets.SettingsRow(2)
 	activeRow.AddChild(widget.NewText(
@@ -126,29 +125,18 @@ func (c *CoreSection) buildBIOSOption(section *widget.Container, focus types.Foc
 		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
 	))
 
-	activeBtn := widget.NewButton(
-		widget.ButtonOpts.Image(style.ButtonImage()),
-		widget.ButtonOpts.Text(activeLabel, style.FontFace(), style.ButtonTextColor()),
-		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
-		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-			widget.WidgetOpts.MinSize(style.Px(60), 0),
-		),
-		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			cfg := c.getBIOSConfig(opt.Key)
-			nextVal := cycleOptions[nextIdx]
-			if nextVal == "None" {
-				cfg.Active = ""
-			} else {
-				cfg.Active = nextVal
-			}
-			c.setBIOSConfig(opt.Key, cfg)
-			focus.SetPendingFocus(activeKey)
-			c.callback.RequestRebuild()
-		}),
-	)
+	activeBtn := widgets.CycleButton(activeLabel, currentIdx, len(cycleOptions), style.Px(60), func(next int) {
+		cfg := c.getBIOSConfig(opt.Key)
+		nextVal := cycleOptions[next]
+		if nextVal == "None" {
+			cfg.Active = ""
+		} else {
+			cfg.Active = nextVal
+		}
+		c.setBIOSConfig(opt.Key, cfg)
+		focus.SetPendingFocus(activeKey)
+		c.callback.RequestRebuild()
+	})
 	focus.RegisterFocusButton(activeKey, activeBtn)
 	activeRow.AddChild(activeBtn)
 	section.AddChild(activeRow)

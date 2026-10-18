@@ -538,7 +538,7 @@ func (a *App) toggleFullscreen() {
 // initScreens creates all screen instances
 func (a *App) initScreens() {
 	a.libraryScreen = screens.NewLibraryScreen(a, a.library, a.config)
-	a.detailScreen = screens.NewDetailScreen(a, a.library, a.achievementManager, a.systemInfo.ConsoleID, a.cheatSystem(), a.systemInfo.BigEndianMemory)
+	a.detailScreen = screens.NewDetailScreen(a, a.library, a.achievementManager, a.systemInfo.ConsoleID, a.cheatSystem(), a.systemInfo.BigEndianMemory, a.systemInfo.CoreOptions)
 	a.settingsScreen = screens.NewSettingsScreen(a, a.library, a.config, a.achievementManager, a.systemInfo.SerializeSize, a.systemInfo, appIcon)
 	a.scanScreen = screens.NewScanProgressScreen()
 	a.errorScreen = screens.NewErrorScreen(a, a.errorFile, a.errorPath, a.handleDeleteAndContinue)
@@ -1470,7 +1470,7 @@ func (a *App) preloadConfiguredShaders() {
 func (a *App) getActiveShaders() []string {
 	switch a.state {
 	case StatePlaying:
-		return a.config.Shaders.GameShaders
+		return a.gameplay.GameShaders()
 	default:
 		return a.config.Shaders.UIShaders
 	}

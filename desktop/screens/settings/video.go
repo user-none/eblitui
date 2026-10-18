@@ -4,6 +4,8 @@
 package settings
 
 import (
+	"slices"
+
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/desktop/shader"
@@ -159,14 +161,6 @@ func (v *VideoSection) buildAspectRatioRow(focus types.FocusManager) *widget.Con
 	current := v.config.Video.AspectRatio
 	displayName := storage.AspectRatioDisplayName(current)
 
-	nextIdx := 0
-	for i, ar := range storage.ValidAspectRatios {
-		if ar == current {
-			nextIdx = (i + 1) % len(storage.ValidAspectRatios)
-			break
-		}
-	}
-
 	row := widgets.SettingsRow(2)
 
 	label := widget.NewText(
@@ -175,23 +169,13 @@ func (v *VideoSection) buildAspectRatioRow(focus types.FocusManager) *widget.Con
 	)
 	row.AddChild(label)
 
-	cycleBtn := widget.NewButton(
-		widget.ButtonOpts.Image(style.ButtonImage()),
-		widget.ButtonOpts.Text(displayName, style.FontFace(), style.ButtonTextColor()),
-		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
-		widget.ButtonOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				VerticalPosition: widget.GridLayoutPositionCenter,
-			}),
-			widget.WidgetOpts.MinSize(style.Px(60), 0),
-		),
-		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			v.config.Video.AspectRatio = storage.ValidAspectRatios[nextIdx]
-			storage.SaveConfig(v.config)
-			focus.SetPendingFocus("video-aspect-ratio")
-			v.callback.RequestRebuild()
-		}),
-	)
+	ratios := storage.ValidAspectRatios
+	cycleBtn := widgets.CycleButton(displayName, slices.Index(ratios, current), len(ratios), style.Px(60), func(next int) {
+		v.config.Video.AspectRatio = ratios[next]
+		storage.SaveConfig(v.config)
+		focus.SetPendingFocus("video-aspect-ratio")
+		v.callback.RequestRebuild()
+	})
 	focus.RegisterFocusButton("video-aspect-ratio", cycleBtn)
 	row.AddChild(cycleBtn)
 

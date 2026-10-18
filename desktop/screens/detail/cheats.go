@@ -56,7 +56,7 @@ type CheatsSection struct {
 	game         *storage.GameEntry
 
 	set           gamecheats.Set
-	gameSettings  *storage.GameSettingsFile // which cheats are on, and the custom cheats
+	gameSettings  *storage.GameSettingsFile // which cheats are on, and the custom cheats; shared with the Settings page
 	form          *cheatForm
 	confirmDelete widgets.ConfirmDelete // the two-press Delete of the custom cheats
 	textInputs    *widgets.TextInputGroup
@@ -82,9 +82,9 @@ func NewCheatsSection(callback types.ScreenCallback, system cheats.System, bigEn
 	}
 }
 
-// SetGame reads the game's settings file and cheats and closes any open
-// form. A nil game clears the page.
-func (c *CheatsSection) SetGame(game *storage.GameEntry) {
+// SetGame sets the game and its settings file, reads the game's cheats,
+// and closes any open form. A nil game clears the page.
+func (c *CheatsSection) SetGame(game *storage.GameEntry, gameSettings *storage.GameSettingsFile) {
 	c.game = game
 	c.set = gamecheats.Set{}
 	c.gameSettings = nil
@@ -94,13 +94,8 @@ func (c *CheatsSection) SetGame(game *storage.GameEntry) {
 		return
 	}
 
-	settings, err := storage.LoadGameSettings(game.CRC32)
-	if err != nil {
-		log.Printf("Failed to load game settings for %s: %v", game.CRC32, err)
-		settings = &storage.GameSettingsFile{}
-	}
-	c.gameSettings = settings
-	c.set = gamecheats.Load(game.CRC32, settings, c.system, c.bigEndian)
+	c.gameSettings = gameSettings
+	c.set = gamecheats.Load(game.CRC32, gameSettings, c.system, c.bigEndian)
 }
 
 // EnabledCount returns how many cheats are on. Enabled IDs with no

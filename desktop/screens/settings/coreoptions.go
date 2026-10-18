@@ -4,6 +4,8 @@
 package settings
 
 import (
+	"slices"
+
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/desktop/storage"
@@ -40,30 +42,11 @@ func buildCoreOptionRow(focus types.FocusManager, callback types.ScreenCallback,
 
 	case coreif.CoreOptionSelect:
 		current := getCoreOptionValue(config, opt)
-		nextIdx := 0
-		for i, v := range opt.Values {
-			if v == current {
-				nextIdx = (i + 1) % len(opt.Values)
-				break
-			}
-		}
-
-		cycleBtn := widget.NewButton(
-			widget.ButtonOpts.Image(style.ButtonImage()),
-			widget.ButtonOpts.Text(current, style.FontFace(), style.ButtonTextColor()),
-			widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
-			widget.ButtonOpts.WidgetOpts(
-				widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-					VerticalPosition: widget.GridLayoutPositionCenter,
-				}),
-				widget.WidgetOpts.MinSize(style.Px(60), 0),
-			),
-			widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-				setCoreOptionValue(config, opt.Key, opt.Values[nextIdx])
-				focus.SetPendingFocus(focusKey)
-				callback.RequestRebuild()
-			}),
-		)
+		cycleBtn := widgets.CycleButton(current, slices.Index(opt.Values, current), len(opt.Values), style.Px(60), func(next int) {
+			setCoreOptionValue(config, opt.Key, opt.Values[next])
+			focus.SetPendingFocus(focusKey)
+			callback.RequestRebuild()
+		})
 		focus.RegisterFocusButton(focusKey, cycleBtn)
 		row.AddChild(cycleBtn)
 
@@ -87,11 +70,11 @@ func buildCoreOptionRow(focus types.FocusManager, callback types.ScreenCallback,
 	return row
 }
 
-// categoryOptions returns the core options of the category in display
+// CategoryOptions returns the core options of the category in display
 // order: the ungrouped options first, in declared order, then each
 // group in order of its first declared option, with its options in
 // declared order.
-func categoryOptions(opts []coreif.CoreOption, category coreif.CoreOptionCategory) []coreif.CoreOption {
+func CategoryOptions(opts []coreif.CoreOption, category coreif.CoreOptionCategory) []coreif.CoreOption {
 	var out []coreif.CoreOption
 	for _, o := range opts {
 		if o.Category == category && o.Group == "" {
@@ -118,7 +101,7 @@ func categoryOptions(opts []coreif.CoreOption, category coreif.CoreOptionCategor
 // adds so the navigation zone follows the rows.
 func coreOptionFocusKeys(opts []coreif.CoreOption, category coreif.CoreOptionCategory, prefix string) []string {
 	var keys []string
-	for _, opt := range categoryOptions(opts, category) {
+	for _, opt := range CategoryOptions(opts, category) {
 		keys = append(keys, prefix+"-opt-"+opt.Key)
 	}
 	return keys
@@ -128,7 +111,7 @@ func coreOptionFocusKeys(opts []coreif.CoreOption, category coreif.CoreOptionCat
 // display order, a section header before each group's rows.
 func addCoreOptionRows(container *widget.Container, focus types.FocusManager, callback types.ScreenCallback, config *storage.Config, opts []coreif.CoreOption, category coreif.CoreOptionCategory, prefix string) {
 	group := ""
-	for _, opt := range categoryOptions(opts, category) {
+	for _, opt := range CategoryOptions(opts, category) {
 		if opt.Group != "" && opt.Group != group {
 			container.AddChild(widgets.SectionHeader(opt.Group))
 		}

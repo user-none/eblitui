@@ -13,6 +13,7 @@ import (
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/desktop/achievements"
 	"github.com/user-none/eblitui/desktop/cheats"
 	"github.com/user-none/eblitui/desktop/screens/detail"
@@ -36,21 +37,24 @@ type DetailScreen struct {
 	// Encapsulated pages
 	overviewPage    *detail.OverviewSection
 	cheatsPage      *detail.CheatsSection // nil when the core has no cheat support
+	settingsPage    *detail.SettingsSection
 	screenshotsPage *detail.ScreenshotsSection
 }
 
-// cheatsPageKey and screenshotsPageKey are the focus keys of the Cheats and
-// Screenshots pages in the sidebar
+// cheatsPageKey, settingsPageKey, and screenshotsPageKey are the focus keys
+// of the Cheats, Settings, and Screenshots pages in the sidebar
 const (
 	cheatsPageKey      = "page-cheats"
+	settingsPageKey    = "page-settings"
 	screenshotsPageKey = "page-screenshots"
 )
 
 // NewDetailScreen creates a new detail screen. cheatSystem is the core's
 // cheat system, or 0 when the core has no cheat support; the Cheats page
 // is listed only when it is set. cheatBigEndian is the byte order of the
-// core's memory, which cheats are converted to.
-func NewDetailScreen(callback ScreenCallback, library *storage.Library, achievementManager *achievements.Manager, defaultConsoleID int, cheatSystem cheats.System, cheatBigEndian bool) *DetailScreen {
+// core's memory, which cheats are converted to. coreOptions are the
+// core's options, of which the Settings page lists the per game ones.
+func NewDetailScreen(callback ScreenCallback, library *storage.Library, achievementManager *achievements.Manager, defaultConsoleID int, cheatSystem cheats.System, cheatBigEndian bool, coreOptions []coreif.CoreOption) *DetailScreen {
 	s := &DetailScreen{
 		callback: callback,
 		library:  library,
@@ -66,6 +70,8 @@ func NewDetailScreen(callback ScreenCallback, library *storage.Library, achievem
 		s.cheatsPage = detail.NewCheatsSection(callback, cheatSystem, cheatBigEndian, s.contentWidth)
 		s.pages.sections = append(s.pages.sections, sectionDescriptor{label: "Cheats", focusKey: cheatsPageKey, build: s.cheatsPage.Build, setupNav: s.setupCheatsNav})
 	}
+	s.settingsPage = detail.NewSettingsSection(callback, coreOptions, s.contentWidth)
+	s.pages.sections = append(s.pages.sections, sectionDescriptor{label: "Settings", focusKey: settingsPageKey, build: s.settingsPage.Build, setupNav: s.setupSettingsNav})
 	s.screenshotsPage = detail.NewScreenshotsSection(callback, s.contentWidth)
 	s.pages.sections = append(s.pages.sections, sectionDescriptor{label: "Screenshots", focusKey: screenshotsPageKey, build: s.screenshotsPage.Build, setupNav: s.setupScreenshotsNav})
 	return s
@@ -86,10 +92,23 @@ func (s *DetailScreen) SetGame(gameCRC string) {
 	s.scrollContainer = nil
 	s.scrollTop = 0
 
+	// The Cheats and Settings pages edit the same settings file, so they
+	// share one copy and neither saves over the other's changes
+	var gameSettings *storage.GameSettingsFile
+	if s.game != nil {
+		var err error
+		gameSettings, err = storage.LoadGameSettings(s.game.CRC32)
+		if err != nil {
+			log.Printf("Failed to load game settings for %s: %v", s.game.CRC32, err)
+			gameSettings = &storage.GameSettingsFile{}
+		}
+	}
+
 	s.overviewPage.SetGame(s.game, s.files)
 	if s.cheatsPage != nil {
-		s.cheatsPage.SetGame(s.game)
+		s.cheatsPage.SetGame(s.game, gameSettings)
 	}
+	s.settingsPage.SetGame(s.game, gameSettings)
 	s.screenshotsPage.SetGame(s.game)
 }
 
@@ -165,21 +184,9 @@ func (s *DetailScreen) Build() *widget.Container {
 		s.RegisterFocusButton("play", playButton)
 		buttonContainer.AddChild(playButton)
 
-		resumeImage := style.ButtonImage()
-		if !hasResume {
-			resumeImage = style.DisabledButtonImage()
-		}
-
-		resumeButton := widget.NewButton(
-			widget.ButtonOpts.Image(resumeImage),
-			widget.ButtonOpts.Text("Resume", style.FontFace(), style.ButtonTextColor()),
-			widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingMedium)),
-			widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-				if hasResume {
-					s.callback.LaunchGame(s.game.CRC32, true, -1)
-				}
-			}),
-		)
+		resumeButton := widgets.EnabledTextButton("Resume", style.ButtonPaddingMedium, hasResume, func(args *widget.ButtonClickedEventArgs) {
+			s.callback.LaunchGame(s.game.CRC32, true, -1)
+		})
 		s.RegisterFocusButton("resume", resumeButton)
 		buttonContainer.AddChild(resumeButton)
 	} else {
@@ -453,6 +460,10 @@ func (s *DetailScreen) setupOverviewNav() {
 
 func (s *DetailScreen) setupCheatsNav() {
 	s.setupPageNav(s.cheatsPage.NavZones())
+}
+
+func (s *DetailScreen) setupSettingsNav() {
+	s.setupPageNav(s.settingsPage.NavZones())
 }
 
 // setupPageNav links the selected page's zones, listed from the top, to

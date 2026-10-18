@@ -88,29 +88,18 @@ func (l *LibrarySection) Build(focus types.FocusManager) *widget.Container {
 	buttonRow.AddChild(addDirBtn)
 
 	// Remove Folder button - disabled when nothing selected, removes all selected folders
-	removeButtonImage := style.ButtonImage()
-	if len(l.selectedDirs) == 0 {
-		removeButtonImage = style.DisabledButtonImage()
-	}
-	removeBtn := widget.NewButton(
-		widget.ButtonOpts.Image(removeButtonImage),
-		widget.ButtonOpts.Text("Remove Folder", style.FontFace(), style.ButtonTextColor()),
-		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingMedium)),
-		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			if len(l.selectedDirs) > 0 {
-				// Collect paths to remove (iterate in reverse to avoid index shifting issues)
-				for idx := len(l.library.ScanDirectories) - 1; idx >= 0; idx-- {
-					if l.selectedDirs[idx] {
-						path := l.library.ScanDirectories[idx].Path
-						l.library.RemoveScanDirectory(path)
-					}
-				}
-				l.selectedDirs = make(map[int]bool) // Clear selection
-				storage.SaveLibrary(l.library)
-				l.callback.RequestRebuild()
+	removeBtn := widgets.EnabledTextButton("Remove Folder", style.ButtonPaddingMedium, len(l.selectedDirs) > 0, func(args *widget.ButtonClickedEventArgs) {
+		// Collect paths to remove (iterate in reverse to avoid index shifting issues)
+		for idx := len(l.library.ScanDirectories) - 1; idx >= 0; idx-- {
+			if l.selectedDirs[idx] {
+				path := l.library.ScanDirectories[idx].Path
+				l.library.RemoveScanDirectory(path)
 			}
-		}),
-	)
+		}
+		l.selectedDirs = make(map[int]bool) // Clear selection
+		storage.SaveLibrary(l.library)
+		l.callback.RequestRebuild()
+	})
 	focus.RegisterFocusButton("lib-remove", removeBtn)
 	buttonRow.AddChild(removeBtn)
 

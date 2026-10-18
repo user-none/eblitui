@@ -34,13 +34,13 @@ func keysOf(opts []coreif.CoreOption) string {
 func TestCategoryOptionsOrder(t *testing.T) {
 	// Ungrouped first in declared order, then Enhancements (first
 	// declared group) with both its options, then Timing.
-	if got := keysOf(categoryOptions(testOptions, coreif.CoreOptionCategoryVideo)); got != "v1 v4 v2 v5 v3" {
+	if got := keysOf(CategoryOptions(testOptions, coreif.CoreOptionCategoryVideo)); got != "v1 v4 v2 v5 v3" {
 		t.Fatalf("video order %q", got)
 	}
-	if got := keysOf(categoryOptions(testOptions, coreif.CoreOptionCategoryCore)); got != "c1 c2" {
+	if got := keysOf(CategoryOptions(testOptions, coreif.CoreOptionCategoryCore)); got != "c1 c2" {
 		t.Fatalf("core order %q", got)
 	}
-	if got := categoryOptions(testOptions, coreif.CoreOptionCategoryAudio); len(got) != 0 {
+	if got := CategoryOptions(testOptions, coreif.CoreOptionCategoryAudio); len(got) != 0 {
 		t.Fatalf("audio options %v", got)
 	}
 }

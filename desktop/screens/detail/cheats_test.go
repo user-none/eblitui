@@ -147,7 +147,7 @@ func TestCheatsSetGameNilClears(t *testing.T) {
 	c.set.LoadErr = errors.New("read failed")
 	c.form = &cheatForm{edit: -1}
 
-	c.SetGame(nil)
+	c.SetGame(nil, nil)
 
 	if c.set.Database != nil || c.set.LoadErr != nil || c.gameSettings != nil || c.form != nil {
 		t.Error("cheat state not cleared by SetGame(nil)")

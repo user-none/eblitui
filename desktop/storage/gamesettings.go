@@ -7,6 +7,8 @@ import (
 	"errors"
 	"os"
 	"slices"
+
+	"github.com/user-none/eblitui/coreif"
 )
 
 // GameSettingsFile holds a game's settings, stored per game in
@@ -14,6 +16,14 @@ import (
 type GameSettingsFile struct {
 	SaveStates SaveStateSettings `json:"saveStates"`
 	Cheats     CheatSettings     `json:"cheats"`
+	Overrides  OverrideSettings  `json:"overrides"`
+}
+
+// OverrideSettings holds a game's overrides of global settings. A setting
+// with no entry uses the global value.
+type OverrideSettings struct {
+	CoreOptions map[string]string `json:"coreOptions,omitempty"` // core option key -> value
+	Shaders     map[string]bool   `json:"shaders,omitempty"`     // shader ID -> on or off
 }
 
 // SaveStateSettings holds a game's save state choices.
@@ -85,4 +95,67 @@ func (s *GameSettingsFile) SetCheatEnabled(id string, on bool) {
 	case !on && idx >= 0:
 		s.Cheats.Enabled = slices.Delete(s.Cheats.Enabled, idx, idx+1)
 	}
+}
+
+// CoreOption returns the game's value for a core option and whether the
+// game overrides it. Only per game Bool and Select options can be
+// overridden, and only with a value the option accepts.
+func (o *OverrideSettings) CoreOption(opt coreif.CoreOption) (string, bool) {
+	if !opt.PerGame {
+		return "", false
+	}
+	v, ok := o.CoreOptions[opt.Key]
+	if !ok {
+		return "", false
+	}
+	valid := false
+	switch opt.Type {
+	case coreif.CoreOptionBool:
+		valid = v == "true" || v == "false"
+	case coreif.CoreOptionSelect:
+		valid = slices.Contains(opt.Values, v)
+	}
+	if !valid {
+		return "", false
+	}
+	return v, true
+}
+
+// SetCoreOption overrides a core option with value
+func (o *OverrideSettings) SetCoreOption(key, value string) {
+	if o.CoreOptions == nil {
+		o.CoreOptions = make(map[string]string)
+	}
+	o.CoreOptions[key] = value
+}
+
+// ClearCoreOption removes the core option's override
+func (o *OverrideSettings) ClearCoreOption(key string) {
+	delete(o.CoreOptions, key)
+}
+
+// Shader returns whether the game turns the shader on and whether the game
+// overrides it
+func (o *OverrideSettings) Shader(id string) (on bool, ok bool) {
+	on, ok = o.Shaders[id]
+	return on, ok
+}
+
+// SetShader overrides the shader on or off
+func (o *OverrideSettings) SetShader(id string, on bool) {
+	if o.Shaders == nil {
+		o.Shaders = make(map[string]bool)
+	}
+	o.Shaders[id] = on
+}
+
+// ClearShader removes the shader's override
+func (o *OverrideSettings) ClearShader(id string) {
+	delete(o.Shaders, id)
+}
+
+// Reset removes every override
+func (o *OverrideSettings) Reset() {
+	o.CoreOptions = nil
+	o.Shaders = nil
 }
