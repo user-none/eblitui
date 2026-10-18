@@ -1003,61 +1003,22 @@ func containsSubstring(s, substr string) bool {
 	return false
 }
 
-func TestDisableAnalogStickSerialization(t *testing.T) {
-	t.Run("omitted when false", func(t *testing.T) {
-		config := DefaultConfig()
-		data, err := json.Marshal(config)
-		if err != nil {
-			t.Fatal(err)
-		}
-		s := string(data)
-		if contains(s, "disableAnalogStick") {
-			t.Error("disableAnalogStick should be omitted when false")
-		}
-	})
-
-	t.Run("included when true", func(t *testing.T) {
-		config := DefaultConfig()
-		config.Input.DisableAnalogStick = true
-		data, err := json.Marshal(config)
-		if err != nil {
-			t.Fatal(err)
-		}
-		s := string(data)
-		if !contains(s, "disableAnalogStick") {
-			t.Error("disableAnalogStick should be in JSON when true")
-		}
-	})
-
-	t.Run("roundtrip preserves true", func(t *testing.T) {
-		config := DefaultConfig()
-		config.Input.DisableAnalogStick = true
-
-		data, err := json.Marshal(config)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		var restored Config
-		if err := json.Unmarshal(data, &restored); err != nil {
-			t.Fatal(err)
-		}
-
-		if !restored.Input.DisableAnalogStick {
-			t.Error("DisableAnalogStick should be true after roundtrip")
-		}
-	})
-
-	t.Run("absent defaults to false", func(t *testing.T) {
-		jsonBytes := []byte(`{"input": {}}`)
-		var config Config
-		if err := json.Unmarshal(jsonBytes, &config); err != nil {
-			t.Fatal(err)
-		}
-		if config.Input.DisableAnalogStick {
-			t.Error("DisableAnalogStick should default to false when absent")
-		}
-	})
+func TestLegacyDisableAnalogStickIgnored(t *testing.T) {
+	var restored Config
+	legacy := `{"input":{"p1Keyboard":{"Up":"ArrowUp"},"disableAnalogStick":true}}`
+	if err := json.Unmarshal([]byte(legacy), &restored); err != nil {
+		t.Fatal(err)
+	}
+	if restored.Input.P1Keyboard["Up"] != "ArrowUp" {
+		t.Error("p1Keyboard should still load")
+	}
+	data, err := json.Marshal(&restored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contains(string(data), "disableAnalogStick") {
+		t.Error("legacy disableAnalogStick should not survive a save")
+	}
 }
 
 func TestPresentButZeroVsMissing(t *testing.T) {

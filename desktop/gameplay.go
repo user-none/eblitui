@@ -923,13 +923,11 @@ func (gm *GameplayManager) Exit(saveResume bool) {
 // player-to-controller assignment. Player 1 always includes the keyboard;
 // a player with no bound controller reads 0 from the pad.
 func (gm *GameplayManager) pollButtons() (p1, p2 uint32) {
-	disableAnalog := gm.config.Input.DisableAnalogStick
-
 	p1Pad, p1HasPad := gm.assignment.PadFor(0)
-	p1 = PollButtons(gm.mappings[0], p1Pad, p1HasPad, disableAnalog)
+	p1 = PollButtons(gm.mappings[0], p1Pad, p1HasPad)
 
 	if p2Pad, ok := gm.assignment.PadFor(1); ok {
-		p2 = PollGamepadButtons(gm.mappings[1], p2Pad, disableAnalog)
+		p2 = PollGamepadButtons(gm.mappings[1], p2Pad)
 	}
 	return p1, p2
 }

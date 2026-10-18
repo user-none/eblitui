@@ -218,12 +218,12 @@ func (dr *directRunner) pollInputToShared() {
 	}
 
 	// Player 1: keyboard + first gamepad
-	buttons := PollButtons(dr.inputMapping, gamepadID, hasGamepad, false)
+	buttons := PollButtons(dr.inputMapping, gamepadID, hasGamepad)
 	dr.sharedInput.Set(0, buttons)
 
 	// Player 2: second gamepad only
 	if len(gamepadIDs) > 1 {
-		p2buttons := PollGamepadButtons(dr.inputMapping, gamepadIDs[1], false)
+		p2buttons := PollGamepadButtons(dr.inputMapping, gamepadIDs[1])
 		dr.sharedInput.Set(1, p2buttons)
 	}
 }

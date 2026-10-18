@@ -20,9 +20,6 @@ func (s *InputSection) buildMainView(focus types.FocusManager, section *widget.C
 	// Core options section (options with Category == "Input")
 	addCoreOptionRows(section, focus, s.callback, s.config, s.systemInfo.CoreOptions, coreif.CoreOptionCategoryInput, "input")
 
-	// Analog stick toggle
-	section.AddChild(s.buildAnalogStickRow(focus))
-
 	// Players
 	section.AddChild(widgets.SectionHeader("Players"))
 	section.AddChild(s.buildKeyboardPlayerRow())
@@ -223,9 +220,6 @@ func (s *InputSection) setupMainNavigation(focus types.FocusManager) {
 		zones = append(zones, "input-core-opts")
 	}
 
-	focus.RegisterNavZone("input-analog-stick", types.NavZoneVertical, []string{"input-analog-stick"}, 0)
-	zones = append(zones, "input-analog-stick")
-
 	playerKeys := make([]string, 0, s.playerCount())
 	for p := 0; p < s.playerCount(); p++ {
 		playerKeys = append(playerKeys, fmt.Sprintf("input-player-%d", p))
@@ -251,27 +245,4 @@ func (s *InputSection) setupMainNavigation(focus types.FocusManager) {
 	zones = append(zones, "input-new-profile")
 
 	types.ChainZones(focus, zones)
-}
-
-// buildAnalogStickRow creates the "Disable Analog Stick" toggle row
-func (s *InputSection) buildAnalogStickRow(focus types.FocusManager) *widget.Container {
-	row := widgets.SettingsRow(2)
-
-	label := widget.NewText(
-		widget.TextOpts.Text("Disable Analog Stick", style.FontFace(), style.Text),
-		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
-	)
-	row.AddChild(label)
-
-	isDisabled := s.config.Input.DisableAnalogStick
-	toggleBtn := widgets.OnOffButton(isDisabled, func(args *widget.ButtonClickedEventArgs) {
-		s.config.Input.DisableAnalogStick = !s.config.Input.DisableAnalogStick
-		storage.SaveConfig(s.config)
-		focus.SetPendingFocus("input-analog-stick")
-		s.callback.RequestRebuild()
-	})
-	focus.RegisterFocusButton("input-analog-stick", toggleBtn)
-	row.AddChild(toggleBtn)
-
-	return row
 }

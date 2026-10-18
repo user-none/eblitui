@@ -479,7 +479,7 @@ func (s *InputSection) FirstNavZone() string {
 			return "input-core-opts"
 		}
 	}
-	return "input-analog-stick"
+	return "input-players"
 }
 
 // NavZones returns all content zones for the current view, for wiring
@@ -494,7 +494,6 @@ func (s *InputSection) NavZones() []string {
 		return []string{"input-models", "input-newp-actions"}
 	}
 	return []string{
-		"input-core-opts", "input-analog-stick",
-		"input-players", "input-kb-edit", "input-profiles", "input-new-profile",
+		"input-core-opts", "input-players", "input-kb-edit", "input-profiles", "input-new-profile",
 	}
 }

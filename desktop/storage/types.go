@@ -35,11 +35,10 @@ type BIOSConfig struct {
 // InputConfig contains input binding overrides and controller configuration.
 // Empty/nil maps mean "use adaptor defaults." Only user overrides are stored.
 type InputConfig struct {
-	P1Keyboard         map[string]string   `json:"p1Keyboard,omitempty"`         // button name -> key name override
-	DisableAnalogStick bool                `json:"disableAnalogStick,omitempty"` // disable analog stick mirroring d-pad
-	Profiles           []ControllerProfile `json:"profiles,omitempty"`           // named controller mappings, in creation order
-	Players            []PlayerConfig      `json:"players,omitempty"`            // player slot -> profile assignment
-	PadMappings        map[string]string   `json:"padMappings,omitempty"`        // SDL GUID -> generated standard-layout mapping line
+	P1Keyboard  map[string]string   `json:"p1Keyboard,omitempty"`  // button name -> key name override
+	Profiles    []ControllerProfile `json:"profiles,omitempty"`    // named controller mappings, in creation order
+	Players     []PlayerConfig      `json:"players,omitempty"`     // player slot -> profile assignment
+	PadMappings map[string]string   `json:"padMappings,omitempty"` // SDL GUID -> generated standard-layout mapping line
 }
 
 // ControllerProfile is a named controller button mapping for a controller

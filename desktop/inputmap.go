@@ -337,9 +337,8 @@ func ResolvePadDisplay(buttonName string, defaultPad string, overrides map[strin
 
 // PollButtons reads P1 input from keyboard and gamepad (including D-pad
 // and analog stick). All buttons including D-pad are in the mapping.
-// When disableAnalog is true, the analog stick is not polled.
 // Returns a button bitmask.
-func PollButtons(mapping InputMapping, gamepadID ebiten.GamepadID, hasGamepad, disableAnalog bool) uint32 {
+func PollButtons(mapping InputMapping, gamepadID ebiten.GamepadID, hasGamepad bool) uint32 {
 	var buttons uint32
 
 	// All keyboard-mapped buttons (including D-pad)
@@ -362,18 +361,15 @@ func PollButtons(mapping InputMapping, gamepadID ebiten.GamepadID, hasGamepad, d
 
 	// Analog stick follows d-pad mappings so remapped d-pad buttons
 	// are also triggered by the stick.
-	if !disableAnalog {
-		pollAnalogStick(&buttons, mapping, gamepadID)
-	}
+	pollAnalogStick(&buttons, mapping, gamepadID)
 
 	return buttons
 }
 
 // PollGamepadButtons reads P2 input from gamepad only (D-pad + analog stick
 // + mapped buttons). No keyboard since that belongs to P1.
-// When disableAnalog is true, the analog stick is not polled.
 // All D-pad buttons are expected in the mapping.
-func PollGamepadButtons(mapping InputMapping, gamepadID ebiten.GamepadID, disableAnalog bool) uint32 {
+func PollGamepadButtons(mapping InputMapping, gamepadID ebiten.GamepadID) uint32 {
 	var buttons uint32
 
 	// All gamepad-mapped buttons (including D-pad)
@@ -385,9 +381,7 @@ func PollGamepadButtons(mapping InputMapping, gamepadID ebiten.GamepadID, disabl
 
 	// Analog stick follows d-pad mappings so remapped d-pad buttons
 	// are also triggered by the stick.
-	if !disableAnalog {
-		pollAnalogStick(&buttons, mapping, gamepadID)
-	}
+	pollAnalogStick(&buttons, mapping, gamepadID)
 
 	return buttons
 }

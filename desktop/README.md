@@ -199,7 +199,7 @@ Organized in tabbed sections:
 - **Appearance** - Theme
 - **Video** - Shader effects for UI and gameplay
 - **Audio** - Volume, mute, fast-forward mute
-- **Input** - Button bindings, analog stick toggle, rumble level
+- **Input** - Button bindings, rumble level
 - **Rewind** - Enable/disable, buffer size, frame step
 - **RetroAchievements** - Login, notification preferences, modes
 
