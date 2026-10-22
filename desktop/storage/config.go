@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 )
 
@@ -44,7 +45,37 @@ func LoadConfig() (*Config, error) {
 	// Apply defaults only for fields that are absent from the file
 	ApplyMissingDefaults(config, presentKeys)
 
+	// Apply any migration for older config versions, saving the result so
+	// the migration runs once
+	if migrateConfig(config) {
+		if err := SaveConfig(config); err != nil {
+			log.Printf("Failed to save migrated config: %v", err)
+		}
+	}
+
 	return config, nil
+}
+
+// configVersion is the current config.json format version. Version 2 added
+// the automatic update check setting.
+const configVersion = 2
+
+// migrateConfig updates a config from an older version to the current one
+// and reports whether it changed anything. Version 0 (absent from the file)
+// is treated as version 1. A version newer than the current one is left for
+// validation to report.
+func migrateConfig(config *Config) bool {
+	migrated := false
+	if config.Version == 0 {
+		config.Version = 1
+		migrated = true
+	}
+	if config.Version == 1 {
+		config.Updates.AutoCheck = true
+		config.Version = 2
+		migrated = true
+	}
+	return migrated
 }
 
 // SaveConfig saves the configuration to config.json atomically

@@ -66,7 +66,7 @@ func newTestScreenshotsSection(t *testing.T, names ...string) (*ScreenshotsSecti
 		decoded <- path
 		return nil, errTestDecode
 	}
-	s.reveal = func(string) error { t.Fatal("reveal called without being replaced"); return nil }
+	s.showInFileManager = func(string) error { t.Fatal("showInFileManager called without being replaced"); return nil }
 	s.SetGame(&storage.GameEntry{CRC32: "ABCD1234"})
 	return s, cb, decoded, dir
 }
@@ -362,37 +362,37 @@ func TestScreenshotsStaleDecodeDropped(t *testing.T) {
 	}
 }
 
-func TestScreenshotsRevealSelected(t *testing.T) {
+func TestScreenshotsShowSelectedInFileManager(t *testing.T) {
 	s, cb, decoded, dir := newTestScreenshotsSection(t,
 		"1760540000100.png",
 		"1760540000200.png",
 	)
 	waitDecode(t, decoded)
 
-	var revealed []string
-	s.reveal = func(path string) error {
-		revealed = append(revealed, path)
+	var shown []string
+	s.showInFileManager = func(path string) error {
+		shown = append(shown, path)
 		return nil
 	}
-	s.revealSelected()
-	if len(revealed) != 1 || revealed[0] != filepath.Join(dir, "1760540000200.png") {
-		t.Errorf("revealed %q", revealed)
+	s.showSelectedInFileManager()
+	if len(shown) != 1 || shown[0] != filepath.Join(dir, "1760540000200.png") {
+		t.Errorf("shown %q", shown)
 	}
 	if len(cb.notices) != 0 {
 		t.Errorf("notices on success: %q", cb.notices)
 	}
 
 	// A failure is reported to the user
-	s.reveal = func(string) error { return errors.New("no file manager") }
-	s.revealSelected()
+	s.showInFileManager = func(string) error { return errors.New("no file manager") }
+	s.showSelectedInFileManager()
 	if len(cb.notices) != 1 {
 		t.Errorf("notices = %q, want one", cb.notices)
 	}
 
-	// Nothing selected, nothing revealed
+	// Nothing selected, nothing shown
 	s.SetGame(nil)
-	s.reveal = func(string) error { t.Error("reveal with nothing selected"); return nil }
-	s.revealSelected()
+	s.showInFileManager = func(string) error { t.Error("showInFileManager with nothing selected"); return nil }
+	s.showSelectedInFileManager()
 }
 
 func TestScreenshotsSetGameNilClears(t *testing.T) {

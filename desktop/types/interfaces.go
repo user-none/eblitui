@@ -71,6 +71,30 @@ type ScreenCallback interface {
 	ShowNotification(msg string)       // Show a brief notification message
 }
 
+// UpdateStatus is the update state shown in Settings > About.
+type UpdateStatus struct {
+	Checking  bool   // A check is running
+	Available string // Version of an available update, "" when none
+	Failed    bool   // The last check this session failed
+	LastCheck int64  // Unix time of the last check, 0 = never
+}
+
+// Updates is the update system as seen by the library update bar and
+// Settings > About. Screens are given nil when the update system is off.
+type Updates interface {
+	AppName() string
+	Status() UpdateStatus
+	// BarVersion returns the version the update bar offers, or "" when the
+	// bar is not shown.
+	BarVersion() string
+	CheckNow()
+	IgnoreVersion()
+	Dismiss()
+	// Download opens the available version's release page and ignores
+	// that version for the update bar.
+	Download()
+}
+
 // FocusRestorer is implemented by screens that support focus restoration after rebuilds
 type FocusRestorer interface {
 	// GetPendingFocus returns the target that should receive focus after rebuild

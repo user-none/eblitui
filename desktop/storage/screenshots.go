@@ -153,8 +153,8 @@ func leadingDigits(s string) string {
 
 // ListScreenshots returns the screenshots in dir, newest first. Entries
 // that are not regular files named as screenshots are skipped, so a
-// symlink or a planted file is never previewed, deleted, or revealed. A
-// missing dir lists nothing.
+// symlink or a planted file is never previewed, deleted, or shown in the
+// file manager. A missing dir lists nothing.
 func ListScreenshots(dir string) ([]Screenshot, error) {
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {

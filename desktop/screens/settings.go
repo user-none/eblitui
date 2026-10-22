@@ -40,7 +40,8 @@ type SettingsScreen struct {
 // NewSettingsScreen creates a new settings screen.
 // serializeSize is the bytes per save state for rewind duration estimates.
 // systemInfo provides button definitions and core options for the input section.
-func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config *storage.Config, achievementMgr *achievements.Manager, serializeSize int, systemInfo coreif.SystemInfo, appIcon []byte) *SettingsScreen {
+// updates is nil when the update system is off.
+func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config *storage.Config, achievementMgr *achievements.Manager, serializeSize int, systemInfo coreif.SystemInfo, appIcon []byte, updates types.Updates) *SettingsScreen {
 	s := &SettingsScreen{
 		callback:   callback,
 		library:    settings.NewLibrarySection(callback, library),
@@ -48,7 +49,7 @@ func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config
 		audio:      settings.NewAudioSection(callback, config, systemInfo),
 		rewind:     settings.NewRewindSection(callback, config, serializeSize),
 		input:      settings.NewInputSection(callback, config, systemInfo),
-		about:      settings.NewAboutSection(systemInfo.CoreName, systemInfo.CoreVersion, appIcon),
+		about:      settings.NewAboutSection(callback, config, updates, systemInfo.CoreName, systemInfo.CoreVersion, appIcon),
 	}
 	s.video = settings.NewVideoSection(callback, config, systemInfo, s.contentWidth)
 	s.retroAchievements = settings.NewRetroAchievementsSection(callback, config, achievementMgr, s.contentWidth)
@@ -81,12 +82,17 @@ func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config
 		})
 	}
 
-	// About is always the last section.
-	s.sections = append(s.sections, sectionDescriptor{
+	// About is always the last section. It has controls only when the
+	// update system is on.
+	about := sectionDescriptor{
 		label:    "About",
 		focusKey: "section-about",
 		build:    s.about.Build,
-	})
+	}
+	if s.about.HasUpdates() {
+		about.setupNav = s.setupAboutNav
+	}
+	s.sections = append(s.sections, about)
 
 	return s
 }
@@ -114,6 +120,7 @@ func (s *SettingsScreen) SetConfig(config *storage.Config) {
 	s.rewind.SetConfig(config)
 	s.retroAchievements.SetConfig(config)
 	s.input.SetConfig(config)
+	s.about.SetConfig(config)
 	if s.coreOptions != nil {
 		s.coreOptions.SetConfig(config)
 	}
@@ -253,6 +260,13 @@ func (s *SettingsScreen) setupRewindNav() {
 func (s *SettingsScreen) setupAchievementsNav() {
 	s.SetNavTransition(sidebarZone, types.DirRight, "ra-settings", types.NavIndexFirst)
 	s.SetNavTransition("ra-settings", types.DirLeft, sidebarZone, types.NavIndexFirst)
+}
+
+func (s *SettingsScreen) setupAboutNav() {
+	s.SetNavTransition(sidebarZone, types.DirRight, "about-auto-check", types.NavIndexFirst)
+	for _, zone := range s.about.NavZones() {
+		s.SetNavTransition(zone, types.DirLeft, sidebarZone, types.NavIndexFirst)
+	}
 }
 
 func (s *SettingsScreen) setupCoreNav() {

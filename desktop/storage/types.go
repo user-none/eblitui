@@ -24,6 +24,7 @@ type Config struct {
 	CoreOptions       map[string]string       `json:"coreOptions,omitempty"`
 	BIOS              map[string]BIOSConfig   `json:"bios,omitempty"`
 	RetroAchievements RetroAchievementsConfig `json:"retroAchievements"`
+	Updates           UpdatesConfig           `json:"updates"`
 }
 
 // BIOSConfig stores the user's BIOS configuration for one BIOSOption.
@@ -206,6 +207,11 @@ type RewindConfig struct {
 	FrameStep    int  `json:"frameStep"`    // Default: 1 (capture every frame)
 }
 
+// UpdatesConfig contains update check settings
+type UpdatesConfig struct {
+	AutoCheck bool `json:"autoCheck"` // Check for updates at startup (default: true)
+}
+
 // AudioConfig contains audio-related settings
 type AudioConfig struct {
 	Volume          float64 `json:"volume"`
@@ -282,6 +288,13 @@ type RemovedGames struct {
 	Games   map[string]*GameEntry `json:"games"` // Library key -> entry without File, Discs, and Added
 }
 
+// UpdateState is the update check state stored in update/update.json.
+type UpdateState struct {
+	Version        int    `json:"version"`
+	LastCheck      int64  `json:"lastCheck"`      // Unix time of the last check, 0 = never
+	IgnoredVersion string `json:"ignoredVersion"` // Version the update bar is not shown for
+}
+
 // GameDisc is one disc of a multi-disc disc-based game.
 type GameDisc struct {
 	Index int    `json:"index"` // 0-based disc index (DiscNumber-1)
@@ -292,7 +305,7 @@ type GameDisc struct {
 // DefaultConfig returns a new Config with default values
 func DefaultConfig() *Config {
 	return &Config{
-		Version: 1,
+		Version: configVersion,
 		Theme:   "Default",
 		Video: VideoConfig{
 			AspectRatio: "dar",
@@ -328,6 +341,9 @@ func DefaultConfig() *Config {
 			UnlockSound:      true, // Default ON
 			ShowNotification: true, // Default ON
 			AutoScreenshot:   true, // Default ON
+		},
+		Updates: UpdatesConfig{
+			AutoCheck: true,
 		},
 	}
 }

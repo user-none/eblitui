@@ -11,7 +11,7 @@ import (
 )
 
 func newTestSettingsScreen() *SettingsScreen {
-	return NewSettingsScreen(nil, storage.DefaultLibrary(), storage.DefaultConfig(), nil, 0, coreif.SystemInfo{}, nil)
+	return NewSettingsScreen(nil, storage.DefaultLibrary(), storage.DefaultConfig(), nil, 0, coreif.SystemInfo{}, nil, nil)
 }
 
 func TestSettingsSelectSection(t *testing.T) {

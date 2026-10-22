@@ -39,6 +39,7 @@ type LibraryScreen struct {
 	callback ScreenCallback
 	library  *storage.Library
 	config   *storage.Config
+	updates  types.Updates // nil when the update system is off
 
 	// UI state
 	selectedIndex int
@@ -67,12 +68,14 @@ type LibraryScreen struct {
 	searchText string
 }
 
-// NewLibraryScreen creates a new library screen
-func NewLibraryScreen(callback ScreenCallback, library *storage.Library, config *storage.Config) *LibraryScreen {
+// NewLibraryScreen creates a new library screen. updates is nil when the
+// update system is off.
+func NewLibraryScreen(callback ScreenCallback, library *storage.Library, config *storage.Config, updates types.Updates) *LibraryScreen {
 	s := &LibraryScreen{
 		callback:      callback,
 		library:       library,
 		config:        config,
+		updates:       updates,
 		selectedIndex: 0,
 	}
 	s.artLoader = newArtworkLoader(callback.GetPlaceholderImageData(), callback.GetMissingArtImageData())
@@ -146,29 +149,39 @@ func (s *LibraryScreen) Build() *widget.Container {
 		return rootContainer
 	}
 
-	innerContainer := widgets.ScreenContentContainer([]bool{false, true}) // toolbar=fixed, content=stretch
+	// The update bar sits between the toolbar and the games
+	barVersion := ""
+	if s.updates != nil {
+		barVersion = s.updates.BarVersion()
+	}
+	rowStretch := []bool{false, true} // toolbar=fixed, content=stretch
+	if barVersion != "" {
+		rowStretch = []bool{false, false, true}
+	}
+	innerContainer := widgets.ScreenContentContainer(rowStretch)
+
+	innerContainer.AddChild(s.buildToolbar())
+	if barVersion != "" {
+		innerContainer.AddChild(s.buildUpdateBar(barVersion))
+	}
 
 	if len(s.games) == 0 {
 		// Library has games but filter/search shows none
-		innerContainer.AddChild(s.buildToolbar())
 		if s.searchText != "" {
 			innerContainer.AddChild(s.buildSearchEmptyState())
 		} else {
 			innerContainer.AddChild(s.buildFilteredEmptyState())
 		}
-		s.setupNavigation(1) // Toolbar only
+		s.setupNavigation(1, barVersion != "") // Toolbar and update bar only
 	} else {
-		// Toolbar (row 0 - doesn't stretch)
-		innerContainer.AddChild(s.buildToolbar())
-
-		// Game list or grid (row 1 - stretches to fill)
+		// Game list or grid (last row - stretches to fill)
 		if s.config.Library.ViewMode == "list" {
 			innerContainer.AddChild(s.buildListView())
 			gridColumns = 1
 		} else {
 			gridColumns = s.buildIconView(innerContainer)
 		}
-		s.setupNavigation(gridColumns)
+		s.setupNavigation(gridColumns, barVersion != "")
 	}
 
 	rootContainer.AddChild(innerContainer)
@@ -338,6 +351,44 @@ func (s *LibraryScreen) buildToolbar() *widget.Container {
 	toolbar.AddChild(rightSection)
 
 	return toolbar
+}
+
+// buildUpdateBar creates the row offering a new release of the application.
+// Pressing any of its buttons closes it.
+func (s *LibraryScreen) buildUpdateBar(version string) *widget.Container {
+	bar := widget.NewContainer(
+		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
+		widget.ContainerOpts.Layout(widget.NewGridLayout(
+			widget.GridLayoutOpts.Columns(4),
+			widget.GridLayoutOpts.Stretch([]bool{true, false, false, false}, []bool{true}),
+			widget.GridLayoutOpts.Spacing(style.SmallSpacing, 0),
+			widget.GridLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
+		)),
+	)
+
+	bar.AddChild(widget.NewText(
+		widget.TextOpts.Text(s.updates.AppName()+" "+version+" is available", style.FontFace(), style.Text),
+		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
+	))
+
+	addButton := func(key, label string, action func()) {
+		btn := widgets.TextButton(label, style.ButtonPaddingSmall, func(args *widget.ButtonClickedEventArgs) {
+			action()
+			// The bar is gone after the rebuild. Keyboard and gamepad
+			// focus moves to the toolbar; a mouse click moves no focus.
+			if args.Button.IsFocused() {
+				s.SetPendingFocus("toolbar-icon")
+			}
+			s.callback.RequestRebuild()
+		})
+		s.RegisterFocusButton(key, btn)
+		bar.AddChild(btn)
+	}
+	addButton("update-ignore", "Ignore This Version", s.updates.IgnoreVersion)
+	addButton("update-dismiss", "Dismiss", s.updates.Dismiss)
+	addButton("update-download", "Download", s.updates.Download)
+
+	return bar
 }
 
 // buildListView creates the list view of games using custom ScrollContainer for scroll control
@@ -1013,8 +1064,9 @@ func (s *LibraryScreen) isGameButton(btn *widget.Button) bool {
 	return false
 }
 
-// setupNavigation registers navigation zones and transitions
-func (s *LibraryScreen) setupNavigation(gridColumns int) {
+// setupNavigation registers navigation zones and transitions. showBar adds
+// the update bar zone between the toolbar and the games.
+func (s *LibraryScreen) setupNavigation(gridColumns int, showBar bool) {
 	// Toolbar zone (horizontal)
 	toolbarKeys := []string{
 		"toolbar-icon",
@@ -1024,6 +1076,17 @@ func (s *LibraryScreen) setupNavigation(gridColumns int) {
 		"toolbar-settings",
 	}
 	s.RegisterNavZone("toolbar", types.NavZoneHorizontal, toolbarKeys, 0)
+
+	// Update bar zone, between the toolbar and the games
+	if showBar {
+		s.RegisterNavZone("update", types.NavZoneHorizontal, []string{
+			"update-ignore",
+			"update-dismiss",
+			"update-download",
+		}, 0)
+		s.SetNavTransition("toolbar", types.DirDown, "update", types.NavIndexFirst)
+		s.SetNavTransition("update", types.DirUp, "toolbar", types.NavIndexFirst)
+	}
 
 	// Content zone (grid or list)
 	if len(s.games) > 0 {
@@ -1042,9 +1105,14 @@ func (s *LibraryScreen) setupNavigation(gridColumns int) {
 
 		// Set up transitions. Up from the toolbar wraps to the bottom of the
 		// games; down enters them from the top.
-		s.SetNavTransition("toolbar", types.DirDown, "content", types.NavIndexPreserve)
 		s.SetNavTransition("toolbar", types.DirUp, "content", types.NavIndexPreserve)
-		s.SetNavTransition("content", types.DirUp, "toolbar", types.NavIndexPreserve)
+		if showBar {
+			s.SetNavTransition("update", types.DirDown, "content", types.NavIndexPreserve)
+			s.SetNavTransition("content", types.DirUp, "update", types.NavIndexPreserve)
+		} else {
+			s.SetNavTransition("toolbar", types.DirDown, "content", types.NavIndexPreserve)
+			s.SetNavTransition("content", types.DirUp, "toolbar", types.NavIndexPreserve)
+		}
 	}
 }
 

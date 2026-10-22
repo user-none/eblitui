@@ -27,7 +27,7 @@ func TestDetectPresentKeys(t *testing.T) {
 				"rewind": {"bufferSizeMB": 40, "frameStep": 1}
 			}`,
 			expected: map[string]bool{
-				"version": true, "theme": true,
+				"theme":             true,
 				"video.aspectRatio": true,
 				"audio.volume":      true, "audio.fastForwardMute": true,
 				"window.width": true, "window.height": true,
@@ -50,7 +50,7 @@ func TestDetectPresentKeys(t *testing.T) {
 				"library": {"viewMode": "list", "sortBy": "lastPlayed"}
 			}`,
 			expected: map[string]bool{
-				"version": true, "theme": true,
+				"theme":        true,
 				"audio.volume": true, "window.width": true, "window.height": true,
 				"library.viewMode": true, "library.sortBy": true,
 			},
@@ -108,8 +108,8 @@ func TestApplyMissingDefaults(t *testing.T) {
 		ApplyMissingDefaults(config, presentKeys)
 
 		defaults := DefaultConfig()
-		if config.Version != defaults.Version {
-			t.Errorf("version: got %d, want %d", config.Version, defaults.Version)
+		if config.Version != 0 {
+			t.Errorf("version: got %d, want 0 (left for migration)", config.Version)
 		}
 		if config.Theme != defaults.Theme {
 			t.Errorf("theme: got %q, want %q", config.Theme, defaults.Theme)
@@ -169,9 +169,6 @@ func TestApplyMissingDefaults(t *testing.T) {
 
 		// Missing fields should get defaults
 		defaults := DefaultConfig()
-		if config.Version != defaults.Version {
-			t.Errorf("version should default to %d, got %d", defaults.Version, config.Version)
-		}
 		if config.Theme != defaults.Theme {
 			t.Errorf("theme should default to %q, got %q", defaults.Theme, config.Theme)
 		}
@@ -188,7 +185,7 @@ func TestApplyMissingDefaults(t *testing.T) {
 			Rewind:  RewindConfig{BufferSizeMB: 100, FrameStep: 5},
 		}
 		presentKeys := map[string]bool{
-			"version": true, "theme": true,
+			"theme":             true,
 			"video.aspectRatio": true,
 			"audio.volume":      true, "audio.fastForwardMute": true,
 			"window.width": true, "window.height": true,
@@ -255,11 +252,13 @@ func TestValidateConfig(t *testing.T) {
 	})
 
 	t.Run("invalid version", func(t *testing.T) {
-		config := DefaultConfig()
-		config.Version = 99
-		errs := ValidateConfig(config, validTestThemes)
-		if len(errs) == 0 {
-			t.Error("expected error for invalid version")
+		for _, version := range []int{0, 1, configVersion + 1, 99} {
+			config := DefaultConfig()
+			config.Version = version
+			errs := ValidateConfig(config, validTestThemes)
+			if len(errs) == 0 {
+				t.Errorf("expected error for version %d", version)
+			}
 		}
 	})
 

@@ -82,6 +82,9 @@ type App struct {
 	scanManager  *ScanManager
 	cleanManager *CleanManager
 
+	// Update check manager, nil when the update system is off
+	updateManager *UpdateManager
+
 	// Error state
 	errorFile        string
 	errorPath        string
@@ -418,6 +421,13 @@ func (a *App) finishStartup() {
 	a.startAchievementAutoLogin()
 	a.preloadConfiguredShaders()
 
+	// A due automatic check starts before the library is first built, so the
+	// update bar is not shown from the stored manifest while it runs
+	a.updateManager = NewUpdateManager(updateConfig, a.config, a.RequestRebuild)
+	if a.updateManager != nil {
+		a.updateManager.StartAutomaticCheck()
+	}
+
 	// Window dimensions are set by main before RunGame, so they're already correct
 	a.initScreens()
 	a.scanManager = a.newScanManager()
@@ -426,6 +436,15 @@ func (a *App) finishStartup() {
 	a.state = StateLibrary
 	a.libraryScreen.OnEnter()
 	a.rebuildCurrentScreen()
+}
+
+// updates returns the update system for the screens, nil when it is off.
+// A nil *UpdateManager must not be returned as a non-nil interface.
+func (a *App) updates() types.Updates {
+	if a.updateManager == nil {
+		return nil
+	}
+	return a.updateManager
 }
 
 // startAchievementAutoLogin logs in to RetroAchievements in the background
@@ -540,9 +559,9 @@ func (a *App) toggleFullscreen() {
 
 // initScreens creates all screen instances
 func (a *App) initScreens() {
-	a.libraryScreen = screens.NewLibraryScreen(a, a.library, a.config)
+	a.libraryScreen = screens.NewLibraryScreen(a, a.library, a.config, a.updates())
 	a.detailScreen = screens.NewDetailScreen(a, a.library, a.achievementManager, a.systemInfo.ConsoleID, a.cheatSystem(), a.systemInfo.BigEndianMemory, a.systemInfo.CoreOptions)
-	a.settingsScreen = screens.NewSettingsScreen(a, a.library, a.config, a.achievementManager, a.systemInfo.SerializeSize, a.systemInfo, appIcon)
+	a.settingsScreen = screens.NewSettingsScreen(a, a.library, a.config, a.achievementManager, a.systemInfo.SerializeSize, a.systemInfo, appIcon, a.updates())
 	a.scanScreen = screens.NewScanProgressScreen()
 	a.errorScreen = screens.NewErrorScreen(a, a.errorFile, a.errorPath, a.handleDeleteAndContinue)
 	a.filePicker = screens.NewFilePickerScreen(a, a.closeFilePicker)
@@ -554,8 +573,12 @@ func (a *App) rebuildCurrentScreen() {
 
 	switch a.state {
 	case StateLibrary:
-		// Save scroll position before rebuilding
+		// Save scroll position and focused widget before rebuilding so
+		// async rebuilds (e.g., an update check finishing) restore both
 		a.libraryScreen.SaveScrollPosition()
+		if a.ui != nil {
+			a.libraryScreen.SaveFocusState(a.ui.GetFocusedWidget())
+		}
 		a.libraryScreen.SetLibrary(a.library)
 		a.libraryScreen.SetConfig(a.config)
 		container = a.libraryScreen.Build()

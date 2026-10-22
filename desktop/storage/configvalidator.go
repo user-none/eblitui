@@ -20,12 +20,10 @@ func detectPresentKeys(jsonBytes []byte) map[string]bool {
 		return present
 	}
 
-	// Top-level keys
-	topKeys := []string{"version", "theme"}
-	for _, k := range topKeys {
-		if _, ok := raw[k]; ok {
-			present[k] = true
-		}
+	// Top-level keys. The version is not included: an absent version is left
+	// at 0 for migrateConfig.
+	if _, ok := raw["theme"]; ok {
+		present["theme"] = true
 	}
 
 	// Nested: audio
@@ -96,13 +94,11 @@ func detectPresentKeys(jsonBytes []byte) map[string]bool {
 // ApplyMissingDefaults sets default values for config fields that are absent
 // from the JSON file. This replaces ensureConfigDefaults with key-presence
 // awareness: only truly missing fields get defaults, preserving intentional
-// zero values (e.g., volume=0).
+// zero values (e.g., volume=0). The version is not defaulted; migrateConfig
+// handles an absent version.
 func ApplyMissingDefaults(config *Config, presentKeys map[string]bool) {
 	defaults := DefaultConfig()
 
-	if !presentKeys["version"] {
-		config.Version = defaults.Version
-	}
 	if !presentKeys["theme"] {
 		config.Theme = defaults.Theme
 	}
@@ -142,8 +138,8 @@ func ValidateConfig(config *Config, validThemes []string) []string {
 	var errors []string
 
 	// version
-	if config.Version != 1 {
-		errors = append(errors, fmt.Sprintf("version: %d (valid: 1)", config.Version))
+	if config.Version != configVersion {
+		errors = append(errors, fmt.Sprintf("version: %d (valid: %d)", config.Version, configVersion))
 	}
 
 	// theme
@@ -343,7 +339,7 @@ func CorrectConfig(config *Config, validThemes []string) *Config {
 	defaults := DefaultConfig()
 
 	// version
-	if config.Version != 1 {
+	if config.Version != configVersion {
 		config.Version = defaults.Version
 	}
 

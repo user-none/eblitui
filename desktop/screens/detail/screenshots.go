@@ -18,7 +18,7 @@ import (
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/user-none/eblitui/desktop/filebrowser"
+	"github.com/user-none/eblitui/desktop/launch"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/desktop/types"
@@ -75,20 +75,21 @@ type ScreenshotsSection struct {
 	gameDir func(gameCRC string) (string, error)
 	// decode reads a screenshot into a texture: decodeScreenshot
 	decode func(path string) (*ebiten.Image, error)
-	// reveal shows a screenshot in the file manager: filebrowser.Reveal
-	reveal func(path string) error
+	// showInFileManager shows a screenshot in the file manager:
+	// launch.ShowInFileManager
+	showInFileManager func(path string) error
 }
 
 // NewScreenshotsSection creates the Screenshots page. contentWidth returns
 // the width of the page content area.
 func NewScreenshotsSection(callback types.ScreenCallback, contentWidth func() int) *ScreenshotsSection {
 	return &ScreenshotsSection{
-		callback:     callback,
-		contentWidth: contentWidth,
-		selected:     -1,
-		gameDir:      storage.GetGameScreenshotDir,
-		decode:       decodeScreenshot,
-		reveal:       filebrowser.Reveal,
+		callback:          callback,
+		contentWidth:      contentWidth,
+		selected:          -1,
+		gameDir:           storage.GetGameScreenshotDir,
+		decode:            decodeScreenshot,
+		showInFileManager: launch.ShowInFileManager,
 	}
 }
 
@@ -351,7 +352,7 @@ func (s *ScreenshotsSection) buildPreview(focus types.FocusManager, width int) *
 // and Delete. Delete asks for a second press, shown as Confirm Delete.
 func (s *ScreenshotsSection) buildActions(focus types.FocusManager) *widget.Container {
 	folder := widgets.TextButton("Show in Folder", style.ButtonPaddingSmall, func(*widget.ButtonClickedEventArgs) {
-		s.revealSelected()
+		s.showSelectedInFileManager()
 	})
 	focus.RegisterFocusButton(screenshotFolderKey, folder)
 
@@ -365,12 +366,12 @@ func (s *ScreenshotsSection) buildActions(focus types.FocusManager) *widget.Cont
 	return widgets.ActionRow(folder, del)
 }
 
-// revealSelected shows the selected screenshot in the file manager
-func (s *ScreenshotsSection) revealSelected() {
+// showSelectedInFileManager shows the selected screenshot in the file manager
+func (s *ScreenshotsSection) showSelectedInFileManager() {
 	if s.selected < 0 {
 		return
 	}
-	if err := s.reveal(s.shots[s.selected].Path); err != nil {
+	if err := s.showInFileManager(s.shots[s.selected].Path); err != nil {
 		log.Printf("Show in Folder failed: %v", err)
 		s.callback.ShowNotification("Unable to open the screenshots folder")
 	}

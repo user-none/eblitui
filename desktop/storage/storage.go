@@ -30,6 +30,7 @@ const (
 	gameSettingsDir = "gamesettings"
 	savesDir        = "saves"
 	screenshotDir   = "screenshots"
+	updateDir       = "update"
 )
 
 // GetBaseDir returns the base directory for application data.
@@ -223,6 +224,15 @@ func GetScreenshotDir() (string, error) {
 	return filepath.Join(baseDir, screenshotDir), nil
 }
 
+// GetUpdateDir returns the full path to the update state directory
+func GetUpdateDir() (string, error) {
+	baseDir, err := GetBaseDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(baseDir, updateDir), nil
+}
+
 // GetGameScreenshotDir returns the screenshot directory for a specific game (by CRC32)
 func GetGameScreenshotDir(gameCRC string) (string, error) {
 	dir, err := GetScreenshotDir()
@@ -254,21 +264,28 @@ func GetGameArtworkPath(gameCRC string) (string, error) {
 // It writes to a temporary file first, then renames to the target path.
 // This ensures the file is never in a partially-written state.
 func AtomicWriteJSON(path string, data interface{}) error {
-	// Ensure directory exists
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
-	}
-
 	// Marshal JSON with indentation for readability
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON: %w", err)
 	}
 
+	return AtomicWriteFile(path, jsonData)
+}
+
+// AtomicWriteFile writes data to a file atomically.
+// It writes to a temporary file first, then renames to the target path.
+// This ensures the file is never in a partially-written state.
+func AtomicWriteFile(path string, data []byte) error {
+	// Ensure directory exists
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
 	// Write to temporary file in the same directory
 	tempFile := path + ".tmp"
-	if err := os.WriteFile(tempFile, jsonData, 0644); err != nil {
+	if err := os.WriteFile(tempFile, data, 0644); err != nil {
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
 

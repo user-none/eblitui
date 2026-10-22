@@ -72,8 +72,11 @@ func containsSub(s, sub string) bool {
 func TestDefaultConfig(t *testing.T) {
 	config := DefaultConfig()
 
-	if config.Version != 1 {
-		t.Errorf("expected version 1, got %d", config.Version)
+	if config.Version != configVersion {
+		t.Errorf("expected version %d, got %d", configVersion, config.Version)
+	}
+	if !config.Updates.AutoCheck {
+		t.Error("expected automatic update checks on")
 	}
 	if config.Window.Width != 900 {
 		t.Errorf("expected window width 900, got %d", config.Window.Width)
@@ -394,14 +397,13 @@ func TestApplyMissingDefaultsMigration(t *testing.T) {
 
 	// Simulate: only audio.volume was present in JSON (as 0)
 	presentKeys := map[string]bool{
-		"version":      true,
 		"audio.volume": true,
 	}
 	ApplyMissingDefaults(config, presentKeys)
 
-	// version was present as 0 — not overwritten by ApplyMissingDefaults
+	// version is never defaulted; migrateConfig handles version 0
 	if config.Version != 0 {
-		t.Errorf("expected version 0 (present in JSON), got %d", config.Version)
+		t.Errorf("expected version 0, got %d", config.Version)
 	}
 	if config.Audio.Volume != 0 {
 		t.Errorf("expected volume 0 (present in JSON, 0%% is valid), got %f", config.Audio.Volume)
@@ -426,7 +428,7 @@ func TestApplyMissingDefaultsPreservesZeroVolume(t *testing.T) {
 
 	// All keys present in JSON
 	presentKeys := map[string]bool{
-		"version": true, "theme": true,
+		"theme":        true,
 		"audio.volume": true, "window.width": true, "window.height": true,
 		"library.viewMode": true, "library.sortBy": true,
 		"rewind.bufferSizeMB": true, "rewind.frameStep": true,
@@ -544,7 +546,7 @@ func TestApplyMissingDefaultsAlreadyCurrent(t *testing.T) {
 
 	// All keys present
 	presentKeys := map[string]bool{
-		"version": true, "theme": true,
+		"theme":        true,
 		"audio.volume": true, "window.width": true, "window.height": true,
 		"library.viewMode": true, "library.sortBy": true,
 		"rewind.bufferSizeMB": true, "rewind.frameStep": true,
@@ -714,6 +716,104 @@ func TestMigrateLibraryCurrentVersion(t *testing.T) {
 	}
 	if lib.Version != libraryVersion {
 		t.Errorf("expected version %d, got %d", libraryVersion, lib.Version)
+	}
+}
+
+func TestMigrateConfig(t *testing.T) {
+	tests := []struct {
+		name          string
+		version       int
+		autoCheck     bool
+		wantVersion   int
+		wantAutoCheck bool
+		wantMigrated  bool
+	}{
+		{"absent version is version 1", 0, false, configVersion, true, true},
+		{"version 1 turns on automatic checks", 1, false, configVersion, true, true},
+		{"current version keeps automatic checks off", configVersion, false, configVersion, false, false},
+		{"current version keeps automatic checks on", configVersion, true, configVersion, true, false},
+		{"newer version left for validation", configVersion + 1, false, configVersion + 1, false, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			config := &Config{Version: tc.version, Updates: UpdatesConfig{AutoCheck: tc.autoCheck}}
+			if got := migrateConfig(config); got != tc.wantMigrated {
+				t.Errorf("migrated = %v, want %v", got, tc.wantMigrated)
+			}
+			if config.Version != tc.wantVersion {
+				t.Errorf("version = %d, want %d", config.Version, tc.wantVersion)
+			}
+			if config.Updates.AutoCheck != tc.wantAutoCheck {
+				t.Errorf("autoCheck = %v, want %v", config.Updates.AutoCheck, tc.wantAutoCheck)
+			}
+		})
+	}
+}
+
+// writeConfigFile writes raw config.json contents to the data directory
+func writeConfigFile(t *testing.T, data string) string {
+	t.Helper()
+	path, err := GetConfigPath()
+	if err != nil {
+		t.Fatalf("GetConfigPath: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	return path
+}
+
+func TestLoadConfigMigrates(t *testing.T) {
+	for _, data := range []string{
+		`{"version": 1, "theme": "Dark"}`,
+		`{"theme": "Dark"}`,
+	} {
+		t.Run(data, func(t *testing.T) {
+			useTempDataDir(t)
+			path := writeConfigFile(t, data)
+
+			config, err := LoadConfig()
+			if err != nil {
+				t.Fatalf("LoadConfig: %v", err)
+			}
+			if config.Version != configVersion || !config.Updates.AutoCheck || config.Theme != "Dark" {
+				t.Errorf("loaded version %d, autoCheck %v, theme %q", config.Version, config.Updates.AutoCheck, config.Theme)
+			}
+
+			// The migration is saved so it runs once
+			var saved Config
+			if err := ReadJSON(path, &saved); err != nil {
+				t.Fatalf("ReadJSON: %v", err)
+			}
+			if saved.Version != configVersion || !saved.Updates.AutoCheck || saved.Theme != "Dark" {
+				t.Errorf("saved version %d, autoCheck %v, theme %q", saved.Version, saved.Updates.AutoCheck, saved.Theme)
+			}
+		})
+	}
+}
+
+func TestLoadConfigCurrentVersionNotRewritten(t *testing.T) {
+	useTempDataDir(t)
+	data := `{"version": 2, "updates": {"autoCheck": false}}`
+	path := writeConfigFile(t, data)
+
+	config, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if config.Updates.AutoCheck {
+		t.Error("automatic checks turned off by the user were turned on")
+	}
+
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(after) != data {
+		t.Errorf("current config was rewritten: %s", after)
 	}
 }
 

@@ -31,10 +31,17 @@ var HTTPClient = &http.Client{
 // 64 MiB.
 const MaxDownloadSize = 64 * 1024 * 1024
 
-// DownloadToMemory performs a GET request and returns the response body.
-// Bodies larger than MaxDownloadSize return an error.
+// DownloadToMemory performs a GET request with HTTPClient and returns the
+// response body. Bodies larger than MaxDownloadSize return an error.
 func DownloadToMemory(url string) ([]byte, error) {
-	resp, err := HTTPClient.Get(url)
+	return Download(HTTPClient, url, MaxDownloadSize)
+}
+
+// Download performs a GET request with client and returns the response
+// body. A status other than 200 or a body larger than limit bytes returns an
+// error.
+func Download(client *http.Client, url string, limit int64) ([]byte, error) {
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, err
 	}
@@ -44,12 +51,12 @@ func DownloadToMemory(url string) ([]byte, error) {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	data, err := io.ReadAll(io.LimitReader(resp.Body, MaxDownloadSize+1))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(data) > MaxDownloadSize {
-		return nil, fmt.Errorf("download from %s exceeds %d bytes", url, MaxDownloadSize)
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("download from %s exceeds %d bytes", url, limit)
 	}
 	return data, nil
 }
