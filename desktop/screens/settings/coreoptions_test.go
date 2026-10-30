@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/user-none/eblitui/coreif"
+	"github.com/user-none/eblitui/desktop/storage"
 )
 
 // testOptions declares options across two categories with an
@@ -29,6 +30,27 @@ func keysOf(opts []coreif.CoreOption) string {
 		keys = append(keys, o.Key)
 	}
 	return strings.Join(keys, " ")
+}
+
+// TestGetCoreOptionValue checks the value the settings screen shows:
+// the config's value when the option accepts it, otherwise the
+// declared default.
+func TestGetCoreOptionValue(t *testing.T) {
+	opt := coreif.CoreOption{Key: "renderer", Type: coreif.CoreOptionSelect, Default: "Vulkan", Values: []string{"Vulkan", "Software"}}
+	tests := []struct {
+		name   string
+		config map[string]string
+		want   string
+	}{
+		{"unset", nil, "Vulkan"},
+		{"valid", map[string]string{"renderer": "Software"}, "Software"},
+		{"no longer offered", map[string]string{"renderer": "GPU"}, "Vulkan"},
+	}
+	for _, tt := range tests {
+		if got := getCoreOptionValue(&storage.Config{CoreOptions: tt.config}, opt); got != tt.want {
+			t.Errorf("%s: got %q, want %q", tt.name, got, tt.want)
+		}
+	}
 }
 
 func TestCategoryOptionsOrder(t *testing.T) {

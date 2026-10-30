@@ -120,11 +120,12 @@ func addCoreOptionRows(container *widget.Container, focus types.FocusManager, ca
 	}
 }
 
-// getCoreOptionValue returns the current value for a core option,
-// checking config overrides first, then falling back to the option's default.
+// getCoreOptionValue returns the current value for a core option: the
+// config's value when it is one the option accepts, otherwise the
+// option's default.
 func getCoreOptionValue(config *storage.Config, opt coreif.CoreOption) string {
 	if config.CoreOptions != nil {
-		if v, ok := config.CoreOptions[opt.Key]; ok {
+		if v, ok := config.CoreOptions[opt.Key]; ok && storage.ValidCoreOption(opt, v) {
 			return v
 		}
 	}

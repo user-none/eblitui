@@ -105,20 +105,25 @@ func (o *OverrideSettings) CoreOption(opt coreif.CoreOption) (string, bool) {
 		return "", false
 	}
 	v, ok := o.CoreOptions[opt.Key]
-	if !ok {
-		return "", false
-	}
-	valid := false
-	switch opt.Type {
-	case coreif.CoreOptionBool:
-		valid = v == "true" || v == "false"
-	case coreif.CoreOptionSelect:
-		valid = slices.Contains(opt.Values, v)
-	}
-	if !valid {
+	if !ok || (opt.Type != coreif.CoreOptionBool && opt.Type != coreif.CoreOptionSelect) || !ValidCoreOption(opt, v) {
 		return "", false
 	}
 	return v, true
+}
+
+// ValidCoreOption reports whether v is a value the core option accepts:
+// true or false for a Bool, one of its values for a Select. A value of
+// another type is not checked. A stored value the option no longer
+// accepts, such as a Select value the core dropped, is read as unset,
+// so the declared default applies.
+func ValidCoreOption(opt coreif.CoreOption, v string) bool {
+	switch opt.Type {
+	case coreif.CoreOptionBool:
+		return v == "true" || v == "false"
+	case coreif.CoreOptionSelect:
+		return slices.Contains(opt.Values, v)
+	}
+	return true
 }
 
 // SetCoreOption overrides a core option with value

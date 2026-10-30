@@ -24,13 +24,13 @@ func loadOverrides(gameCRC string) *storage.OverrideSettings {
 }
 
 // launchCoreOption returns the value a core option launches with: the
-// game's override when it has one, otherwise the config value if set,
-// otherwise the declared default
+// game's override when it has one, otherwise the config value if set
+// to a value the option accepts, otherwise the declared default
 func launchCoreOption(opt coreif.CoreOption, global map[string]string, overrides *storage.OverrideSettings) string {
 	if v, ok := overrides.CoreOption(opt); ok {
 		return v
 	}
-	if v, ok := global[opt.Key]; ok {
+	if v, ok := global[opt.Key]; ok && storage.ValidCoreOption(opt, v) {
 		return v
 	}
 	return opt.Default

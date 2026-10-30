@@ -117,6 +117,30 @@ func TestOverrideCoreOption(t *testing.T) {
 	}
 }
 
+func TestValidCoreOption(t *testing.T) {
+	sel := coreif.CoreOption{Key: "renderer", Type: coreif.CoreOptionSelect, Values: []string{"Vulkan", "Software"}}
+	boolOpt := coreif.CoreOption{Key: "flag", Type: coreif.CoreOptionBool}
+	rng := coreif.CoreOption{Key: "level", Type: coreif.CoreOptionRange, Min: 0, Max: 9}
+
+	tests := []struct {
+		name string
+		opt  coreif.CoreOption
+		v    string
+		want bool
+	}{
+		{"select value", sel, "Software", true},
+		{"select dropped value", sel, "GPU", false},
+		{"bool", boolOpt, "false", true},
+		{"bool invalid", boolOpt, "on", false},
+		{"range unchecked", rng, "5", true},
+	}
+	for _, tt := range tests {
+		if got := ValidCoreOption(tt.opt, tt.v); got != tt.want {
+			t.Errorf("%s: got %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
 func TestOverrideSetAndClear(t *testing.T) {
 	var o OverrideSettings
 

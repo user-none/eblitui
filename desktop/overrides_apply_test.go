@@ -28,6 +28,8 @@ func TestLaunchCoreOption(t *testing.T) {
 		{"override over default", perGame, nil, map[string]string{"upscale": "4x"}, "4x"},
 		{"invalid override", perGame, map[string]string{"upscale": "2x"}, map[string]string{"upscale": "3x"}, "2x"},
 		{"not per game", global, map[string]string{"renderer": "GPU"}, map[string]string{"renderer": "Software"}, "GPU"},
+		{"invalid config value", perGame, map[string]string{"upscale": "3x"}, nil, "1x"},
+		{"invalid global config value", global, map[string]string{"renderer": "Vulkan"}, nil, "GPU"},
 	}
 	for _, tt := range tests {
 		o := &storage.OverrideSettings{CoreOptions: tt.overrides}
