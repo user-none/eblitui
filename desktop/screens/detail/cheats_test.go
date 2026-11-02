@@ -157,8 +157,8 @@ func TestCheatsBuildListZones(t *testing.T) {
 		[]cheats.Cheat{{Name: "A", ID: "A"}, {Name: "B", ID: "B"}},
 		[]storage.CustomCheat{{Name: "Mine", Code: "160EF100 0000"}})
 
-	want := []string{customZone, addZone, cheatsZone}
-	if got := c.NavZones(); len(got) != 3 || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+	want := []string{customZone, addZone, cheatsZone, allOffZone}
+	if got := c.NavZones(); len(got) != 4 || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] || got[3] != want[3] {
 		t.Errorf("NavZones = %v, want %v", got, want)
 	}
 	if got := focus.zones[customZone]; len(got) != 3 || got[0] != "custom-0-edit" || got[1] != "custom-0-delete" || got[2] != "custom-0-toggle" {
@@ -175,6 +175,43 @@ func TestCheatsBuildListZones(t *testing.T) {
 	}
 	if focus.targets[addKey] == nil {
 		t.Error("Add Cheat not registered")
+	}
+	if focus.targets[allOffKey] != nil {
+		t.Error("Turn All Off registered with no cheats")
+	}
+}
+
+func TestCheatsTurnAllOff(t *testing.T) {
+	c, focus := newTestCheatsSection(t,
+		[]cheats.Cheat{{Name: "A", ID: "A"}, {Name: "B", ID: "B"}},
+		[]storage.CustomCheat{{Name: "Mine", Code: "160EF100 0000"}})
+	saved := 0
+	c.save = func(string, *storage.GameSettingsFile) error { saved++; return nil }
+	c.gameSettings.SetCheatEnabled("A", true)
+	c.gameSettings.SetCheatEnabled("B", true)
+	c.gameSettings.SetCheatEnabled("160EF1000000", true)
+	c.Build(focus)
+
+	pressButton(t, focus.targets[allOffKey])
+
+	if n := len(c.gameSettings.Cheats.Enabled); n != 0 {
+		t.Errorf("enabled after Turn All Off = %v, want none", c.gameSettings.Cheats.Enabled)
+	}
+	if saved != 1 {
+		t.Errorf("saved %d times, want 1", saved)
+	}
+	if focus.pending != allOffKey {
+		t.Errorf("pending focus = %q, want %q", focus.pending, allOffKey)
+	}
+	if len(c.gameSettings.Cheats.Custom) != 1 {
+		t.Error("Turn All Off removed a custom cheat")
+	}
+
+	c.Build(focus)
+	for _, key := range []string{"cheat-0", "cheat-1", "custom-0-toggle"} {
+		if got := buttonLabel(t, focus.targets[key]); got != "Off" {
+			t.Errorf("%s label = %q, want Off", key, got)
+		}
 	}
 }
 

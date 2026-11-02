@@ -24,9 +24,11 @@ const (
 	customZone      = "cheats-custom"      // custom cheat rows: Edit, Delete, toggle
 	addZone         = "cheats-add"         // the Add Cheat button
 	cheatsZone      = "cheats"             // database cheat toggles
+	allOffZone      = "cheats-all-off"     // the Turn All Off button
 	formFieldsZone  = "cheat-form-fields"  // form Name and Code fields
 	formButtonsZone = "cheat-form-buttons" // form Save and Cancel
 	addKey          = "cheat-add"          // focus key of the Add Cheat button
+	allOffKey       = "cheat-all-off"      // focus key of the Turn All Off button
 	formNameKey     = "cheat-form-name"    // focus key of the Name field
 	formCodeKey     = "cheat-form-code"    // focus key of the Code field
 	formCancelKey   = "cheat-form-cancel"  // focus key of Cancel
@@ -165,8 +167,9 @@ func (c *CheatsSection) Build(focus types.FocusManager) *widget.Container {
 	return page
 }
 
-// buildLists adds the custom cheats, the Add Cheat button, and the
-// database cheats to content, and registers their zones
+// buildLists adds the custom cheats, the Add Cheat button, the database
+// cheats, and, when any cheat is listed, the Turn All Off button to
+// content, and registers their zones
 func (c *CheatsSection) buildLists(focus types.FocusManager, content *widget.Container) {
 	rowWidth := widgets.PageRowWidth(c.contentWidth())
 
@@ -204,7 +207,30 @@ func (c *CheatsSection) buildLists(focus types.FocusManager, content *widget.Con
 		focus.RegisterNavZone(cheatsZone, types.NavZoneVertical, dbKeys, 0)
 		c.zones = append(c.zones, cheatsZone)
 	}
+	if len(customKeys) > 0 || len(dbKeys) > 0 {
+		content.AddChild(c.buildAllOffRow(focus))
+		focus.RegisterNavZone(allOffZone, types.NavZoneVertical, []string{allOffKey}, 0)
+		c.zones = append(c.zones, allOffZone)
+	}
 	types.ChainZones(focus, c.zones)
+}
+
+// buildAllOffRow creates the row holding the Turn All Off button at the
+// right. Pressing it turns every cheat off and saves the game's settings
+// file.
+func (c *CheatsSection) buildAllOffRow(focus types.FocusManager) *widget.Container {
+	row := widgets.SettingsRow(2)
+	row.AddChild(widget.NewContainer())
+	allOff := widgets.TextButton("Turn All Off", style.ButtonPaddingSmall, func(*widget.ButtonClickedEventArgs) {
+		c.gameSettings.Cheats.Enabled = nil
+		c.saveSettings()
+		focus.SetPendingFocus(allOffKey)
+		c.callback.RequestRebuild()
+	})
+	allOff.GetWidget().LayoutData = widget.GridLayoutData{VerticalPosition: widget.GridLayoutPositionCenter}
+	focus.RegisterFocusButton(allOffKey, allOff)
+	row.AddChild(allOff)
+	return row
 }
 
 // customKey returns the focus key of a custom cheat row's control
