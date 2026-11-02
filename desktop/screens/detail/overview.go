@@ -296,9 +296,10 @@ func (o *OverviewSection) Build(focus types.FocusManager) *widget.Container {
 
 	// Production section
 	genre := strings.Join(md.Genres, ", ")
+	players := playersText(md.MaxPlayers, md.Cooperative)
 	released := metadata.FormatReleaseDate(md.ReleaseDate)
 	hasProduction := md.Developer != "" || md.Publisher != "" ||
-		genre != "" || released != "" || md.ESRB != ""
+		genre != "" || players != "" || released != "" || md.ESRB != ""
 	if hasProduction {
 		metadataContainer.AddChild(widgets.SectionHeader("Production"))
 		if md.Developer != "" {
@@ -309,6 +310,9 @@ func (o *OverviewSection) Build(focus types.FocusManager) *widget.Container {
 		}
 		if genre != "" {
 			metadataContainer.AddChild(buildMetadataRow("Genre", genre, valueWidth))
+		}
+		if players != "" {
+			metadataContainer.AddChild(buildMetadataRow("Players", players, valueWidth))
 		}
 		if released != "" {
 			metadataContainer.AddChild(buildMetadataRow("Released", released, valueWidth))
@@ -355,6 +359,25 @@ func (o *OverviewSection) Build(focus types.FocusManager) *widget.Container {
 		metadataContainer.AddChild(warningRow)
 	}
 
+	// Overview: the game's description, wrapped, last on the page
+	if md.Overview != "" {
+		metadataContainer.AddChild(widgets.SectionHeader("Overview"))
+		overviewRow := widget.NewContainer(
+			widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
+			widget.ContainerOpts.Layout(widget.NewRowLayout(
+				widget.RowLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
+			)),
+			widget.ContainerOpts.WidgetOpts(
+				widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
+			),
+		)
+		overviewRow.AddChild(widget.NewText(
+			widget.TextOpts.Text(md.Overview, style.FontFace(), style.Text),
+			widget.TextOpts.MaxWidth(float64(metadataWidth-style.SmallSpacing*2)),
+		))
+		metadataContainer.AddChild(overviewRow)
+	}
+
 	metadataOuter.AddChild(metadataContainer)
 
 	// Wrap content in a scrollable container so metadata scrolls when window is small
@@ -382,6 +405,25 @@ func (o *OverviewSection) setupNavigation(focus types.FocusManager) {
 	if len(o.discKeys) > 0 {
 		focus.RegisterNavZone(discsZone, types.NavZoneVertical, o.discKeys, 0)
 	}
+}
+
+// playersText returns the Players value: "1" or "1-n" for up to n players,
+// with ", co-op" when the game is cooperative, or "" when neither is known
+func playersText(maxPlayers int, coop bool) string {
+	var s string
+	switch {
+	case maxPlayers == 1:
+		s = "1"
+	case maxPlayers > 1:
+		s = fmt.Sprintf("1-%d", maxPlayers)
+	}
+	if coop {
+		if s == "" {
+			return "Co-op"
+		}
+		s += ", co-op"
+	}
+	return s
 }
 
 // buildMetadataRow creates a metadata row with background, label on left, value on right

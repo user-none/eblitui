@@ -52,3 +52,22 @@ func TestOverviewSetGameWithoutManager(t *testing.T) {
 		t.Errorf("loading %v found %v gen %d, want reset with generation 1", o.achLoading, o.achFound, o.loadGen)
 	}
 }
+
+func TestPlayersText(t *testing.T) {
+	tests := []struct {
+		max  int
+		coop bool
+		want string
+	}{
+		{0, false, ""},
+		{0, true, "Co-op"},
+		{1, false, "1"},
+		{2, false, "1-2"},
+		{4, true, "1-4, co-op"},
+	}
+	for _, tt := range tests {
+		if got := playersText(tt.max, tt.coop); got != tt.want {
+			t.Errorf("playersText(%d, %v) = %q, want %q", tt.max, tt.coop, got, tt.want)
+		}
+	}
+}
