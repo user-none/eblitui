@@ -5,7 +5,7 @@ import "testing"
 func TestSanitizeLibraryEntries(t *testing.T) {
 	t.Run("negative playTimeSeconds set to 0", func(t *testing.T) {
 		lib := DefaultLibrary()
-		lib.AddGame(&GameEntry{CRC32: "1", PlayTimeSeconds: -100})
+		lib.AddGame(&GameEntry{GameID: "1", PlayTimeSeconds: -100})
 
 		SanitizeLibraryEntries(lib)
 
@@ -16,7 +16,7 @@ func TestSanitizeLibraryEntries(t *testing.T) {
 
 	t.Run("valid playTimeSeconds preserved", func(t *testing.T) {
 		lib := DefaultLibrary()
-		lib.AddGame(&GameEntry{CRC32: "1", PlayTimeSeconds: 500})
+		lib.AddGame(&GameEntry{GameID: "1", PlayTimeSeconds: 500})
 
 		SanitizeLibraryEntries(lib)
 
@@ -27,7 +27,7 @@ func TestSanitizeLibraryEntries(t *testing.T) {
 
 	t.Run("zero playTimeSeconds preserved", func(t *testing.T) {
 		lib := DefaultLibrary()
-		lib.AddGame(&GameEntry{CRC32: "1", PlayTimeSeconds: 0})
+		lib.AddGame(&GameEntry{GameID: "1", PlayTimeSeconds: 0})
 
 		SanitizeLibraryEntries(lib)
 
@@ -38,7 +38,7 @@ func TestSanitizeLibraryEntries(t *testing.T) {
 
 	t.Run("negative lastPlayed set to 0", func(t *testing.T) {
 		lib := DefaultLibrary()
-		lib.AddGame(&GameEntry{CRC32: "1", LastPlayed: -1})
+		lib.AddGame(&GameEntry{GameID: "1", LastPlayed: -1})
 
 		SanitizeLibraryEntries(lib)
 
@@ -49,7 +49,7 @@ func TestSanitizeLibraryEntries(t *testing.T) {
 
 	t.Run("valid lastPlayed preserved", func(t *testing.T) {
 		lib := DefaultLibrary()
-		lib.AddGame(&GameEntry{CRC32: "1", LastPlayed: 1700000000})
+		lib.AddGame(&GameEntry{GameID: "1", LastPlayed: 1700000000})
 
 		SanitizeLibraryEntries(lib)
 
@@ -60,7 +60,7 @@ func TestSanitizeLibraryEntries(t *testing.T) {
 
 	t.Run("negative added set to 0", func(t *testing.T) {
 		lib := DefaultLibrary()
-		lib.AddGame(&GameEntry{CRC32: "1", Added: -50})
+		lib.AddGame(&GameEntry{GameID: "1", Added: -50})
 
 		SanitizeLibraryEntries(lib)
 
@@ -71,7 +71,7 @@ func TestSanitizeLibraryEntries(t *testing.T) {
 
 	t.Run("valid added preserved", func(t *testing.T) {
 		lib := DefaultLibrary()
-		lib.AddGame(&GameEntry{CRC32: "1", Added: 1700000000})
+		lib.AddGame(&GameEntry{GameID: "1", Added: 1700000000})
 
 		SanitizeLibraryEntries(lib)
 
@@ -83,7 +83,7 @@ func TestSanitizeLibraryEntries(t *testing.T) {
 	t.Run("multiple fields fixed on same entry", func(t *testing.T) {
 		lib := DefaultLibrary()
 		lib.AddGame(&GameEntry{
-			CRC32:           "1",
+			GameID:          "1",
 			PlayTimeSeconds: -10,
 			LastPlayed:      -20,
 			Added:           -30,
@@ -105,9 +105,9 @@ func TestSanitizeLibraryEntries(t *testing.T) {
 
 	t.Run("multiple entries sanitized", func(t *testing.T) {
 		lib := DefaultLibrary()
-		lib.AddGame(&GameEntry{CRC32: "1", PlayTimeSeconds: -1})
-		lib.AddGame(&GameEntry{CRC32: "2", LastPlayed: -1})
-		lib.AddGame(&GameEntry{CRC32: "3", PlayTimeSeconds: 100}) // valid
+		lib.AddGame(&GameEntry{GameID: "1", PlayTimeSeconds: -1})
+		lib.AddGame(&GameEntry{GameID: "2", LastPlayed: -1})
+		lib.AddGame(&GameEntry{GameID: "3", PlayTimeSeconds: 100}) // valid
 
 		SanitizeLibraryEntries(lib)
 
@@ -217,14 +217,14 @@ func TestCleanGameKey(t *testing.T) {
 
 func TestSanitizeLibraryEntriesGameKeys(t *testing.T) {
 	lib := &Library{Games: map[string]*GameEntry{
-		"1A2B3C4D":   {CRC32: "1A2B3C4D"},
-		"../evil":    {CRC32: "../evil"},
-		"..":         {CRC32: ".."},
-		"GOOD-KEY":   {CRC32: "../mismatch"},
+		"1A2B3C4D":   {GameID: "1A2B3C4D"},
+		"../evil":    {GameID: "../evil"},
+		"..":         {GameID: ".."},
+		"GOOD-KEY":   {GameID: "../mismatch"},
 		"NIL-ENTRY":  nil,
-		"DUP/":       {CRC32: "DUP/"},
-		"DUP":        {CRC32: "DUP"},
-		"MK-81009\n": {CRC32: "MK-81009\n"},
+		"DUP/":       {GameID: "DUP/"},
+		"DUP":        {GameID: "DUP"},
+		"MK-81009\n": {GameID: "MK-81009\n"},
 	}}
 
 	SanitizeLibraryEntries(lib)
@@ -239,8 +239,8 @@ func TestSanitizeLibraryEntriesGameKeys(t *testing.T) {
 			t.Errorf("missing key %q", key)
 			continue
 		}
-		if game.CRC32 != key {
-			t.Errorf("game %q has CRC32 %q, want %q", key, game.CRC32, key)
+		if game.GameID != key {
+			t.Errorf("game %q has GameID %q, want %q", key, game.GameID, key)
 		}
 	}
 }

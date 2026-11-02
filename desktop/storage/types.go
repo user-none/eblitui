@@ -240,7 +240,7 @@ type Library struct {
 	Version         int                   `json:"version"`
 	ScanDirectories []ScanDirectory       `json:"scanDirectories"`
 	ExcludedPaths   []string              `json:"excludedPaths"`
-	Games           map[string]*GameEntry `json:"games"` // CRC32 hex string -> entry
+	Games           map[string]*GameEntry `json:"games"` // Game ID -> entry
 }
 
 // ScanDirectory represents a directory to scan for ROMs
@@ -249,26 +249,17 @@ type ScanDirectory struct {
 	Recursive bool   `json:"recursive"`
 }
 
-// GameEntry represents a single game in the library
+// GameEntry represents a single game in the library. It holds the game's
+// identity, file locations, and user data. Descriptive metadata such as
+// the title comes from the core's metadata provider, not the library.
 type GameEntry struct {
-	CRC32           string `json:"crc32"`
-	File            string `json:"file,omitempty"`   // Cartridge ROM/archive path; disc games leave this empty and use Discs
-	Name            string `json:"name"`             // Full No-Intro name from RDB
-	DisplayName     string `json:"displayName"`      // Cleaned name for display (region info removed)
-	Region          string `json:"region"`           // "us", "eu", "jp" (from RDB)
-	Serial          string `json:"serial,omitempty"` // Disc/product serial (game ID), when known
-	Developer       string `json:"developer,omitempty"`
-	Publisher       string `json:"publisher,omitempty"`
-	Genre           string `json:"genre,omitempty"`
-	Franchise       string `json:"franchise,omitempty"`
-	ESRBRating      string `json:"esrbRating,omitempty"`
-	ReleaseDate     string `json:"releaseDate,omitempty"` // "Month / Year" format
-	System          string `json:"system,omitempty"`      // Variant name (e.g. "Neo Geo Pocket") - set when >1 RDB variant
-	ConsoleID       int    `json:"consoleID,omitempty"`   // RetroAchievements console ID; 0 = use system default
-	Favorite        bool   `json:"favorite"`              // User marked as favorite
-	PlayTimeSeconds int64  `json:"playTimeSeconds"`       // Total play time
-	LastPlayed      int64  `json:"lastPlayed"`            // Unix timestamp
-	Added           int64  `json:"added"`                 // Unix timestamp when added to library
+	GameID          string `json:"gameId"`              // Library key: CRC32 hex for cartridges, product number for discs
+	File            string `json:"file,omitempty"`      // Cartridge ROM/archive path; disc games leave this empty and use Discs
+	ConsoleID       int    `json:"consoleID,omitempty"` // RetroAchievements console ID; 0 = use system default
+	Favorite        bool   `json:"favorite"`            // User marked as favorite
+	PlayTimeSeconds int64  `json:"playTimeSeconds"`     // Total play time
+	LastPlayed      int64  `json:"lastPlayed"`          // Unix timestamp
+	Added           int64  `json:"added"`               // Unix timestamp when added to library
 
 	// Discs lists the discs of a disc-based game (one entry even for a
 	// single-disc game), ordered by Index. Empty for cartridge games,

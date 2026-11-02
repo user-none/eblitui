@@ -402,7 +402,7 @@ func TestPxScales(t *testing.T) {
 		SetWindowScale(1.0)
 	}()
 
-	// Px applies both scales; PxDPI only the DPI scale
+	// Px applies both scales
 	dpiScale = 1.0
 	SetWindowScale(1.0)
 	if got := Px(80); got != 80 {
@@ -412,9 +412,6 @@ func TestPxScales(t *testing.T) {
 	SetWindowScale(2.0)
 	if got := Px(80); got != 160 {
 		t.Errorf("Px(80) at 2x window/1x DPI = %d, want 160", got)
-	}
-	if got := PxDPI(80); got != 80 {
-		t.Errorf("PxDPI(80) at 2x window/1x DPI = %d, want 80", got)
 	}
 
 	dpiScale = 2.0
@@ -426,9 +423,6 @@ func TestPxScales(t *testing.T) {
 	SetWindowScale(2.0)
 	if got := Px(80); got != 320 {
 		t.Errorf("Px(80) at 2x/2x = %d, want 320", got)
-	}
-	if got := PxDPI(80); got != 160 {
-		t.Errorf("PxDPI(80) at 2x/2x = %d, want 160", got)
 	}
 }
 

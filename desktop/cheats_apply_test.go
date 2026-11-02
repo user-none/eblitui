@@ -4,7 +4,6 @@
 package desktop
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/user-none/eblitui/coreif"
@@ -139,30 +138,5 @@ func TestCheatEngineAddSubLittleEndian(t *testing.T) {
 	}
 	if mem.flat[0x30] != 0x03 {
 		t.Errorf("8-bit subtract = %02X, want 03", mem.flat[0x30])
-	}
-}
-
-func TestCheatEngineAppliesParsedRetroEntry(t *testing.T) {
-	// A RetroArch format 4-bit set at flat 0x1BCF12 lands on the core's
-	// byte 0x1BCF13 on a big-endian core
-	src := `cheats = 1
-cheat0_desc = "Lives"
-cheat0_handler = "1"
-cheat0_cheat_type = "1"
-cheat0_address = "0x1BCF12"
-cheat0_memory_search_size = "2"
-cheat0_address_bit_position = "15"
-cheat0_value = "3"
-`
-	list, err := cheats.Read(strings.NewReader(src), cheats.SystemSaturn, true)
-	if err != nil || len(list) != 1 {
-		t.Fatalf("parse: %v %+v", err, list)
-	}
-	mem := newCheatMemory()
-	mem.flat[0x1BCF13] = 0x50
-	NewCheatEngine(list).Apply(mem)
-
-	if mem.flat[0x1BCF13] != 0x53 || mem.flat[0x1BCF12] != 0 {
-		t.Errorf("bytes = %02X %02X, want 00 53", mem.flat[0x1BCF12], mem.flat[0x1BCF13])
 	}
 }

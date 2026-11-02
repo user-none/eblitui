@@ -921,7 +921,6 @@ func (m *Manager) LookupGameProgress(md5Hash string) (found bool, progress *rche
 }
 
 // ComputeGameHash generates the MD5 hash for ROM data in rcheevos format.
-// Use this as a fallback when the MD5 is not in the RDB.
 // consoleID specifies the RetroAchievements console ID for hash computation.
 func (m *Manager) ComputeGameHash(romData []byte, consoleID uint32) string {
 	return rcheevos.HashFromBuffer(consoleID, romData)
@@ -929,7 +928,6 @@ func (m *Manager) ComputeGameHash(romData []byte, consoleID uint32) string {
 
 // ComputeGameHashFromDisc generates the MD5 hash for a disc-based game by
 // reading sectors through disc (rcheevos applies the console-specific hashing).
-// Use this as the disc-system fallback when the MD5 is not in the RDB.
 func (m *Manager) ComputeGameHashFromDisc(disc rcheevos.CDReader, consoleID uint32) string {
 	return rcheevos.HashFromDisc(consoleID, disc)
 }

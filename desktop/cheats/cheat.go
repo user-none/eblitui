@@ -1,9 +1,9 @@
 // Copyright 2026 The eblitui Authors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Package cheats parses RetroArch CHT cheat files into decoded memory
-// operations. It depends only on the standard library and has no
-// knowledge of the application using it.
+// Package cheats decodes cheat code strings, such as Action Replay codes,
+// into memory operations. It depends only on the standard library and has
+// no knowledge of the application using it.
 package cheats
 
 import "errors"
@@ -16,14 +16,13 @@ const (
 	// string cheats, such as Action Replay codes, use this space.
 	SpaceBus Space = iota
 	// SpaceFlat addresses are offsets into the system's flat memory
-	// layout. RetroArch format entries use this space.
+	// layout. No decoder produces this space today; the engine applies it.
 	SpaceFlat
 )
 
 // OpKind is what an operation does. A compare kind gates the op after it
-// in the same cheat. Only OpIfEqual is produced by a decoder today; the
-// other compare kinds are kept for RetroArch conditional entries, which
-// are not supported yet, and the engine applies all four.
+// in the same cheat. Only OpSet and OpIfEqual are produced by a decoder
+// today; the engine applies every kind.
 type OpKind int
 
 const (
@@ -49,15 +48,13 @@ type Op struct {
 	BigEndian bool // byte order of 2 and 4 byte values
 }
 
-// Cheat is one cheat from a CHT file.
+// Cheat is one decoded cheat.
 type Cheat struct {
 	Name string
-	// Code is the code string as written in the file, for display. It is
-	// empty for RetroArch format entries, which have no code string.
+	// Code is the code string as written, for display.
 	Code string
-	// ID identifies the cheat independent of its name and position in
-	// the file: the normalized code for code string cheats, or the
-	// entry's fields for RetroArch format entries.
+	// ID identifies the cheat independent of its name and position: the
+	// normalized code string.
 	ID  string
 	Ops []Op
 }

@@ -7,11 +7,19 @@ import (
 	"testing"
 )
 
+// testInfo returns a GameInfo that reads each game's title and region from
+// a map keyed by game ID. Games not in the map have an empty title and
+// region.
+func testInfo(m map[string][2]string) GameInfo {
+	return func(g *GameEntry) (string, string) {
+		v := m[g.GameID]
+		return v[0], v[1]
+	}
+}
+
 func TestGameEntryDiscsRoundTrip(t *testing.T) {
 	in := &GameEntry{
-		CRC32:       "MK-81307",
-		Name:        "Panzer Dragoon Saga",
-		DisplayName: "Panzer Dragoon Saga",
+		GameID: "MK-81307",
 		Discs: []GameDisc{
 			{Index: 0, File: "/roms/pds1.chd", Name: "Panzer Dragoon Saga (USA) (Disc 1)"},
 			{Index: 1, File: "/roms/pds2.chd", Name: "Panzer Dragoon Saga (USA) (Disc 2)"},
@@ -48,7 +56,7 @@ func TestGameEntryBackCompatNoDiscs(t *testing.T) {
 		t.Errorf("SelectedDisc = %d, want 0 for old format", e.SelectedDisc)
 	}
 	// Single-disc/cartridge entries must omit the new fields entirely.
-	b, err := json.Marshal(&GameEntry{CRC32: "abc", File: "/roms/sonic.chd"})
+	b, err := json.Marshal(&GameEntry{GameID: "abc", File: "/roms/sonic.chd"})
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
@@ -153,10 +161,8 @@ func TestLibraryAddGetGame(t *testing.T) {
 	lib := DefaultLibrary()
 
 	game := &GameEntry{
-		CRC32:       "12345678",
-		File:        "/path/to/game.sms",
-		DisplayName: "Test Game",
-		Region:      "us",
+		GameID: "12345678",
+		File:   "/path/to/game.sms",
 	}
 
 	// Add game
@@ -171,146 +177,88 @@ func TestLibraryAddGetGame(t *testing.T) {
 	if retrieved == nil {
 		t.Fatal("game not found")
 	}
-	if retrieved.DisplayName != "Test Game" {
-		t.Errorf("expected 'Test Game', got '%s'", retrieved.DisplayName)
+	if retrieved.File != "/path/to/game.sms" {
+		t.Errorf("expected '/path/to/game.sms', got '%s'", retrieved.File)
 	}
 }
 
 func TestLibrarySorting(t *testing.T) {
 	lib := DefaultLibrary()
 
-	lib.AddGame(&GameEntry{CRC32: "1", DisplayName: "Zelda", PlayTimeSeconds: 100, LastPlayed: 1000})
-	lib.AddGame(&GameEntry{CRC32: "2", DisplayName: "Alex Kidd", PlayTimeSeconds: 500, LastPlayed: 500})
-	lib.AddGame(&GameEntry{CRC32: "3", DisplayName: "Sonic", PlayTimeSeconds: 300, LastPlayed: 2000})
+	lib.AddGame(&GameEntry{GameID: "1", PlayTimeSeconds: 100, LastPlayed: 1000})
+	lib.AddGame(&GameEntry{GameID: "2", PlayTimeSeconds: 500, LastPlayed: 500})
+	lib.AddGame(&GameEntry{GameID: "3", PlayTimeSeconds: 300, LastPlayed: 2000})
+	info := testInfo(map[string][2]string{"1": {"Zelda"}, "2": {"Alex Kidd"}, "3": {"Sonic"}})
 
 	// Sort by title
-	games := lib.GetGamesSorted("title", false)
+	games := lib.GetGamesSorted("title", false, info)
 	if len(games) != 3 {
 		t.Fatalf("expected 3 games, got %d", len(games))
 	}
-	if games[0].DisplayName != "Alex Kidd" {
-		t.Errorf("expected first game 'Alex Kidd', got '%s'", games[0].DisplayName)
+	if games[0].GameID != "2" {
+		t.Errorf("expected first game Alex Kidd (2), got %s", games[0].GameID)
 	}
-	if games[2].DisplayName != "Zelda" {
-		t.Errorf("expected last game 'Zelda', got '%s'", games[2].DisplayName)
+	if games[2].GameID != "1" {
+		t.Errorf("expected last game Zelda (1), got %s", games[2].GameID)
 	}
 
 	// Sort by play time
-	games = lib.GetGamesSorted("playTime", false)
-	if games[0].DisplayName != "Alex Kidd" { // Most played (500s)
-		t.Errorf("expected most played 'Alex Kidd', got '%s'", games[0].DisplayName)
+	games = lib.GetGamesSorted("playTime", false, info)
+	if games[0].GameID != "2" { // Most played (500s)
+		t.Errorf("expected most played Alex Kidd (2), got %s", games[0].GameID)
 	}
 
 	// Sort by last played
-	games = lib.GetGamesSorted("lastPlayed", false)
-	if games[0].DisplayName != "Sonic" { // Most recent (2000)
-		t.Errorf("expected most recent 'Sonic', got '%s'", games[0].DisplayName)
+	games = lib.GetGamesSorted("lastPlayed", false, info)
+	if games[0].GameID != "3" { // Most recent (2000)
+		t.Errorf("expected most recent Sonic (3), got %s", games[0].GameID)
 	}
 }
 
 func TestLibrarySortingStability(t *testing.T) {
-	// Test that sorting is stable when primary sort values are equal.
-	// Games with the same display name should be sorted by region, then by
-	// No-Intro name (to distinguish revisions), then by CRC32.
+	// Games with the same title sort by region, then by game ID, so the
+	// order is the same on every sort.
 	lib := DefaultLibrary()
-
-	// Add games with same display name but different regions and revisions
-	lib.AddGame(&GameEntry{
-		CRC32:       "C",
-		DisplayName: "Zillion",
-		Name:        "Zillion (Japan) (Rev 2)",
-		Region:      "jp",
-	})
-	lib.AddGame(&GameEntry{
-		CRC32:       "A",
-		DisplayName: "Zillion",
-		Name:        "Zillion (USA)",
-		Region:      "us",
-	})
-	lib.AddGame(&GameEntry{
-		CRC32:       "B",
-		DisplayName: "Zillion",
-		Name:        "Zillion (Europe)",
-		Region:      "eu",
-	})
-	lib.AddGame(&GameEntry{
-		CRC32:       "D",
-		DisplayName: "Zillion",
-		Name:        "Zillion (Japan) (Rev 1)",
-		Region:      "jp",
-	})
-	lib.AddGame(&GameEntry{
-		CRC32:       "E",
-		DisplayName: "Alex Kidd",
-		Name:        "Alex Kidd (USA)",
-		Region:      "us",
+	for _, id := range []string{"C", "A", "B", "D", "E"} {
+		lib.AddGame(&GameEntry{GameID: id})
+	}
+	info := testInfo(map[string][2]string{
+		"C": {"Zillion", "jp"},
+		"A": {"Zillion", "us"},
+		"B": {"zillion", "eu"},
+		"D": {"Zillion", "jp"},
+		"E": {"Alex Kidd", "us"},
 	})
 
-	// Sort by title multiple times and verify order is consistent
+	// Title is compared case-insensitively, then region (eu, jp, us), then
+	// game ID breaks the jp tie.
+	want := []string{"E", "B", "C", "D", "A"}
 	for i := 0; i < 5; i++ {
-		games := lib.GetGamesSorted("title", false)
-		if len(games) != 5 {
-			t.Fatalf("expected 5 games, got %d", len(games))
+		games := lib.GetGamesSorted("title", false, info)
+		if len(games) != len(want) {
+			t.Fatalf("expected %d games, got %d", len(want), len(games))
 		}
-		// Alex Kidd should be first (alphabetically)
-		if games[0].DisplayName != "Alex Kidd" {
-			t.Errorf("iteration %d: expected first game 'Alex Kidd', got '%s'", i, games[0].DisplayName)
-		}
-		// Zillion games should be sorted by region (eu, jp, us), then by Name
-		// EU version
-		if games[1].Region != "eu" {
-			t.Errorf("iteration %d: expected second game region 'eu', got '%s'", i, games[1].Region)
-		}
-		// JP versions (Rev 1 before Rev 2 alphabetically)
-		if games[2].Name != "Zillion (Japan) (Rev 1)" {
-			t.Errorf("iteration %d: expected third game 'Zillion (Japan) (Rev 1)', got '%s'", i, games[2].Name)
-		}
-		if games[3].Name != "Zillion (Japan) (Rev 2)" {
-			t.Errorf("iteration %d: expected fourth game 'Zillion (Japan) (Rev 2)', got '%s'", i, games[3].Name)
-		}
-		// US version
-		if games[4].Region != "us" {
-			t.Errorf("iteration %d: expected fifth game region 'us', got '%s'", i, games[4].Region)
+		for j, id := range want {
+			if games[j].GameID != id {
+				t.Errorf("iteration %d: position %d is %s, want %s", i, j, games[j].GameID, id)
+			}
 		}
 	}
 
-	// Test with lastPlayed - games with same timestamp should have stable order
+	// Equal lastPlayed and playTime fall back to title order
 	lib2 := DefaultLibrary()
-	lib2.AddGame(&GameEntry{CRC32: "C", DisplayName: "Game C", Name: "Game C (JP)", Region: "jp", LastPlayed: 1000})
-	lib2.AddGame(&GameEntry{CRC32: "A", DisplayName: "Game A", Name: "Game A (US)", Region: "us", LastPlayed: 1000})
-	lib2.AddGame(&GameEntry{CRC32: "B", DisplayName: "Game B", Name: "Game B (EU)", Region: "eu", LastPlayed: 1000})
-
-	for i := 0; i < 5; i++ {
-		games := lib2.GetGamesSorted("lastPlayed", false)
-		// With equal lastPlayed, should fall back to title order (alphabetical)
-		if games[0].DisplayName != "Game A" {
-			t.Errorf("lastPlayed iteration %d: expected first 'Game A', got '%s'", i, games[0].DisplayName)
-		}
-		if games[1].DisplayName != "Game B" {
-			t.Errorf("lastPlayed iteration %d: expected second 'Game B', got '%s'", i, games[1].DisplayName)
-		}
-		if games[2].DisplayName != "Game C" {
-			t.Errorf("lastPlayed iteration %d: expected third 'Game C', got '%s'", i, games[2].DisplayName)
-		}
-	}
-
-	// Test with playTime - games with same play time should have stable order
-	lib3 := DefaultLibrary()
-	lib3.AddGame(&GameEntry{CRC32: "C", DisplayName: "Game C", Name: "Game C (JP)", Region: "jp", PlayTimeSeconds: 100})
-	lib3.AddGame(&GameEntry{CRC32: "A", DisplayName: "Game A", Name: "Game A (US)", Region: "us", PlayTimeSeconds: 100})
-	lib3.AddGame(&GameEntry{CRC32: "B", DisplayName: "Game B", Name: "Game B (EU)", Region: "eu", PlayTimeSeconds: 100})
-
-	for i := 0; i < 5; i++ {
-		games := lib3.GetGamesSorted("playTime", false)
-		// With equal playTime, should fall back to title order (alphabetical)
-		if games[0].DisplayName != "Game A" {
-			t.Errorf("playTime iteration %d: expected first 'Game A', got '%s'", i, games[0].DisplayName)
-		}
-		if games[1].DisplayName != "Game B" {
-			t.Errorf("playTime iteration %d: expected second 'Game B', got '%s'", i, games[1].DisplayName)
-		}
-		if games[2].DisplayName != "Game C" {
-			t.Errorf("playTime iteration %d: expected third 'Game C', got '%s'", i, games[2].DisplayName)
+	lib2.AddGame(&GameEntry{GameID: "C", LastPlayed: 1000, PlayTimeSeconds: 100})
+	lib2.AddGame(&GameEntry{GameID: "A", LastPlayed: 1000, PlayTimeSeconds: 100})
+	lib2.AddGame(&GameEntry{GameID: "B", LastPlayed: 1000, PlayTimeSeconds: 100})
+	info2 := testInfo(map[string][2]string{"C": {"Game C"}, "A": {"Game A"}, "B": {"Game B"}})
+	for _, sortBy := range []string{"lastPlayed", "playTime"} {
+		for i := 0; i < 5; i++ {
+			games := lib2.GetGamesSorted(sortBy, false, info2)
+			for j, id := range []string{"A", "B", "C"} {
+				if games[j].GameID != id {
+					t.Errorf("%s iteration %d: position %d is %s, want %s", sortBy, i, j, games[j].GameID, id)
+				}
+			}
 		}
 	}
 }
@@ -318,18 +266,19 @@ func TestLibrarySortingStability(t *testing.T) {
 func TestLibraryFavoritesFilter(t *testing.T) {
 	lib := DefaultLibrary()
 
-	lib.AddGame(&GameEntry{CRC32: "1", DisplayName: "Game1", Favorite: true})
-	lib.AddGame(&GameEntry{CRC32: "2", DisplayName: "Game2", Favorite: false})
-	lib.AddGame(&GameEntry{CRC32: "3", DisplayName: "Game3", Favorite: true})
+	lib.AddGame(&GameEntry{GameID: "1", Favorite: true})
+	lib.AddGame(&GameEntry{GameID: "2", Favorite: false})
+	lib.AddGame(&GameEntry{GameID: "3", Favorite: true})
+	info := testInfo(nil)
 
 	// All games
-	all := lib.GetGamesSorted("title", false)
+	all := lib.GetGamesSorted("title", false, info)
 	if len(all) != 3 {
 		t.Errorf("expected 3 games, got %d", len(all))
 	}
 
 	// Favorites only
-	favorites := lib.GetGamesSorted("title", true)
+	favorites := lib.GetGamesSorted("title", true, info)
 	if len(favorites) != 2 {
 		t.Errorf("expected 2 favorites, got %d", len(favorites))
 	}
@@ -444,8 +393,7 @@ func TestUpdatePlayTime(t *testing.T) {
 	lib := DefaultLibrary()
 
 	lib.AddGame(&GameEntry{
-		CRC32:           "12345678",
-		DisplayName:     "Test Game",
+		GameID:          "12345678",
 		PlayTimeSeconds: 100,
 	})
 
@@ -463,73 +411,76 @@ func TestUpdatePlayTime(t *testing.T) {
 func TestGetGamesSortedFiltered(t *testing.T) {
 	lib := DefaultLibrary()
 
-	lib.AddGame(&GameEntry{CRC32: "1", DisplayName: "Sonic the Hedgehog", Name: "Sonic the Hedgehog (USA)"})
-	lib.AddGame(&GameEntry{CRC32: "2", DisplayName: "Alex Kidd in Miracle World", Name: "Alex Kidd in Miracle World (Europe)"})
-	lib.AddGame(&GameEntry{CRC32: "3", DisplayName: "Phantasy Star", Name: "Phantasy Star (Japan)"})
-	lib.AddGame(&GameEntry{CRC32: "4", DisplayName: "Wonder Boy", Name: "Wonder Boy (USA)", Favorite: true})
+	lib.AddGame(&GameEntry{GameID: "1"})
+	lib.AddGame(&GameEntry{GameID: "2"})
+	lib.AddGame(&GameEntry{GameID: "3"})
+	lib.AddGame(&GameEntry{GameID: "4", Favorite: true})
+	info := testInfo(map[string][2]string{
+		"1": {"Sonic the Hedgehog", "us"},
+		"2": {"Alex Kidd in Miracle World", "eu"},
+		"3": {"Phantasy Star", "jp"},
+		"4": {"Wonder Boy", "us"},
+	})
 
 	// Empty search returns all games
-	games := lib.GetGamesSortedFiltered("title", false, "")
+	games := lib.GetGamesSortedFiltered("title", false, "", info)
 	if len(games) != 4 {
 		t.Errorf("expected 4 games with empty search, got %d", len(games))
 	}
 
-	// Case-insensitive search by DisplayName
-	games = lib.GetGamesSortedFiltered("title", false, "sonic")
+	// Case-insensitive search by title
+	games = lib.GetGamesSortedFiltered("title", false, "sonic", info)
 	if len(games) != 1 {
 		t.Errorf("expected 1 game matching 'sonic', got %d", len(games))
 	}
-	if games[0].CRC32 != "1" {
-		t.Errorf("expected Sonic game, got %s", games[0].DisplayName)
+	if games[0].GameID != "1" {
+		t.Errorf("expected Sonic game, got %s", games[0].GameID)
 	}
 
 	// Case-insensitive search - uppercase
-	games = lib.GetGamesSortedFiltered("title", false, "SONIC")
+	games = lib.GetGamesSortedFiltered("title", false, "SONIC", info)
 	if len(games) != 1 {
 		t.Errorf("expected 1 game matching 'SONIC', got %d", len(games))
 	}
 
-	// Search matches Name field (not just DisplayName)
-	games = lib.GetGamesSortedFiltered("title", false, "europe")
-	if len(games) != 1 {
-		t.Errorf("expected 1 game matching 'europe' in Name, got %d", len(games))
-	}
-	if games[0].CRC32 != "2" {
-		t.Errorf("expected Alex Kidd (Europe), got %s", games[0].DisplayName)
+	// Search matches the title only, not the region
+	games = lib.GetGamesSortedFiltered("title", false, "eu", info)
+	if len(games) != 0 {
+		t.Errorf("expected 0 games matching 'eu', got %d", len(games))
 	}
 
 	// Partial match - "world" only matches "Miracle World"
-	games = lib.GetGamesSortedFiltered("title", false, "world")
+	games = lib.GetGamesSortedFiltered("title", false, "world", info)
 	if len(games) != 1 {
 		t.Errorf("expected 1 game matching 'world', got %d", len(games))
 	}
-	if games[0].CRC32 != "2" {
-		t.Errorf("expected Alex Kidd (Miracle World), got %s", games[0].DisplayName)
+	if games[0].GameID != "2" {
+		t.Errorf("expected Alex Kidd (Miracle World), got %s", games[0].GameID)
 	}
 
 	// Combined with favorites filter
-	games = lib.GetGamesSortedFiltered("title", true, "")
+	games = lib.GetGamesSortedFiltered("title", true, "", info)
 	if len(games) != 1 {
 		t.Errorf("expected 1 favorite game, got %d", len(games))
 	}
-	if games[0].CRC32 != "4" {
-		t.Errorf("expected Wonder Boy (favorite), got %s", games[0].DisplayName)
+	if games[0].GameID != "4" {
+		t.Errorf("expected Wonder Boy (favorite), got %s", games[0].GameID)
 	}
 
 	// Combined filters: favorites + search
-	games = lib.GetGamesSortedFiltered("title", true, "wonder")
+	games = lib.GetGamesSortedFiltered("title", true, "wonder", info)
 	if len(games) != 1 {
 		t.Errorf("expected 1 game matching 'wonder' and favorite, got %d", len(games))
 	}
 
 	// No matches
-	games = lib.GetGamesSortedFiltered("title", false, "nonexistent")
+	games = lib.GetGamesSortedFiltered("title", false, "nonexistent", info)
 	if len(games) != 0 {
 		t.Errorf("expected 0 games matching 'nonexistent', got %d", len(games))
 	}
 
 	// No matches with favorites filter
-	games = lib.GetGamesSortedFiltered("title", true, "sonic")
+	games = lib.GetGamesSortedFiltered("title", true, "sonic", info)
 	if len(games) != 0 {
 		t.Errorf("expected 0 games matching 'sonic' with favorites filter, got %d", len(games))
 	}
@@ -667,12 +618,12 @@ func TestLibraryNilGamesMap(t *testing.T) {
 		t.Errorf("RemoveGames: %v", err)
 	}
 
-	games := lib.GetGamesSorted("title", false)
+	games := lib.GetGamesSorted("title", false, testInfo(nil))
 	if games != nil {
 		t.Errorf("expected nil, got %v", games)
 	}
 
-	filtered := lib.GetGamesSortedFiltered("title", false, "test")
+	filtered := lib.GetGamesSortedFiltered("title", false, "test", testInfo(nil))
 	if filtered != nil {
 		t.Errorf("expected nil, got %v", filtered)
 	}
@@ -681,7 +632,7 @@ func TestLibraryNilGamesMap(t *testing.T) {
 func TestLibraryAddGameInitializesMap(t *testing.T) {
 	lib := &Library{Games: nil}
 
-	lib.AddGame(&GameEntry{CRC32: "abc", DisplayName: "Test"})
+	lib.AddGame(&GameEntry{GameID: "abc"})
 
 	if lib.Games == nil {
 		t.Fatal("Games map should be initialized")
@@ -693,16 +644,59 @@ func TestLibraryAddGameInitializesMap(t *testing.T) {
 
 func TestLibraryDefaultSortOrder(t *testing.T) {
 	lib := DefaultLibrary()
-	lib.AddGame(&GameEntry{CRC32: "1", DisplayName: "Zelda"})
-	lib.AddGame(&GameEntry{CRC32: "2", DisplayName: "Alex Kidd"})
+	lib.AddGame(&GameEntry{GameID: "1"})
+	lib.AddGame(&GameEntry{GameID: "2"})
+	info := testInfo(map[string][2]string{"1": {"Zelda"}, "2": {"Alex Kidd"}})
 
 	// "unknown_sort" should fall back to title sort
-	games := lib.GetGamesSorted("unknown_sort", false)
+	games := lib.GetGamesSorted("unknown_sort", false, info)
 	if len(games) != 2 {
 		t.Fatalf("expected 2 games, got %d", len(games))
 	}
-	if games[0].DisplayName != "Alex Kidd" {
-		t.Errorf("expected Alex Kidd first with default sort, got %s", games[0].DisplayName)
+	if games[0].GameID != "2" {
+		t.Errorf("expected Alex Kidd (2) first with default sort, got %s", games[0].GameID)
+	}
+}
+
+func TestMigrateLibraryVersion2(t *testing.T) {
+	// Version 2 entries keep their user data, take GameID from the map key,
+	// and lose the dropped metadata fields when the library is saved.
+	useTempDataDir(t)
+	path, err := GetLibraryPath()
+	if err != nil {
+		t.Fatalf("GetLibraryPath: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	old := `{"version": 2, "games": {"T-14310G": {"crc32": "T-14310G", "name": "Bulk Slash", "displayName": "Bulk Slash", "region": "jp", "developer": "HUDSON", "favorite": true, "playTimeSeconds": 60, "discs": [{"index": 0, "file": "/roms/bs.chd", "name": "(Japan)"}]}}}`
+	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	lib, err := LoadLibrary()
+	if err != nil {
+		t.Fatalf("LoadLibrary: %v", err)
+	}
+	if lib.Version != libraryVersion {
+		t.Errorf("version = %d, want %d", lib.Version, libraryVersion)
+	}
+	g := lib.GetGame("T-14310G")
+	if g == nil || g.GameID != "T-14310G" || !g.Favorite || g.PlayTimeSeconds != 60 || len(g.Discs) != 1 {
+		t.Fatalf("migrated entry = %+v", g)
+	}
+
+	saved, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	for _, field := range []string{`"crc32"`, `"displayName"`, `"region"`, `"developer"`} {
+		if containsSub(string(saved), field) {
+			t.Errorf("saved library still has %s: %s", field, saved)
+		}
+	}
+	if !containsSub(string(saved), `"gameId": "T-14310G"`) {
+		t.Errorf("saved library lacks gameId: %s", saved)
 	}
 }
 

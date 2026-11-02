@@ -7,7 +7,6 @@ require (
 	github.com/ebitenui/ebitenui v0.7.3
 	github.com/hajimehoshi/ebiten/v2 v2.10.5
 	github.com/user-none/eblitui/coreif v0.9.0
-	github.com/user-none/eblitui/rdb v0.2.0
 	github.com/user-none/eblitui/romloader v0.4.1
 	github.com/user-none/eblitui/rumble v1.0.0
 	github.com/user-none/go-rcheevos v0.1.0

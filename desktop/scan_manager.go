@@ -8,7 +8,6 @@ import (
 	"log"
 
 	"github.com/user-none/eblitui/coreif"
-	"github.com/user-none/eblitui/desktop/metadata"
 	"github.com/user-none/eblitui/desktop/scanner"
 	"github.com/user-none/eblitui/desktop/screens"
 	"github.com/user-none/eblitui/desktop/storage"
@@ -24,12 +23,11 @@ type ScanManager struct {
 	// External dependencies (not owned by ScanManager)
 	library          *storage.Library
 	scanScreen       *screens.ScanProgressScreen
-	extensions       []string                  // Supported ROM file extensions
-	metadata         *metadata.MetadataManager // Metadata for RDB/thumbnail lookups
+	extensions       []string // Supported ROM file extensions
 	defaultConsoleID int
 	disc             bool                  // disc-based system (group-key identity)
 	discID           coreif.DiscIdentifier // reads disc info (may be nil)
-	downloads        scanner.Downloads     // optional asset downloads to perform
+	sources          scanner.Sources       // where artwork and rumble files are downloaded from
 
 	// Callbacks to App
 	onProgress func() // Called when progress updates (triggers UI rebuild)
@@ -41,11 +39,10 @@ func NewScanManager(
 	library *storage.Library,
 	scanScreen *screens.ScanProgressScreen,
 	extensions []string,
-	md *metadata.MetadataManager,
 	defaultConsoleID int,
 	disc bool,
 	discID coreif.DiscIdentifier,
-	downloads scanner.Downloads,
+	sources scanner.Sources,
 	onProgress func(),
 	onComplete func(msg string),
 ) *ScanManager {
@@ -53,11 +50,10 @@ func NewScanManager(
 		library:          library,
 		scanScreen:       scanScreen,
 		extensions:       extensions,
-		metadata:         md,
 		defaultConsoleID: defaultConsoleID,
 		disc:             disc,
 		discID:           discID,
-		downloads:        downloads,
+		sources:          sources,
 		onProgress:       onProgress,
 		onComplete:       onComplete,
 	}
@@ -76,11 +72,10 @@ func (sm *ScanManager) Start() {
 		sm.library.ExcludedPaths,
 		sm.existingGames(),
 		sm.extensions,
-		sm.metadata,
 		sm.defaultConsoleID,
 		sm.disc,
 		sm.discID,
-		sm.downloads,
+		sm.sources,
 	)
 
 	// Configure scan screen

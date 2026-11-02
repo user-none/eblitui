@@ -54,14 +54,18 @@ func TestCleanRunCheck(t *testing.T) {
 	present := touchROM(t, roms, "a.sms")
 	gone := filepath.Join(roms, "gone.sms")
 	games := map[string]storage.GameEntry{
-		"present": {CRC32: "present", File: present},
-		"lost":    {CRC32: "lost", File: gone},
-		"partial": {CRC32: "partial", Discs: []storage.GameDisc{{File: present}, {File: gone}}},
+		"present": {GameID: "present", File: present},
+		"lost":    {GameID: "lost", File: gone},
+		"partial": {GameID: "partial", Discs: []storage.GameDisc{{File: present}, {File: gone}}},
 	}
 
 	r := newCleanRun()
 	r.check(games)
-	files := <-r.done
+	res := <-r.done
+	if res == nil {
+		t.Fatal("check sent no result")
+	}
+	files := res.files
 
 	if len(files) != 2 {
 		t.Fatalf("files = %v, want lost and partial", files)
@@ -77,10 +81,10 @@ func TestCleanRunCheck(t *testing.T) {
 func TestCleanRunCancelled(t *testing.T) {
 	r := newCleanRun()
 	r.Cancel()
-	r.check(map[string]storage.GameEntry{"lost": {CRC32: "lost", File: filepath.Join(t.TempDir(), "gone")}})
+	r.check(map[string]storage.GameEntry{"lost": {GameID: "lost", File: filepath.Join(t.TempDir(), "gone")}})
 
-	if files := <-r.done; files != nil {
-		t.Errorf("cancelled run sent %v, want nil", files)
+	if res := <-r.done; res != nil {
+		t.Errorf("cancelled run sent %+v, want nil", res)
 	}
 }
 
@@ -112,8 +116,8 @@ func TestCleanManagerRemovesMissing(t *testing.T) {
 	useTempDataDir(t)
 	roms := t.TempDir()
 	lib := storage.DefaultLibrary()
-	lib.AddGame(&storage.GameEntry{CRC32: "present", File: touchROM(t, roms, "a.sms")})
-	lib.AddGame(&storage.GameEntry{CRC32: "lost", File: filepath.Join(roms, "gone.sms"), PlayTimeSeconds: 40})
+	lib.AddGame(&storage.GameEntry{GameID: "present", File: touchROM(t, roms, "a.sms")})
+	lib.AddGame(&storage.GameEntry{GameID: "lost", File: filepath.Join(roms, "gone.sms"), PlayTimeSeconds: 40})
 	cm := NewCleanManager(lib, screens.NewScanProgressScreen(), nil, nil)
 
 	if msg := runClean(t, cm, false); msg != "Cleaned 1 game" {
@@ -134,7 +138,7 @@ func TestCleanManagerRemovesMissing(t *testing.T) {
 func TestCleanManagerCancelChangesNothing(t *testing.T) {
 	useTempDataDir(t)
 	lib := storage.DefaultLibrary()
-	lib.AddGame(&storage.GameEntry{CRC32: "lost", File: filepath.Join(t.TempDir(), "gone.sms")})
+	lib.AddGame(&storage.GameEntry{GameID: "lost", File: filepath.Join(t.TempDir(), "gone.sms")})
 	cm := NewCleanManager(lib, screens.NewScanProgressScreen(), nil, nil)
 
 	if msg := runClean(t, cm, true); msg != "" {
@@ -142,5 +146,61 @@ func TestCleanManagerCancelChangesNothing(t *testing.T) {
 	}
 	if lib.GetGame("lost") == nil {
 		t.Error("cancelled clean removed a game")
+	}
+}
+
+// artworkLibrary returns a library with one present game, T-1, whose
+// artwork directory holds the given files
+func artworkLibrary(t *testing.T, names ...string) (*storage.Library, string) {
+	t.Helper()
+	lib := storage.DefaultLibrary()
+	lib.AddGame(&storage.GameEntry{GameID: "T-1", File: touchROM(t, t.TempDir(), "a.cue")})
+	dir, err := storage.GetGameArtworkDir("T-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range names {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return lib, dir
+}
+
+func TestCleanManagerRemovesSupersededBoxArt(t *testing.T) {
+	useTempDataDir(t)
+	lib, dir := artworkLibrary(t, "boxart.webp", "boxart.png", "boxback.webp")
+	runClean(t, NewCleanManager(lib, screens.NewScanProgressScreen(), nil, nil), false)
+
+	if _, err := os.Stat(filepath.Join(dir, "boxart.png")); !os.IsNotExist(err) {
+		t.Error("boxart.png kept although boxart.webp is present")
+	}
+	for _, name := range []string{"boxart.webp", "boxback.webp"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("%s removed: %v", name, err)
+		}
+	}
+}
+
+func TestCleanManagerKeepsOnlyBoxArt(t *testing.T) {
+	useTempDataDir(t)
+	lib, dir := artworkLibrary(t, "boxart.png")
+	runClean(t, NewCleanManager(lib, screens.NewScanProgressScreen(), nil, nil), false)
+
+	if _, err := os.Stat(filepath.Join(dir, "boxart.png")); err != nil {
+		t.Errorf("boxart.png removed without a boxart.webp: %v", err)
+	}
+}
+
+func TestCleanManagerCancelKeepsBoxArt(t *testing.T) {
+	useTempDataDir(t)
+	lib, dir := artworkLibrary(t, "boxart.webp", "boxart.png")
+	runClean(t, NewCleanManager(lib, screens.NewScanProgressScreen(), nil, nil), true)
+
+	if _, err := os.Stat(filepath.Join(dir, "boxart.png")); err != nil {
+		t.Errorf("cancelled clean removed boxart.png: %v", err)
 	}
 }

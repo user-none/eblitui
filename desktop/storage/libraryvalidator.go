@@ -52,7 +52,7 @@ func sanitizeGameEntries(games map[string]*GameEntry) {
 			continue
 		}
 		cleaned := CleanGameKey(key)
-		if cleaned == key && game.CRC32 == key {
+		if cleaned == key && game.GameID == key {
 			continue
 		}
 		delete(games, key)
@@ -62,7 +62,7 @@ func sanitizeGameEntries(games map[string]*GameEntry) {
 		if _, exists := games[cleaned]; exists {
 			continue
 		}
-		game.CRC32 = cleaned
+		game.GameID = cleaned
 		games[cleaned] = game
 	}
 

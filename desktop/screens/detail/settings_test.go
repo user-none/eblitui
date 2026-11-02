@@ -28,7 +28,7 @@ func newTestSettingsSection(t *testing.T, settings *storage.GameSettingsFile) (*
 		saves++
 		return nil
 	}
-	s.SetGame(&storage.GameEntry{CRC32: "12345678"}, settings)
+	s.SetGame(&storage.GameEntry{GameID: "12345678"}, settings)
 	focus := newFakeFocus()
 	s.Build(focus)
 	return s, focus, &saves

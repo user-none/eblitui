@@ -4,12 +4,11 @@
 package update
 
 import (
-	"crypto/ed25519"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
+
+	"github.com/user-none/eblitui/desktop/signing"
 )
 
 const (
@@ -17,10 +16,10 @@ const (
 	MaxManifestSize = 64 * 1024
 
 	// MaxSignatureSize is the largest manifest.sig accepted.
-	MaxSignatureSize = 4 * 1024
+	MaxSignatureSize = signing.MaxSignatureSize
 
 	// maxSignatureLines is the most lines manifest.sig may have.
-	maxSignatureLines = 16
+	maxSignatureLines = signing.MaxSignatureLines
 
 	// manifestSchema is the manifest format version this build reads.
 	manifestSchema = 1
@@ -118,35 +117,7 @@ func (m *Manifest) Asset(platform string) *Asset {
 }
 
 // verifySignature reports whether any line of the signature file is a valid
-// signature of manifest by a trusted key. Each line is an algorithm name and
-// a base64 signature separated by a space. Lines with an unknown algorithm
-// are skipped.
+// signature of manifest by a trusted key. See signing.Verify.
 func verifySignature(manifest, sig []byte, keys Keys) bool {
-	if len(sig) > MaxSignatureSize {
-		return false
-	}
-	lines := strings.Split(strings.TrimRight(string(sig), "\r\n"), "\n")
-	if len(lines) > maxSignatureLines {
-		return false
-	}
-
-	for _, line := range lines {
-		alg, encoded, ok := strings.Cut(strings.TrimSuffix(line, "\r"), " ")
-		if !ok {
-			continue
-		}
-		switch alg {
-		case "ed25519":
-			s, err := base64.StdEncoding.DecodeString(encoded)
-			if err != nil || len(s) != ed25519.SignatureSize {
-				continue
-			}
-			for _, key := range keys.ed25519 {
-				if ed25519.Verify(key, manifest, s) {
-					return true
-				}
-			}
-		}
-	}
-	return false
+	return signing.Verify(manifest, sig, keys)
 }

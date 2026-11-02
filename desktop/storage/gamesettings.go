@@ -54,8 +54,8 @@ type CustomCheat struct {
 
 // LoadGameSettings loads a game's settings file. A missing file returns
 // empty settings. Invalid entries are removed on load.
-func LoadGameSettings(gameCRC string) (*GameSettingsFile, error) {
-	path, err := GetGameSettingsPath(gameCRC)
+func LoadGameSettings(gameID string) (*GameSettingsFile, error) {
+	path, err := GetGameSettingsPath(gameID)
 	if err != nil {
 		return nil, err
 	}
@@ -73,8 +73,8 @@ func LoadGameSettings(gameCRC string) (*GameSettingsFile, error) {
 }
 
 // SaveGameSettings writes a game's settings file.
-func SaveGameSettings(gameCRC string, settings *GameSettingsFile) error {
-	path, err := GetGameSettingsPath(gameCRC)
+func SaveGameSettings(gameID string, settings *GameSettingsFile) error {
+	path, err := GetGameSettingsPath(gameID)
 	if err != nil {
 		return err
 	}

@@ -5,7 +5,6 @@ package screens
 
 import (
 	"fmt"
-	goimage "image"
 	"log"
 	"os"
 	"path/filepath"
@@ -15,7 +14,9 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/desktop/achievements"
+	"github.com/user-none/eblitui/desktop/artwork"
 	"github.com/user-none/eblitui/desktop/cheats"
+	"github.com/user-none/eblitui/desktop/content"
 	"github.com/user-none/eblitui/desktop/screens/detail"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
@@ -30,12 +31,21 @@ type DetailScreen struct {
 	callback ScreenCallback
 	library  *storage.Library
 	game     *storage.GameEntry
-	files    storage.FileStatus // Which of the game's files are missing, checked in SetGame
+	files    storage.FileStatus  // Which of the game's files are missing, checked in SetGame
+	art      *detail.ImageLoader // the box art shown over the sidebar
+
+	// artSize is the box art's width and height read from its header, so
+	// the art box takes its final shape before the art has loaded; zero
+	// when the game has no readable box art. artSizeRead reports it was
+	// read for the current game.
+	artSize     [2]int
+	artSizeRead bool
 
 	pages sidebarSections // Page sidebar list and selection
 
 	// Encapsulated pages
 	overviewPage    *detail.OverviewSection
+	artworkPage     *detail.ArtworkSection
 	cheatsPage      *detail.CheatsSection // nil when the core has no cheat support
 	settingsPage    *detail.SettingsSection
 	screenshotsPage *detail.ScreenshotsSection
@@ -51,23 +61,28 @@ const (
 
 // NewDetailScreen creates a new detail screen. cheatSystem is the core's
 // cheat system, or 0 when the core has no cheat support; the Cheats page
-// is listed only when it is set. cheatBigEndian is the byte order of the
-// core's memory, which cheats are converted to. coreOptions are the
+// is listed only when it is set. cheatProvider supplies the database
+// cheats, nil when the core has none. cheatBigEndian is the byte order of
+// the core's memory, which cheats are converted to. coreOptions are the
 // core's options, of which the Settings page lists the per game ones.
-func NewDetailScreen(callback ScreenCallback, library *storage.Library, achievementManager *achievements.Manager, defaultConsoleID int, cheatSystem cheats.System, cheatBigEndian bool, coreOptions []coreif.CoreOption) *DetailScreen {
+func NewDetailScreen(callback ScreenCallback, library *storage.Library, achievementManager *achievements.Manager, defaultConsoleID int, cheatSystem cheats.System, cheatProvider content.CheatsSource, cheatBigEndian bool, coreOptions []coreif.CoreOption) *DetailScreen {
 	s := &DetailScreen{
 		callback: callback,
 		library:  library,
 	}
 	s.InitBase()
+	s.art = detail.NewImageLoader(func() { s.callback.RequestRebuild() })
 	s.overviewPage = detail.NewOverviewSection(callback, library, achievementManager, defaultConsoleID, s.contentWidth)
+
+	s.artworkPage = detail.NewArtworkSection(callback)
 
 	s.pages.sections = []sectionDescriptor{
 		{label: "Overview", focusKey: "page-overview", build: s.overviewPage.Build, setupNav: s.setupOverviewNav},
+		{label: "Artwork", focusKey: "page-artwork", build: s.artworkPage.Build},
 	}
 	// Cheats is listed only when the core supports cheats
 	if cheatSystem != 0 {
-		s.cheatsPage = detail.NewCheatsSection(callback, cheatSystem, cheatBigEndian, s.contentWidth)
+		s.cheatsPage = detail.NewCheatsSection(callback, cheatProvider, cheatSystem, cheatBigEndian, s.contentWidth)
 		s.pages.sections = append(s.pages.sections, sectionDescriptor{label: "Cheats", focusKey: cheatsPageKey, build: s.cheatsPage.Build, setupNav: s.setupCheatsNav})
 	}
 	s.settingsPage = detail.NewSettingsSection(callback, coreOptions, s.contentWidth)
@@ -78,9 +93,11 @@ func NewDetailScreen(callback ScreenCallback, library *storage.Library, achievem
 }
 
 // SetGame sets the game to display
-func (s *DetailScreen) SetGame(gameCRC string) {
-	s.game = s.library.GetGame(gameCRC)
+func (s *DetailScreen) SetGame(gameID string) {
+	s.game = s.library.GetGame(gameID)
 	s.files = storage.FileStatus{}
+	s.art.Release()
+	s.artSizeRead = false
 	if s.game != nil {
 		s.files = s.game.CheckFiles()
 	}
@@ -97,14 +114,15 @@ func (s *DetailScreen) SetGame(gameCRC string) {
 	var gameSettings *storage.GameSettingsFile
 	if s.game != nil {
 		var err error
-		gameSettings, err = storage.LoadGameSettings(s.game.CRC32)
+		gameSettings, err = storage.LoadGameSettings(s.game.GameID)
 		if err != nil {
-			log.Printf("Failed to load game settings for %s: %v", s.game.CRC32, err)
+			log.Printf("Failed to load game settings for %s: %v", s.game.GameID, err)
 			gameSettings = &storage.GameSettingsFile{}
 		}
 	}
 
 	s.overviewPage.SetGame(s.game, s.files)
+	s.artworkPage.SetGame(s.game)
 	if s.cheatsPage != nil {
 		s.cheatsPage.SetGame(s.game, gameSettings)
 	}
@@ -179,13 +197,13 @@ func (s *DetailScreen) Build() *widget.Container {
 
 	if s.playable() {
 		playButton := widgets.PrimaryTextButton("Play", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
-			s.callback.LaunchGame(s.game.CRC32, false, -1)
+			s.callback.LaunchGame(s.game.GameID, false, -1)
 		})
 		s.RegisterFocusButton("play", playButton)
 		buttonContainer.AddChild(playButton)
 
 		resumeButton := widgets.EnabledTextButton("Resume", style.ButtonPaddingMedium, hasResume, func(args *widget.ButtonClickedEventArgs) {
-			s.callback.LaunchGame(s.game.CRC32, true, -1)
+			s.callback.LaunchGame(s.game.GameID, true, -1)
 		})
 		s.RegisterFocusButton("resume", resumeButton)
 		buttonContainer.AddChild(resumeButton)
@@ -241,24 +259,9 @@ func (s *DetailScreen) Build() *widget.Container {
 const detailColumnFraction = 5
 
 // detailColumnMaxWidth is the widest the game column grows, in logical
-// pixels before scaling. Box art from the thumbnail repositories is about
-// 512 pixels on its long side, so at scale 1.0 the column shows it at or
-// below its native size. The cap grows with the window scale, so on a
-// large display the art upscales along with the rest of the UI.
+// pixels before scaling. The cap grows with the window scale, so on a
+// large display the art grows along with the rest of the UI.
 const detailColumnMaxWidth = 400
-
-// detailSideBySideWidth is the window width, in logical pixels before DPI
-// scaling, from which the page sidebar sits beside the box art instead of
-// under it. Narrower windows stack them and have no width to spare for a
-// wider column. It measures room in the window, so it does not grow with
-// the window scale.
-const detailSideBySideWidth = 1200
-
-// sideBySide reports whether the sidebar goes beside the art rather than
-// under it
-func (s *DetailScreen) sideBySide() bool {
-	return s.callback.GetWindowWidth() >= style.PxDPI(detailSideBySideWidth)
-}
 
 // artWidth returns the box art width: a fifth of the window, kept between
 // DetailColumnWidth and detailColumnMaxWidth
@@ -267,14 +270,9 @@ func (s *DetailScreen) artWidth() int {
 	return min(max(width, style.DetailColumnWidth), style.Px(detailColumnMaxWidth))
 }
 
-// columnWidth returns the game column width. Stacked, the art and the
-// sidebar share it: the art width, or wider when a page label needs more
-// room. Side by side, it is the sidebar at its fit width, the spacing, and
-// the art.
+// columnWidth returns the game column width, which the art and the sidebar
+// share: the art width, or wider when a page label needs more room
 func (s *DetailScreen) columnWidth() int {
-	if s.sideBySide() {
-		return s.pages.sidebarWidth(style.SidebarMinWidth) + style.DefaultSpacing + s.artWidth()
-	}
 	return s.pages.sidebarWidth(s.artWidth())
 }
 
@@ -285,83 +283,89 @@ func (s *DetailScreen) contentWidth() int {
 }
 
 // buildGameColumn creates the left column shown on every page: the box art
-// and the page sidebar. In a narrow window the sidebar sits directly under
-// the art, and on a window too short for the full 3:4 box the art shrinks
-// instead of pushing the sidebar off the bottom. From
-// detailSideBySideWidth the sidebar sits beside the art on the left, so
-// the art no longer limits how many pages fit.
+// with the page sidebar directly under it, so every page shows which game
+// it is for. On a window too short for the full box the art shrinks
+// instead of pushing the sidebar off the bottom.
 func (s *DetailScreen) buildGameColumn() *widget.Container {
 	rebuild := func() { s.callback.RequestRebuild() }
-
-	if !s.sideBySide() {
-		width := s.columnWidth()
-		column := widget.NewContainer(
-			widget.ContainerOpts.Layout(widgets.NewShrinkFirstLayout(style.DefaultSpacing)),
-		)
-		column.AddChild(s.buildArtBox(width))
-		column.AddChild(s.pages.buildSidebar(&s.BaseScreen, width, rebuild))
-		return column
-	}
-
-	// The sidebar panel runs the full height like the settings sidebar.
-	// The art box keeps to the top and takes the height it has, up to 3:4.
+	width := s.columnWidth()
 	column := widget.NewContainer(
-		widget.ContainerOpts.Layout(widget.NewGridLayout(
-			widget.GridLayoutOpts.Columns(2),
-			widget.GridLayoutOpts.Stretch([]bool{false, false}, []bool{true}),
-			widget.GridLayoutOpts.Spacing(style.DefaultSpacing, 0),
-		)),
+		widget.ContainerOpts.Layout(widgets.NewShrinkFirstLayout(style.DefaultSpacing)),
 	)
-	column.AddChild(s.pages.buildSidebar(&s.BaseScreen, s.pages.sidebarWidth(style.SidebarMinWidth), rebuild))
-
-	artWidth := s.artWidth()
-	art := s.buildArtBox(artWidth)
-	art.GetWidget().MinHeight = 0
-	art.GetWidget().LayoutData = widget.GridLayoutData{MaxHeight: artWidth * 4 / 3}
-	column.AddChild(art)
+	column.AddChild(s.buildArtBox(width))
+	column.AddChild(s.pages.buildSidebar(&s.BaseScreen, width, rebuild))
 	return column
 }
 
-// buildArtBox creates the box art at the given width in a 3:4 black box.
-// The art is drawn to fit the box, so it keeps its aspect ratio when the
-// column layout shrinks the box on a short window. Without artwork the
-// game's name is shown in the box instead.
-func (s *DetailScreen) buildArtBox(artWidth int) *widget.Container {
-	artHeight := artWidth * 4 / 3 // 3:4 aspect ratio for box art
+// artHeight returns the art box height at width for a front image w by h
+// pixels: the image's aspect ratio, at most 3:4. Without an image (w or h
+// is 0) the box is 3:4.
+func artHeight(width, w, h int) int {
+	maxHeight := width * 4 / 3
+	if w <= 0 || h <= 0 {
+		return maxHeight
+	}
+	return min(width*h/w, maxHeight)
+}
 
-	// Box art container with black background (per design spec)
-	artContainer := widget.NewContainer(
-		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Black)),
+// buildArtBox creates the box art at the given width in a box shaped like
+// the art, at most 3:4. The art is drawn to fit the box, so it keeps
+// its aspect ratio when the column layout shrinks the box on a short
+// window. The box takes its shape from the art's header (see frontSize)
+// and the art itself loads in the background the first time the box is
+// built for a game, so while the art loads the box is already at its final
+// size and shows "Loading..." with no background. When the game has no
+// readable art, the game's name is shown in a black 3:4 box instead.
+func (s *DetailScreen) buildArtBox(artWidth int) *widget.Container {
+	artImage, loading := s.boxArt()
+	// The shape comes from the image header, so the box does not change
+	// size when the art finishes loading
+	w, h := s.frontSize()
+	boxHeight := artHeight(artWidth, w, h)
+
+	// The box has no background around the art or the loading text; only
+	// the game's name, shown when there is no art, sits in a black box
+	opts := []widget.ContainerOpt{
 		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.MinSize(artWidth, artHeight),
+			widget.WidgetOpts.MinSize(artWidth, boxHeight),
 		),
 		widget.ContainerOpts.Layout(widget.NewAnchorLayout()),
-	)
+	}
+	if artImage == nil && !(loading && w > 0) {
+		opts = append(opts, widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Black)))
+	}
+	artContainer := widget.NewContainer(opts...)
 
-	// Try to load box art image (scaled to fit)
-	artImage := s.loadBoxArtScaled(artWidth, artHeight)
-	if artImage != nil {
+	centered := widget.WidgetOpts.LayoutData(widget.AnchorLayoutData{
+		HorizontalPosition: widget.AnchorLayoutPositionCenter,
+		VerticalPosition:   widget.AnchorLayoutPositionCenter,
+	})
+	switch {
+	case artImage != nil:
 		// Display the actual artwork, fit to whatever the box ends up
 		artContainer.AddChild(widgets.NewFitGraphic(artImage, widget.WidgetOpts.LayoutData(widget.AnchorLayoutData{
 			StretchHorizontal: true,
 			StretchVertical:   true,
 		})))
-	} else {
+	case loading && w > 0:
+		// The art is loading into a box already at its shape
+		artContainer.AddChild(widget.NewText(
+			widget.TextOpts.Text("Loading...", style.FontFace(), style.TextSecondary),
+			widget.TextOpts.WidgetOpts(centered),
+		))
+	default:
 		// Show placeholder text if no artwork. Wrap and truncate the
 		// title so it fits inside the fixed box instead of stretching
 		// it. Inset by a small padding so text does not touch edges.
 		pad := style.SmallSpacing
 		placeholderText := style.WrapToBox(
-			s.game.DisplayName, *style.FontFace(),
-			float64(artWidth-pad*2), float64(artHeight-pad*2),
+			s.callback.GameTitle(s.game), *style.FontFace(),
+			float64(artWidth-pad*2), float64(boxHeight-pad*2),
 		)
 		artPlaceholder := widget.NewText(
 			widget.TextOpts.Text(placeholderText, style.FontFace(), style.TextSecondary),
 			widget.TextOpts.Position(widget.TextPositionCenter, widget.TextPositionCenter),
-			widget.TextOpts.WidgetOpts(widget.WidgetOpts.LayoutData(widget.AnchorLayoutData{
-				HorizontalPosition: widget.AnchorLayoutPositionCenter,
-				VerticalPosition:   widget.AnchorLayoutPositionCenter,
-			})),
+			widget.TextOpts.WidgetOpts(centered),
 		)
 		artContainer.AddChild(artPlaceholder)
 	}
@@ -415,7 +419,7 @@ func (s *DetailScreen) actionKey() string {
 // removeGame moves the game out of the library into the removed games and
 // returns to the library
 func (s *DetailScreen) removeGame() {
-	if err := s.library.RemoveGames(s.game.CRC32); err != nil {
+	if err := s.library.RemoveGames(s.game.GameID); err != nil {
 		log.Printf("Failed to remove game: %v", err)
 		s.callback.ShowNotification("Failed to remove game")
 		return
@@ -518,34 +522,52 @@ func (s *DetailScreen) HandleBack() bool {
 	return false
 }
 
-// loadBoxArtScaled loads and scales the box art image for the current game
-func (s *DetailScreen) loadBoxArtScaled(maxWidth, maxHeight int) *ebiten.Image {
+// boxArt starts loading the current game's box art unless it is loaded or
+// loading, and returns its texture, or nil until it has loaded or when the
+// game has none, and whether it is still loading. The texture is the image
+// at its own size.
+func (s *DetailScreen) boxArt() (img *ebiten.Image, loading bool) {
 	if s.game == nil {
-		return nil
+		return nil, false
 	}
-
-	artworkPath, err := storage.GetGameArtworkPath(s.game.CRC32)
-	if err != nil {
-		return nil
+	gameID := s.game.GameID
+	s.art.Start(func() []string {
+		dir, err := storage.GetGameArtworkDir(gameID)
+		if err != nil {
+			return nil
+		}
+		return []string{artwork.BoxArtPath(dir)}
+	})
+	imgs, loading := s.art.Images()
+	if len(imgs) > 0 {
+		return imgs[0], loading
 	}
+	return nil, loading
+}
 
-	f, err := os.Open(artworkPath)
-	if err != nil {
-		return nil
+// frontSize returns the width and height of the current game's box art
+// from its header, read once per game, or zero when the game has no
+// readable box art. Reading the header alone is fast enough for the UI
+// thread, so the art box is laid out at its final shape before the art
+// itself has loaded.
+func (s *DetailScreen) frontSize() (width, height int) {
+	if !s.artSizeRead {
+		s.artSizeRead = true
+		s.artSize = [2]int{}
+		if s.game != nil {
+			if dir, err := storage.GetGameArtworkDir(s.game.GameID); err == nil {
+				if w, h, err := artwork.Size(artwork.BoxArtPath(dir)); err == nil {
+					s.artSize = [2]int{w, h}
+				}
+			}
+		}
 	}
-	defer f.Close()
-
-	img, _, err := goimage.Decode(f)
-	if err != nil {
-		return nil
-	}
-
-	return style.ScaleImageUnmanaged(img, maxWidth, maxHeight)
+	return s.artSize[0], s.artSize[1]
 }
 
 // hasResumeState checks if a resume state exists for the current game
 func (s *DetailScreen) hasResumeState() bool {
-	saveDir, err := storage.GetGameSaveDir(s.game.CRC32)
+	saveDir, err := storage.GetGameSaveDir(s.game.GameID)
 	if err != nil {
 		return false
 	}
@@ -561,8 +583,12 @@ func (s *DetailScreen) OnEnter() {
 	}
 }
 
-// OnExit is called when leaving the detail screen. It frees the screenshot
-// preview texture, which SetGame recreates on return.
+// OnExit is called when leaving the detail screen. It frees the box art,
+// screenshot preview, and artwork textures, which are loaded again on
+// return.
 func (s *DetailScreen) OnExit() {
+	s.art.Release()
+	s.artSizeRead = false
 	s.screenshotsPage.ReleasePreview()
+	s.artworkPage.Release()
 }

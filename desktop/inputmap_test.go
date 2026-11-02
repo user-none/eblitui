@@ -143,11 +143,12 @@ func TestIsReservedKey(t *testing.T) {
 	}
 }
 
-// D-pad count: 4 keys + 4 gamepad buttons are always included in BuildDefaultMapping
+// D-pad count: 4 keys + 4 gamepad buttons are always included in the
+// default mapping
 const dpadKeyCount = 4
 const dpadPadCount = 4
 
-func TestBuildDefaultMappingGenesis6Button(t *testing.T) {
+func TestDefaultMappingGenesis6Button(t *testing.T) {
 	buttons := []coreif.Button{
 		{Name: "A", ID: 4, DefaultKey: "J", DefaultPad: "A"},
 		{Name: "B", ID: 5, DefaultKey: "K", DefaultPad: "B"},
@@ -158,7 +159,7 @@ func TestBuildDefaultMappingGenesis6Button(t *testing.T) {
 		{Name: "Start", ID: 7, DefaultKey: "Enter", DefaultPad: "Start"},
 	}
 
-	m := BuildDefaultMapping(buttons)
+	m := BuildMappingFromConfig(buttons, nil, nil)
 
 	// Verify adaptor keyboard mappings (d-pad is also included)
 	expectedKeys := map[int]ebiten.Key{
@@ -217,7 +218,7 @@ func TestBuildDefaultMappingGenesis6Button(t *testing.T) {
 	}
 }
 
-func TestBuildDefaultMapping3Button(t *testing.T) {
+func TestDefaultMapping3Button(t *testing.T) {
 	buttons := []coreif.Button{
 		{Name: "A", ID: 4, DefaultKey: "J", DefaultPad: "A"},
 		{Name: "B", ID: 5, DefaultKey: "K", DefaultPad: "B"},
@@ -225,7 +226,7 @@ func TestBuildDefaultMapping3Button(t *testing.T) {
 		{Name: "Start", ID: 7, DefaultKey: "Enter", DefaultPad: "Start"},
 	}
 
-	m := BuildDefaultMapping(buttons)
+	m := BuildMappingFromConfig(buttons, nil, nil)
 
 	// 4 d-pad + 4 adaptor buttons
 	if len(m.Keys) != dpadKeyCount+4 {
@@ -246,13 +247,13 @@ func TestBuildDefaultMapping3Button(t *testing.T) {
 	}
 }
 
-func TestBuildDefaultMappingEmptyDefaults(t *testing.T) {
+func TestDefaultMappingEmptyDefaults(t *testing.T) {
 	buttons := []coreif.Button{
 		{Name: "A", ID: 4},
 		{Name: "B", ID: 5},
 	}
 
-	m := BuildDefaultMapping(buttons)
+	m := BuildMappingFromConfig(buttons, nil, nil)
 
 	// D-pad defaults are always included
 	if len(m.Keys) != dpadKeyCount {
@@ -263,7 +264,7 @@ func TestBuildDefaultMappingEmptyDefaults(t *testing.T) {
 	}
 }
 
-func TestBuildDefaultMappingReservedKeysSkipped(t *testing.T) {
+func TestDefaultMappingReservedKeysSkipped(t *testing.T) {
 	// Reserved keys that the standalone UI uses for non-gameplay functions
 	reservedNames := []string{
 		"Escape", "Tab", "R", // Menu, overlay, rewind
@@ -276,7 +277,7 @@ func TestBuildDefaultMappingReservedKeysSkipped(t *testing.T) {
 		buttons := []coreif.Button{
 			{Name: "Test", ID: 4, DefaultKey: name, DefaultPad: "A"},
 		}
-		m := BuildDefaultMapping(buttons)
+		m := BuildMappingFromConfig(buttons, nil, nil)
 		if _, ok := m.Keys[4]; ok {
 			t.Errorf("Reserved key %q was not skipped for adaptor button", name)
 		}
@@ -287,12 +288,12 @@ func TestBuildDefaultMappingReservedKeysSkipped(t *testing.T) {
 	}
 }
 
-func TestBuildDefaultMappingUnknownStringsSkipped(t *testing.T) {
+func TestDefaultMappingUnknownStringsSkipped(t *testing.T) {
 	buttons := []coreif.Button{
 		{Name: "A", ID: 4, DefaultKey: "BadKey", DefaultPad: "BadPad"},
 	}
 
-	m := BuildDefaultMapping(buttons)
+	m := BuildMappingFromConfig(buttons, nil, nil)
 
 	// D-pad defaults are still included; only the adaptor button with bad names is skipped
 	if len(m.Keys) != dpadKeyCount {

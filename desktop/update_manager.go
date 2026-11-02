@@ -15,7 +15,10 @@ import (
 )
 
 // UpdateConfig describes where an application's releases are published and
-// how they are verified. See SetUpdateConfig.
+// how they are verified: its name and running version, and the update
+// signing public keys stamped into its release builds. Without usable keys,
+// or with a URL that is not HTTPS, the update system is off: no network
+// requests, no update bar, and no Updates area in About.
 type UpdateConfig struct {
 	ManifestURL    string   // The latest release's manifest, an HTTPS URL
 	SignatureURL   string   // The latest release's manifest signature file, an HTTPS URL
@@ -23,20 +26,6 @@ type UpdateConfig struct {
 	AppName        string   // Application name bound into the signed manifest
 	Version        string   // Running version
 	Keys           []string // Update signing public keys, each algorithm:base64
-}
-
-// updateConfig holds the update configuration supplied by the core via
-// SetUpdateConfig. The zero value leaves the update system off.
-var updateConfig UpdateConfig
-
-// SetUpdateConfig turns on checking for new releases. A core calls this
-// before Run with where its releases are published, its name and running
-// version, and the update signing public keys stamped into its release
-// builds. If never called, called without usable keys, or called with a URL
-// that is not HTTPS, the update system is off: no network requests, no
-// update bar, and no Updates area in About.
-func SetUpdateConfig(cfg UpdateConfig) {
-	updateConfig = cfg
 }
 
 // updateCheckInterval is the least time between automatic checks
@@ -65,9 +54,10 @@ type UpdateManager struct {
 }
 
 // NewUpdateManager returns the update manager for cfg, or nil when the update
-// system is off. It loads the stored update state and manifest.
-func NewUpdateManager(cfg UpdateConfig, config *storage.Config, onChange func()) *UpdateManager {
-	if len(cfg.Keys) == 0 {
+// system is off: cfg is nil or has no usable keys or URLs. It loads the
+// stored update state and manifest.
+func NewUpdateManager(cfg *UpdateConfig, config *storage.Config, onChange func()) *UpdateManager {
+	if cfg == nil || len(cfg.Keys) == 0 {
 		return nil
 	}
 	keys, errs := update.ParseKeys(cfg.Keys)

@@ -259,13 +259,6 @@ func Px(logical int) int {
 	return int(float64(logical) * windowScale * dpiScale)
 }
 
-// PxDPI converts a logical pixel value to physical pixels using the DPI
-// scale only. For measures of room in the window, such as a layout
-// breakpoint, that must not grow with the UI drawn in it.
-func PxDPI(logical int) int {
-	return int(float64(logical) * dpiScale)
-}
-
 // SetDPIScale sets the DPI scale factor and recalculates all spatial vars.
 func SetDPIScale(scale float64) {
 	if scale < 1.0 {

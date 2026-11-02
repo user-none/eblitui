@@ -30,13 +30,13 @@ func TestGameCount(t *testing.T) {
 
 func TestMergeScannedGames(t *testing.T) {
 	library := storage.DefaultLibrary()
-	old := &storage.GameEntry{CRC32: "old", File: "/old.sms"}
+	old := &storage.GameEntry{GameID: "old", File: "/old.sms"}
 	library.AddGame(old)
-	library.AddGame(&storage.GameEntry{CRC32: "kept", File: "/kept.sms"})
+	library.AddGame(&storage.GameEntry{GameID: "kept", File: "/kept.sms"})
 
 	found := map[string]*storage.GameEntry{
-		"old": {CRC32: "old", File: "/moved.sms"},
-		"new": {CRC32: "new", File: "/new.sms"},
+		"old": {GameID: "old", File: "/moved.sms"},
+		"new": {GameID: "new", File: "/new.sms"},
 	}
 
 	if got := mergeScannedGames(library, found); got != 1 {

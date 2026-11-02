@@ -7,7 +7,9 @@ package types
 
 import (
 	"github.com/ebitenui/ebitenui/widget"
+	"github.com/user-none/eblitui/desktop/content"
 	"github.com/user-none/eblitui/desktop/filebrowser"
+	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/widgets"
 )
 
@@ -45,7 +47,7 @@ type FilePickerRequest struct {
 // ScreenCallback provides callbacks for screen navigation
 type ScreenCallback interface {
 	SwitchToLibrary()
-	SwitchToDetail(gameCRC string)
+	SwitchToDetail(gameID string)
 	SwitchToSettings()
 	// SwitchToSettingsSection opens settings with the section identified
 	// by focusKey selected.
@@ -60,15 +62,23 @@ type ScreenCallback interface {
 	// LaunchGame starts a game. discIndex selects which disc of a
 	// multi-disc game to launch; -1 uses the entry's remembered
 	// SelectedDisc. Ignored for single-disc and cartridge games.
-	LaunchGame(gameCRC string, resume bool, discIndex int)
+	LaunchGame(gameID string, resume bool, discIndex int)
 	Exit()
-	GetWindowWidth() int               // For responsive layout calculations
-	RequestRebuild()                   // Request UI rebuild after state changes
-	GetPlaceholderImageData() []byte   // Get raw placeholder image data (loading indicator)
-	GetMissingArtImageData() []byte    // Get raw missing-art image data (no artwork found)
-	GetMD5ByCRC32(crc32 uint32) string // Get MD5 hash from RDB by CRC32
-	GetExtensions() []string           // Content file extensions (disc formats for disc cores, else ROM extensions)
-	ShowNotification(msg string)       // Show a brief notification message
+	GetWindowWidth() int             // For responsive layout calculations
+	RequestRebuild()                 // Request UI rebuild after state changes
+	GetPlaceholderImageData() []byte // Get raw placeholder image data (loading indicator)
+	GetMissingArtImageData() []byte  // Get raw missing-art image data (no artwork found)
+	GetExtensions() []string         // Content file extensions (disc formats for disc cores, else ROM extensions)
+	ShowNotification(msg string)     // Show a brief notification message
+	// GameMetadata returns the core's metadata for a game ID and true, or
+	// false when the core has none for it.
+	GameMetadata(gameID string) (content.GameMetadata, bool)
+	// GameTitle returns the title to show for a library entry: its
+	// metadata title, else a name from its file.
+	GameTitle(game *storage.GameEntry) string
+	// GameInfo returns the title and region code for a library entry,
+	// used to sort and search the library.
+	GameInfo(game *storage.GameEntry) (string, string)
 }
 
 // UpdateStatus is the update state shown in Settings > About.

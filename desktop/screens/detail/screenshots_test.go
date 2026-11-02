@@ -67,7 +67,7 @@ func newTestScreenshotsSection(t *testing.T, names ...string) (*ScreenshotsSecti
 		return nil, errTestDecode
 	}
 	s.showInFileManager = func(string) error { t.Fatal("showInFileManager called without being replaced"); return nil }
-	s.SetGame(&storage.GameEntry{CRC32: "ABCD1234"})
+	s.SetGame(&storage.GameEntry{GameID: "ABCD1234"})
 	return s, cb, decoded, dir
 }
 

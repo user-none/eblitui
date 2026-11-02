@@ -5,57 +5,11 @@ import (
 	"hash/crc32"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 	"time"
 
-	"github.com/user-none/eblitui/coreif"
-	"github.com/user-none/eblitui/desktop/metadata"
 	"github.com/user-none/eblitui/desktop/storage"
-	"github.com/user-none/eblitui/rdb"
 )
-
-func TestDiscSerialCandidates(t *testing.T) {
-	tests := []struct {
-		name string
-		di   coreif.DiscInfo
-		want []string
-	}{
-		{
-			"multi-disc with publisher prefix",
-			coreif.DiscInfo{ProductNumber: "MK-81307", DiscNumber: 1, DiscTotal: 4},
-			[]string{"81307-0", "MK-81307-0", "81307", "MK-81307"},
-		},
-		{
-			"multi-disc disc 3",
-			coreif.DiscInfo{ProductNumber: "MK-81307", DiscNumber: 3, DiscTotal: 4},
-			[]string{"81307-2", "MK-81307-2", "81307", "MK-81307"},
-		},
-		{
-			"single-disc with prefix",
-			coreif.DiscInfo{ProductNumber: "T-31202G", DiscNumber: 1, DiscTotal: 1},
-			[]string{"T-31202G", "31202G"},
-		},
-		{
-			"single-disc no prefix (no dash)",
-			coreif.DiscInfo{ProductNumber: "610600", DiscNumber: 1, DiscTotal: 1},
-			[]string{"610600"},
-		},
-		{
-			"multi-disc no prefix (core==group)",
-			coreif.DiscInfo{ProductNumber: "610600", DiscNumber: 2, DiscTotal: 2},
-			[]string{"610600-1", "610600"},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := discSerialCandidates(tc.di)
-			if !reflect.DeepEqual(got, tc.want) {
-				t.Errorf("discSerialCandidates(%+v) = %v, want %v", tc.di, got, tc.want)
-			}
-		})
-	}
-}
 
 func TestUpsertDisc(t *testing.T) {
 	var discs []storage.GameDisc
@@ -149,37 +103,6 @@ func TestIsSupportedExtension(t *testing.T) {
 	}
 }
 
-func TestCleanDisplayName(t *testing.T) {
-	s := &Scanner{}
-
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{"sms extension", "Sonic.sms", "Sonic"},
-		{"zip extension", "Game.zip", "Game"},
-		{"no extension", "GameName", "GameName"},
-		{"multiple dots", "My.Game.Name.sms", "My.Game.Name"},
-		{"with spaces", "Alex Kidd in Miracle World.sms", "Alex Kidd in Miracle World"},
-		{"empty string", "", ""},
-		{"region stripped", "Sonic the Hedgehog (USA).sms", "Sonic the Hedgehog"},
-		{"multi region stripped", "Sonic the Hedgehog (USA, Europe).sms", "Sonic the Hedgehog"},
-		{"multiple parens stripped", "Zillion (Japan) (Rev 2).sms", "Zillion"},
-		{"no extension with parens", "Game (USA)", "Game"},
-		{"no space before paren", "Game(USA).sms", "Game(USA)"},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := s.cleanDisplayName(tc.input)
-			if got != tc.expected {
-				t.Errorf("cleanDisplayName(%q) = %q, want %q", tc.input, got, tc.expected)
-			}
-		})
-	}
-}
-
 func TestScannerIsPathExcluded(t *testing.T) {
 	s := &Scanner{
 		excludedPaths: map[string]bool{
@@ -231,11 +154,10 @@ func TestNewScanner(t *testing.T) {
 	}
 	excluded := []string{"/skip/this", "/skip/that"}
 	existing := map[string]*storage.GameEntry{
-		"aabbccdd": {CRC32: "aabbccdd", DisplayName: "Existing Game"},
+		"aabbccdd": {GameID: "aabbccdd", Favorite: true},
 	}
 
-	md := metadata.NewMetadataManager(nil)
-	s := NewScanner(dirs, excluded, existing, []string{".sms"}, md, 0, false, nil, Downloads{})
+	s := NewScanner(dirs, excluded, existing, []string{".sms"}, 0, false, nil, Sources{})
 
 	if len(s.directories) != 2 {
 		t.Errorf("expected 2 directories, got %d", len(s.directories))
@@ -252,7 +174,7 @@ func TestNewScanner(t *testing.T) {
 	if s.existingGames == nil {
 		t.Fatal("existingGames should not be nil")
 	}
-	if s.existingGames["aabbccdd"].DisplayName != "Existing Game" {
+	if !s.existingGames["aabbccdd"].Favorite {
 		t.Error("existing game not preserved")
 	}
 }
@@ -349,8 +271,7 @@ func TestScanDirectoryWithExclusions(t *testing.T) {
 }
 
 func TestScannerCancellation(t *testing.T) {
-	md := metadata.NewMetadataManager(nil)
-	s := NewScanner(nil, nil, nil, nil, md, 0, false, nil, Downloads{})
+	s := NewScanner(nil, nil, nil, nil, 0, false, nil, Sources{})
 
 	if s.isCancelled() {
 		t.Error("new scanner should not be cancelled")
@@ -366,62 +287,22 @@ func TestScannerCancellation(t *testing.T) {
 }
 
 func TestScannerGamesCount(t *testing.T) {
-	md := metadata.NewMetadataManager(nil)
-	s := NewScanner(nil, nil, nil, nil, md, 0, false, nil, Downloads{})
+	s := NewScanner(nil, nil, nil, nil, 0, false, nil, Sources{})
 
 	if s.gamesCount() != 0 {
 		t.Errorf("expected 0 games, got %d", s.gamesCount())
 	}
 
-	s.games["abc"] = &storage.GameEntry{CRC32: "abc"}
+	s.games["abc"] = &storage.GameEntry{GameID: "abc"}
 	if s.gamesCount() != 1 {
 		t.Errorf("expected 1 game, got %d", s.gamesCount())
 	}
 }
 
 func TestNewScannerDefaultConsoleID(t *testing.T) {
-	md := metadata.NewMetadataManager(nil)
-	s := NewScanner(nil, nil, nil, nil, md, 42, false, nil, Downloads{})
+	s := NewScanner(nil, nil, nil, nil, 42, false, nil, Sources{})
 	if s.defaultConsoleID != 42 {
 		t.Errorf("expected defaultConsoleID 42, got %d", s.defaultConsoleID)
-	}
-}
-
-func TestRumbleDownloadsGated(t *testing.T) {
-	md := metadata.NewMetadataManager([]coreif.MetadataVariant{
-		{Name: "With", RumbleRepoDir: "md"},
-	})
-	game := &rdb.Game{Name: "Rumble Gate Test (USA)"}
-
-	for _, rumble := range []bool{false, true} {
-		s := NewScanner(nil, nil, nil, nil, md, 0, false, nil, Downloads{Rumble: rumble})
-		s.applyMetadata(&storage.GameEntry{}, game, 0, "RUMBLEGATETEST", "Rumble Gate Test (USA).sms")
-
-		want := 0
-		if rumble {
-			want = 1
-		}
-		if got := len(s.chtRumbleQueue); got != want {
-			t.Errorf("rumble=%v: CHT rumble jobs = %d, want %d", rumble, got, want)
-		}
-		if got := len(s.erumbleQueue); got != want {
-			t.Errorf("rumble=%v: erumble jobs = %d, want %d", rumble, got, want)
-		}
-	}
-}
-
-func TestSupportsCheats(t *testing.T) {
-	md := metadata.NewMetadataManager([]coreif.MetadataVariant{
-		{Name: "Saturn", RDBName: "Sega - Saturn"},
-		{Name: "Other", RDBName: "Other - System"},
-	})
-	s := NewScanner(nil, nil, nil, nil, md, 0, false, nil, Downloads{Cheats: true})
-
-	if !s.supportsCheats(0) {
-		t.Error("Saturn variant: supportsCheats = false, want true")
-	}
-	if s.supportsCheats(1) {
-		t.Error("unsupported system: supportsCheats = true, want false")
 	}
 }
 
@@ -444,13 +325,13 @@ func TestProcessCartridgeUsesExistingEntry(t *testing.T) {
 		existing  *storage.GameEntry
 		keepAdded bool
 	}{
-		{"moved library entry", &storage.GameEntry{CRC32: key, File: "/old/Game (USA).sms", DisplayName: "Game", Favorite: true, PlayTimeSeconds: 90, LastPlayed: 7, Added: 3}, true},
-		{"removed entry", &storage.GameEntry{CRC32: key, DisplayName: "Game", Favorite: true, PlayTimeSeconds: 90, LastPlayed: 7}, false},
+		{"moved library entry", &storage.GameEntry{GameID: key, File: "/old/Game (USA).sms", Favorite: true, PlayTimeSeconds: 90, LastPlayed: 7, Added: 3}, true},
+		{"removed entry", &storage.GameEntry{GameID: key, Favorite: true, PlayTimeSeconds: 90, LastPlayed: 7}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			existing := map[string]*storage.GameEntry{key: tt.existing}
-			s := NewScanner(nil, nil, existing, []string{".sms"}, metadata.NewMetadataManager(nil), 0, false, nil, Downloads{})
+			s := NewScanner(nil, nil, existing, []string{".sms"}, 0, false, nil, Sources{})
 			s.processCartridge(path)
 
 			got := s.Games()[key]
@@ -460,7 +341,7 @@ func TestProcessCartridgeUsesExistingEntry(t *testing.T) {
 			if got.File != path {
 				t.Errorf("File = %q, want %q", got.File, path)
 			}
-			if !got.Favorite || got.PlayTimeSeconds != 90 || got.LastPlayed != 7 || got.DisplayName != "Game" {
+			if !got.Favorite || got.PlayTimeSeconds != 90 || got.LastPlayed != 7 || got.GameID != key {
 				t.Errorf("user data not kept: %+v", got)
 			}
 			if tt.keepAdded && got.Added != 3 {

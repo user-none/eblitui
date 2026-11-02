@@ -97,12 +97,17 @@ func DeleteLibrary() error {
 
 // libraryVersion is the current library.json format version. Version 2
 // moved per-game settings out of the library into per-game settings files.
-const libraryVersion = 2
+// Version 3 renamed each entry's key field from crc32 to gameId and dropped
+// the metadata fields, which now come from the core's metadata provider.
+const libraryVersion = 3
 
 // migrateLibrary updates a library loaded from path from an older version
 // to the current one and reports whether it changed anything. Version 0
 // is treated as version 1. Version 1 kept each game's save slot in the
-// library under "settings"; it moves to the game's settings file.
+// library under "settings"; it moves to the game's settings file. Version
+// 2 entries need no conversion: their dropped fields are not decoded, and
+// SanitizeLibraryEntries sets each GameID from its map key; saving the
+// migrated library removes the old fields from the file.
 func migrateLibrary(library *Library, path string) bool {
 	migrated := false
 	if library.Version == 0 {
@@ -112,6 +117,10 @@ func migrateLibrary(library *Library, path string) bool {
 	if library.Version == 1 {
 		migrateSaveSlots(path)
 		library.Version = 2
+		migrated = true
+	}
+	if library.Version == 2 {
+		library.Version = 3
 		migrated = true
 	}
 	return migrated
@@ -176,20 +185,24 @@ func legacySaveSlots(data []byte) (map[string]int, error) {
 	return slots, nil
 }
 
+// GameInfo returns the title and region code a game is sorted and
+// searched by.
+type GameInfo func(game *GameEntry) (title, region string)
+
 // AddGame adds or updates a game entry in the library
 func (lib *Library) AddGame(entry *GameEntry) {
 	if lib.Games == nil {
 		lib.Games = make(map[string]*GameEntry)
 	}
-	lib.Games[entry.CRC32] = entry
+	lib.Games[entry.GameID] = entry
 }
 
-// GetGame retrieves a game by CRC32
-func (lib *Library) GetGame(gameCRC string) *GameEntry {
+// GetGame retrieves a game by game ID
+func (lib *Library) GetGame(gameID string) *GameEntry {
 	if lib.Games == nil {
 		return nil
 	}
-	return lib.Games[gameCRC]
+	return lib.Games[gameID]
 }
 
 // GameCount returns the number of games in the library
@@ -200,25 +213,26 @@ func (lib *Library) GameCount() int {
 	return len(lib.Games)
 }
 
-// GetGamesSorted returns a sorted slice of game entries
-func (lib *Library) GetGamesSorted(sortBy string, favoritesOnly bool) []*GameEntry {
-	if lib.Games == nil {
-		return nil
-	}
+// sortKey is the title and region a game is sorted by, lowercased once
+// per sort.
+type sortKey struct {
+	title  string
+	region string
+}
 
-	games := make([]*GameEntry, 0, len(lib.Games))
-	for _, game := range lib.Games {
-		if favoritesOnly && !game.Favorite {
-			continue
-		}
-		games = append(games, game)
+// sortGames orders games by sortBy, using info for the title and region.
+// Unknown sortBy values sort by title.
+func sortGames(games []*GameEntry, sortBy string, info GameInfo) {
+	keys := make(map[*GameEntry]sortKey, len(games))
+	for _, g := range games {
+		title, region := info(g)
+		keys[g] = sortKey{title: strings.ToLower(title), region: region}
+	}
+	byTitle := func(a, b *GameEntry) bool {
+		return compareGamesForSort(a, b, keys[a], keys[b])
 	}
 
 	switch sortBy {
-	case "title":
-		sort.Slice(games, func(i, j int) bool {
-			return compareGamesForSort(games[i], games[j])
-		})
 	case "lastPlayed":
 		sort.Slice(games, func(i, j int) bool {
 			// Primary: most recent first
@@ -226,7 +240,7 @@ func (lib *Library) GetGamesSorted(sortBy string, favoritesOnly bool) []*GameEnt
 				return games[i].LastPlayed > games[j].LastPlayed
 			}
 			// Secondary: fall back to title ordering
-			return compareGamesForSort(games[i], games[j])
+			return byTitle(games[i], games[j])
 		})
 	case "playTime":
 		sort.Slice(games, func(i, j int) bool {
@@ -235,42 +249,31 @@ func (lib *Library) GetGamesSorted(sortBy string, favoritesOnly bool) []*GameEnt
 				return games[i].PlayTimeSeconds > games[j].PlayTimeSeconds
 			}
 			// Secondary: fall back to title ordering
-			return compareGamesForSort(games[i], games[j])
+			return byTitle(games[i], games[j])
 		})
 	default:
-		// Default to title sort
 		sort.Slice(games, func(i, j int) bool {
-			return compareGamesForSort(games[i], games[j])
+			return byTitle(games[i], games[j])
 		})
 	}
-
-	return games
 }
 
-// compareGamesForSort compares two games for sorting purposes.
-// It compares by DisplayName (A-Z), then Region, then Name, then CRC32.
-func compareGamesForSort(a, b *GameEntry) bool {
-	// Compare by DisplayName (case-insensitive, A-Z)
-	aName := strings.ToLower(a.DisplayName)
-	bName := strings.ToLower(b.DisplayName)
-	if aName != bName {
-		return aName < bName
-	}
+// GetGamesSorted returns a sorted slice of game entries, using info for
+// each game's title and region.
+func (lib *Library) GetGamesSorted(sortBy string, favoritesOnly bool, info GameInfo) []*GameEntry {
+	return lib.GetGamesSortedFiltered(sortBy, favoritesOnly, "", info)
+}
 
-	// Compare by Region (alphabetical: eu, jp, us)
-	if a.Region != b.Region {
-		return a.Region < b.Region
+// compareGamesForSort compares two games for sorting purposes. It compares
+// by title (A-Z), then region, then game ID, which is unique.
+func compareGamesForSort(a, b *GameEntry, ak, bk sortKey) bool {
+	if ak.title != bk.title {
+		return ak.title < bk.title
 	}
-
-	// Compare by full Name (No-Intro name, for revisions)
-	aFullName := strings.ToLower(a.Name)
-	bFullName := strings.ToLower(b.Name)
-	if aFullName != bFullName {
-		return aFullName < bFullName
+	if ak.region != bk.region {
+		return ak.region < bk.region
 	}
-
-	// Final tiebreaker: CRC32 (guaranteed unique)
-	return a.CRC32 < b.CRC32
+	return a.GameID < b.GameID
 }
 
 // AddScanDirectory adds a directory to scan for ROMs
@@ -329,17 +332,18 @@ func (lib *Library) IsPathExcluded(path string) bool {
 }
 
 // UpdatePlayTime adds play time to a game and updates last played
-func (lib *Library) UpdatePlayTime(gameCRC string, secondsPlayed int64) {
-	if game := lib.GetGame(gameCRC); game != nil {
+func (lib *Library) UpdatePlayTime(gameID string, secondsPlayed int64) {
+	if game := lib.GetGame(gameID); game != nil {
 		game.PlayTimeSeconds += secondsPlayed
 		game.LastPlayed = time.Now().Unix()
 	}
 }
 
-// GetGamesSortedFiltered returns a sorted slice of game entries filtered by search text.
-// Search is case-insensitive and matches against DisplayName and Name fields.
-// Empty searchText returns all games (same as GetGamesSorted).
-func (lib *Library) GetGamesSortedFiltered(sortBy string, favoritesOnly bool, searchText string) []*GameEntry {
+// GetGamesSortedFiltered returns a sorted slice of game entries filtered by
+// search text, using info for each game's title and region. Search is
+// case-insensitive and matches against the title. Empty searchText returns
+// all games.
+func (lib *Library) GetGamesSortedFiltered(sortBy string, favoritesOnly bool, searchText string, info GameInfo) []*GameEntry {
 	if lib.Games == nil {
 		return nil
 	}
@@ -352,46 +356,15 @@ func (lib *Library) GetGamesSortedFiltered(sortBy string, favoritesOnly bool, se
 		if favoritesOnly && !game.Favorite {
 			continue
 		}
-		// Apply search filter if search text is provided
 		if searchText != "" {
-			displayLower := strings.ToLower(game.DisplayName)
-			nameLower := strings.ToLower(game.Name)
-			if !strings.Contains(displayLower, searchLower) && !strings.Contains(nameLower, searchLower) {
+			title, _ := info(game)
+			if !strings.Contains(strings.ToLower(title), searchLower) {
 				continue
 			}
 		}
 		games = append(games, game)
 	}
 
-	switch sortBy {
-	case "title":
-		sort.Slice(games, func(i, j int) bool {
-			return compareGamesForSort(games[i], games[j])
-		})
-	case "lastPlayed":
-		sort.Slice(games, func(i, j int) bool {
-			// Primary: most recent first
-			if games[i].LastPlayed != games[j].LastPlayed {
-				return games[i].LastPlayed > games[j].LastPlayed
-			}
-			// Secondary: fall back to title ordering
-			return compareGamesForSort(games[i], games[j])
-		})
-	case "playTime":
-		sort.Slice(games, func(i, j int) bool {
-			// Primary: most played first
-			if games[i].PlayTimeSeconds != games[j].PlayTimeSeconds {
-				return games[i].PlayTimeSeconds > games[j].PlayTimeSeconds
-			}
-			// Secondary: fall back to title ordering
-			return compareGamesForSort(games[i], games[j])
-		})
-	default:
-		// Default to title sort
-		sort.Slice(games, func(i, j int) bool {
-			return compareGamesForSort(games[i], games[j])
-		})
-	}
-
+	sortGames(games, sortBy, info)
 	return games
 }

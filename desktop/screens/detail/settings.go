@@ -52,7 +52,7 @@ type SettingsSection struct {
 	zones        []string                  // navigation zones from the last Build, in order
 
 	// save writes a game's settings file: storage.SaveGameSettings
-	save func(gameCRC string, settings *storage.GameSettingsFile) error
+	save func(gameID string, settings *storage.GameSettingsFile) error
 }
 
 // NewSettingsSection creates the Settings page for the core's options.
@@ -248,7 +248,7 @@ func (s *SettingsSection) buildResetRow(focus types.FocusManager, enabled bool) 
 
 // saveSettings writes the game's settings file
 func (s *SettingsSection) saveSettings() {
-	if err := s.save(s.game.CRC32, s.gameSettings); err != nil {
-		log.Printf("Failed to save game settings for %s: %v", s.game.CRC32, err)
+	if err := s.save(s.game.GameID, s.gameSettings); err != nil {
+		log.Printf("Failed to save game settings for %s: %v", s.game.GameID, err)
 	}
 }

@@ -76,8 +76,8 @@ func TestLoadRemovedGamesCorrupt(t *testing.T) {
 func TestLoadRemovedGamesSanitizes(t *testing.T) {
 	useTempDataDir(t)
 	if err := SaveRemovedGames(&RemovedGames{Games: map[string]*GameEntry{
-		"a/b": {CRC32: "a/b", PlayTimeSeconds: 10},
-		"c":   {CRC32: "c", File: "/roms/c.sms", Discs: []GameDisc{{File: "/roms/c.chd"}}, SelectedDisc: 2, PlayTimeSeconds: -5, Added: 100},
+		"a/b": {GameID: "a/b", PlayTimeSeconds: 10},
+		"c":   {GameID: "c", File: "/roms/c.sms", Discs: []GameDisc{{File: "/roms/c.chd"}}, SelectedDisc: 2, PlayTimeSeconds: -5, Added: 100},
 	}}); err != nil {
 		t.Fatalf("SaveRemovedGames: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestLoadRemovedGamesSanitizes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadRemovedGames: %v", err)
 	}
-	if g := removed.Games["ab"]; g == nil || g.CRC32 != "ab" || g.PlayTimeSeconds != 10 {
+	if g := removed.Games["ab"]; g == nil || g.GameID != "ab" || g.PlayTimeSeconds != 10 {
 		t.Errorf("re-keyed entry = %+v, want key ab with play time 10", g)
 	}
 	g := removed.Games["c"]
@@ -104,14 +104,13 @@ func TestLoadRemovedGamesSanitizes(t *testing.T) {
 func TestRemoveGamesMovesUserData(t *testing.T) {
 	useTempDataDir(t)
 	lib := DefaultLibrary()
-	lib.AddGame(&GameEntry{CRC32: "aaaa", File: "/roms/a.sms", DisplayName: "A", Favorite: true, PlayTimeSeconds: 120, LastPlayed: 50, Added: 10})
+	lib.AddGame(&GameEntry{GameID: "aaaa", File: "/roms/a.sms", ConsoleID: 7, Favorite: true, PlayTimeSeconds: 120, LastPlayed: 50, Added: 10})
 	lib.AddGame(&GameEntry{
-		CRC32:        "T-1",
-		DisplayName:  "Disc Game",
+		GameID:       "T-1",
 		Discs:        []GameDisc{{Index: 0, File: "/roms/d1.chd"}, {Index: 1, File: "/roms/d2.chd"}},
 		SelectedDisc: 1,
 	})
-	lib.AddGame(&GameEntry{CRC32: "keep", File: "/roms/k.sms"})
+	lib.AddGame(&GameEntry{GameID: "keep", File: "/roms/k.sms"})
 
 	if err := lib.RemoveGames("aaaa", "T-1", "unknown"); err != nil {
 		t.Fatalf("RemoveGames: %v", err)
@@ -133,7 +132,7 @@ func TestRemoveGamesMovesUserData(t *testing.T) {
 		t.Fatalf("removed games = %v, want 2", removed.Games)
 	}
 	a := removed.Games["aaaa"]
-	if a == nil || !a.Favorite || a.PlayTimeSeconds != 120 || a.LastPlayed != 50 || a.DisplayName != "A" {
+	if a == nil || !a.Favorite || a.PlayTimeSeconds != 120 || a.LastPlayed != 50 || a.ConsoleID != 7 {
 		t.Errorf("removed aaaa = %+v, want user data kept", a)
 	}
 	if a != nil && (a.File != "" || a.Added != 0) {
@@ -148,8 +147,8 @@ func TestRemoveGamesMovesUserData(t *testing.T) {
 func TestRemoveGamesKeepsEarlierRemovals(t *testing.T) {
 	useTempDataDir(t)
 	lib := DefaultLibrary()
-	lib.AddGame(&GameEntry{CRC32: "a", File: "/roms/a.sms"})
-	lib.AddGame(&GameEntry{CRC32: "b", File: "/roms/b.sms"})
+	lib.AddGame(&GameEntry{GameID: "a", File: "/roms/a.sms"})
+	lib.AddGame(&GameEntry{GameID: "b", File: "/roms/b.sms"})
 
 	if err := lib.RemoveGames("a"); err != nil {
 		t.Fatalf("RemoveGames a: %v", err)
@@ -171,7 +170,7 @@ func TestRemoveGamesOverwritesCorruptRemovedFile(t *testing.T) {
 	useTempDataDir(t)
 	writeCorruptRemoved(t)
 	lib := DefaultLibrary()
-	lib.AddGame(&GameEntry{CRC32: "a", File: "/roms/a.sms"})
+	lib.AddGame(&GameEntry{GameID: "a", File: "/roms/a.sms"})
 
 	if err := lib.RemoveGames("a"); err != nil {
 		t.Fatalf("RemoveGames: %v", err)
@@ -195,13 +194,13 @@ func TestRemoveGamesOverwritesCorruptRemovedFile(t *testing.T) {
 func TestDropRestoredGames(t *testing.T) {
 	useTempDataDir(t)
 	if err := SaveRemovedGames(&RemovedGames{Games: map[string]*GameEntry{
-		"back":  {CRC32: "back"},
-		"still": {CRC32: "still"},
+		"back":  {GameID: "back"},
+		"still": {GameID: "still"},
 	}}); err != nil {
 		t.Fatalf("SaveRemovedGames: %v", err)
 	}
 	lib := DefaultLibrary()
-	lib.AddGame(&GameEntry{CRC32: "back", File: "/roms/back.sms"})
+	lib.AddGame(&GameEntry{GameID: "back", File: "/roms/back.sms"})
 
 	if err := DropRestoredGames(lib); err != nil {
 		t.Fatalf("DropRestoredGames: %v", err)

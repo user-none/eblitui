@@ -18,6 +18,7 @@ import (
 	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/desktop/achievements"
 	"github.com/user-none/eblitui/desktop/cheats"
+	"github.com/user-none/eblitui/desktop/content"
 	"github.com/user-none/eblitui/desktop/display"
 	"github.com/user-none/eblitui/desktop/metadata"
 	"github.com/user-none/eblitui/desktop/scanner"
@@ -45,7 +46,8 @@ type App struct {
 	// Core factory and system info (set by Run)
 	factory    coreif.CoreFactory
 	systemInfo coreif.SystemInfo
-	downloads  scanner.Downloads // Optional scan downloads the core supports
+	emu        Emulator // the application built around the core
+	hasMemory  bool     // the core's emulator implements coreif.Memory
 
 	// State management
 	state         AppState
@@ -66,7 +68,8 @@ type App struct {
 	// State to return to when the file picker closes
 	pickerReturnState AppState
 
-	// Metadata for RDB lookups
+	// Game metadata from the core, and the download repos for artwork,
+	// rumble, and cheats
 	metadata *metadata.MetadataManager
 
 	// Gameplay (emulation, input, save states, pause menu)
@@ -148,7 +151,7 @@ type App struct {
 }
 
 // discIdentifier returns the factory's DiscIdentifier if it implements one,
-// or nil. Used so the scanner can resolve disc-based metadata by serial.
+// or nil. Used so the scanner can key disc games by product number.
 func discIdentifier(f coreif.CoreFactory) coreif.DiscIdentifier {
 	d, _ := f.(coreif.DiscIdentifier)
 	return d
@@ -166,7 +169,8 @@ func supportsMemory(f coreif.CoreFactory) bool {
 
 // Run is the public entry point for the standalone UI. It initializes storage,
 // configures the window, creates the app, and starts the Ebiten game loop.
-func Run(factory coreif.CoreFactory) error {
+// factory supplies the core; emu describes the application built around it.
+func Run(factory coreif.CoreFactory, emu Emulator) error {
 	info := factory.SystemInfo()
 
 	// oto allows a single context rate per process. Use the core's rate
@@ -177,12 +181,12 @@ func Run(factory coreif.CoreFactory) error {
 		audioSampleRate = info.SampleRate
 	}
 
-	// Initialize storage with core-specific data directory
-	storage.Init(info.DataDirName)
+	// Initialize storage with the emulator's data directory
+	storage.Init(emu.DataDirName)
 
 	// Configure window
-	ebiten.SetWindowTitle(info.CoreName)
-	applyWindowIcon()
+	ebiten.SetWindowTitle(emu.Name)
+	applyWindowIcon(emu.Icon)
 	// Remove the macOS About menu item; the in-app About (settings) is the only
 	// About. One-time call; on darwin the menu work is deferred until the menu
 	// exists. No-op on other platforms.
@@ -190,7 +194,7 @@ func Run(factory coreif.CoreFactory) error {
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	ebiten.SetWindowSizeLimits(style.MinWindowWidth, style.MinWindowHeight, -1, -1)
 
-	app, err := newApp(factory, info)
+	app, err := newApp(factory, info, emu)
 	if err != nil {
 		return err
 	}
@@ -224,14 +228,15 @@ func Run(factory coreif.CoreFactory) error {
 }
 
 // newApp creates and initializes the application with the given core factory and system info.
-func newApp(factory coreif.CoreFactory, info coreif.SystemInfo) (*App, error) {
+func newApp(factory coreif.CoreFactory, info coreif.SystemInfo, emu Emulator) (*App, error) {
 	// Rumble and cheats both need memory access
 	memory := supportsMemory(factory)
 	app := &App{
 		state:           StateLibrary,
 		factory:         factory,
 		systemInfo:      info,
-		downloads:       scanner.Downloads{Rumble: memory, Cheats: memory},
+		emu:             emu,
+		hasMemory:       memory,
 		padMappingTried: make(map[string]bool),
 	}
 
@@ -271,21 +276,10 @@ func (a *App) initStorage() error {
 	return nil
 }
 
-// initMetadata creates the metadata manager, starts a background RDB
-// download when the RDB is missing, and loads the RDB for achievement MD5
-// lookups.
+// initMetadata creates the metadata manager, loading all of the core's game
+// metadata once for the session.
 func (a *App) initMetadata() {
-	a.metadata = metadata.NewMetadataManager(a.systemInfo.MetadataVariants)
-	if !a.metadata.RDBExists() {
-		go func() {
-			if err := a.metadata.DownloadRDB(); err != nil {
-				log.Printf("Background RDB download failed: %v", err)
-			}
-		}()
-	}
-	if err := a.metadata.LoadRDB(); err != nil {
-		log.Printf("Failed to load RDB: %v", err)
-	}
+	a.metadata = metadata.NewMetadataManager(a.emu.Metadata)
 }
 
 // initManagers creates the managers that do not depend on config or
@@ -339,7 +333,7 @@ func (a *App) newAchievementManager() {
 	if a.achievementManager != nil {
 		a.achievementManager.Destroy()
 	}
-	a.achievementManager = achievements.NewManager(a.notification, a.config, a.systemInfo.Name, Version, uint32(a.systemInfo.ConsoleID), a.systemInfo.BigEndianMemory, audioSampleRate)
+	a.achievementManager = achievements.NewManager(a.notification, a.config, a.emu.Name, Version, uint32(a.emu.RetroAchievementsConsoleID), a.systemInfo.BigEndianMemory, audioSampleRate)
 }
 
 // loadLibrary loads and validates library.json. On failure it shows the
@@ -409,8 +403,10 @@ func (a *App) finishStartup() {
 		a.library,
 		a.config,
 		a.achievementManager,
-		a.metadata,
 		a.cheatSystem(),
+		a.emu.Cheats,
+		a.emu.Rumble,
+		a.emu.RetroAchievementsConsoleID,
 		func() { // onExitToLibrary
 			a.shaderManager.ReleaseGameBuffers()
 			a.SwitchToLibrary()
@@ -423,7 +419,7 @@ func (a *App) finishStartup() {
 
 	// A due automatic check starts before the library is first built, so the
 	// update bar is not shown from the stored manifest while it runs
-	a.updateManager = NewUpdateManager(updateConfig, a.config, a.RequestRebuild)
+	a.updateManager = NewUpdateManager(a.emu.Update, a.config, a.RequestRebuild)
 	if a.updateManager != nil {
 		a.updateManager.StartAutomaticCheck()
 	}
@@ -472,6 +468,17 @@ func (a *App) startAchievementAutoLogin() {
 	}()
 }
 
+// scanSources returns where scans download artwork from: the emulator's
+// artwork config
+func (a *App) scanSources() scanner.Sources {
+	var src scanner.Sources
+	if a.emu.Artwork != nil {
+		src.ArtworkURL = a.emu.Artwork.URL
+		src.ArtworkKeys = append([]string(nil), a.emu.Artwork.Keys...)
+	}
+	return src
+}
+
 // newScanManager creates the scan manager. It needs the scan screen, so it
 // is created after initScreens.
 func (a *App) newScanManager() *ScanManager {
@@ -479,11 +486,10 @@ func (a *App) newScanManager() *ScanManager {
 		a.library,
 		a.scanScreen,
 		contentExtensions(a.systemInfo),
-		a.metadata,
-		a.systemInfo.ConsoleID,
+		a.emu.RetroAchievementsConsoleID,
 		a.systemInfo.Disc,
 		discIdentifier(a.factory),
-		a.downloads,
+		a.scanSources(),
 		func() { a.rebuildCurrentScreen() }, // onProgress
 		func(msg string) { // onComplete
 			a.libraryScreen.ClearArtworkCache()
@@ -560,8 +566,8 @@ func (a *App) toggleFullscreen() {
 // initScreens creates all screen instances
 func (a *App) initScreens() {
 	a.libraryScreen = screens.NewLibraryScreen(a, a.library, a.config, a.updates())
-	a.detailScreen = screens.NewDetailScreen(a, a.library, a.achievementManager, a.systemInfo.ConsoleID, a.cheatSystem(), a.systemInfo.BigEndianMemory, a.systemInfo.CoreOptions)
-	a.settingsScreen = screens.NewSettingsScreen(a, a.library, a.config, a.achievementManager, a.systemInfo.SerializeSize, a.systemInfo, appIcon, a.updates())
+	a.detailScreen = screens.NewDetailScreen(a, a.library, a.achievementManager, a.emu.RetroAchievementsConsoleID, a.cheatSystem(), a.emu.Cheats, a.systemInfo.BigEndianMemory, a.systemInfo.CoreOptions)
+	a.settingsScreen = screens.NewSettingsScreen(a, a.library, a.config, a.achievementManager, a.systemInfo.SerializeSize, a.systemInfo, a.emu.Name, a.emu.Version, a.emu.Icon, a.updates())
 	a.scanScreen = screens.NewScanProgressScreen()
 	a.errorScreen = screens.NewErrorScreen(a, a.errorFile, a.errorPath, a.handleDeleteAndContinue)
 	a.filePicker = screens.NewFilePickerScreen(a, a.closeFilePicker)
@@ -1132,7 +1138,7 @@ func (a *App) Draw(screen *ebiten.Image) {
 
 	// Save queued screenshots of the final frame's picture, after everything
 	// is drawn
-	a.screenshotManager.Flush(screen, picture.Rect(), a.gameplay.CurrentGameCRC())
+	a.screenshotManager.Flush(screen, picture.Rect(), a.gameplay.CurrentGameID())
 }
 
 // resizeSettleDelay is how long the window size must hold before the UI
@@ -1232,11 +1238,11 @@ func (a *App) leaveDetail() {
 }
 
 // SwitchToDetail transitions to the detail screen
-func (a *App) SwitchToDetail(gameCRC string) {
+func (a *App) SwitchToDetail(gameID string) {
 	a.notification.Clear()
 	a.previousState = a.state
 	a.state = StateDetail
-	a.detailScreen.SetGame(gameCRC)
+	a.detailScreen.SetGame(gameID)
 	a.detailScreen.OnEnter()
 	a.rebuildCurrentScreen()
 }
@@ -1308,12 +1314,12 @@ func (a *App) SwitchToCleanProgress() {
 // LaunchGame starts the emulator with the specified game. discIndex
 // selects the disc of a multi-disc game; -1 uses the remembered
 // SelectedDisc. Ignored for single-disc and cartridge games.
-func (a *App) LaunchGame(gameCRC string, resume bool, discIndex int) {
+func (a *App) LaunchGame(gameID string, resume bool, discIndex int) {
 	// Reset shader buffers to avoid stale data from previous game
 	a.shaderManager.ResetBuffers()
 	a.shaderManager.SetAspectRatioMode(a.config.Video.AspectRatio)
 
-	if a.gameplay.Launch(gameCRC, resume, discIndex) {
+	if a.gameplay.Launch(gameID, resume, discIndex) {
 		a.leaveDetail()
 		a.previousState = a.state
 		a.state = StatePlaying
@@ -1358,9 +1364,21 @@ func (a *App) RequestRebuild() {
 	a.rebuildPending.Store(true)
 }
 
-// GetMD5ByCRC32 returns the MD5 hash for a game by CRC32 from loaded RDBs
-func (a *App) GetMD5ByCRC32(crc32 uint32) string {
-	return a.metadata.GetMD5ByCRC32(crc32)
+// GameMetadata returns the emulator's metadata for a game ID and true, or
+// false when it has none for it.
+func (a *App) GameMetadata(gameID string) (content.GameMetadata, bool) {
+	return a.metadata.Game(gameID)
+}
+
+// GameTitle returns the title to show for a library entry.
+func (a *App) GameTitle(game *storage.GameEntry) string {
+	return a.metadata.Title(game)
+}
+
+// GameInfo returns the title and region code for a library entry, used to
+// sort and search the library.
+func (a *App) GameInfo(game *storage.GameEntry) (string, string) {
+	return a.metadata.Info(game)
 }
 
 // GetExtensions returns the file extensions for the core's content: the disc
@@ -1385,20 +1403,19 @@ func (a *App) ShowNotification(msg string) {
 	a.notification.ShowDefault(msg)
 }
 
-// cheatSystem returns the core's cheat system, or 0 when the core has no
-// cheat support. Cheats need memory access (downloads.Cheats) and a system
-// the cheats package supports; the first metadata variant whose RDB name
-// it supports is used.
+// cheatSystem returns the emulator's cheat system, or 0 when cheats are off.
+// Cheats need memory access and an Emulator.CheatFormat the cheats package
+// supports.
 func (a *App) cheatSystem() cheats.System {
-	if !a.downloads.Cheats {
+	if !a.hasMemory || a.emu.CheatFormat == "" {
 		return 0
 	}
-	for i := 0; i < a.metadata.VariantCount(); i++ {
-		if sys, err := cheats.SystemFromName(a.metadata.VariantRDBName(i)); err == nil {
-			return sys
-		}
+	sys, err := cheats.SystemFromName(a.emu.CheatFormat)
+	if err != nil {
+		log.Printf("Cheats disabled: %v", err)
+		return 0
 	}
-	return 0
+	return sys
 }
 
 // handleDeleteAndContinue handles the delete and continue button

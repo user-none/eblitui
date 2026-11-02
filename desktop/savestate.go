@@ -16,7 +16,7 @@ import (
 // SaveStateManager handles save state operations
 type SaveStateManager struct {
 	currentSlot  int
-	gameCRC      string
+	gameID       string
 	notification *Notification
 }
 
@@ -30,16 +30,16 @@ func NewSaveStateManager(notification *Notification) *SaveStateManager {
 
 // SetGame sets the current game for save states
 // Restores the last-used slot from the game's settings file
-func (m *SaveStateManager) SetGame(gameCRC string) {
-	m.gameCRC = gameCRC
+func (m *SaveStateManager) SetGame(gameID string) {
+	m.gameID = gameID
 	m.currentSlot = 0
-	if gameCRC == "" {
+	if gameID == "" {
 		return
 	}
 
-	settings, err := storage.LoadGameSettings(gameCRC)
+	settings, err := storage.LoadGameSettings(gameID)
 	if err != nil {
-		log.Printf("Failed to load game settings for %s: %v", gameCRC, err)
+		log.Printf("Failed to load game settings for %s: %v", gameID, err)
 		return
 	}
 	m.currentSlot = settings.SaveStates.Slot
@@ -75,27 +75,27 @@ func (m *SaveStateManager) PreviousSlot() {
 // The file is read first so its other settings are kept; a file that
 // cannot be read is left untouched.
 func (m *SaveStateManager) persistSlot() {
-	if m.gameCRC == "" {
+	if m.gameID == "" {
 		return
 	}
-	settings, err := storage.LoadGameSettings(m.gameCRC)
+	settings, err := storage.LoadGameSettings(m.gameID)
 	if err != nil {
-		log.Printf("Failed to load game settings for %s: %v", m.gameCRC, err)
+		log.Printf("Failed to load game settings for %s: %v", m.gameID, err)
 		return
 	}
 	settings.SaveStates.Slot = m.currentSlot
-	if err := storage.SaveGameSettings(m.gameCRC, settings); err != nil {
-		log.Printf("Failed to save game settings for %s: %v", m.gameCRC, err)
+	if err := storage.SaveGameSettings(m.gameID, settings); err != nil {
+		log.Printf("Failed to save game settings for %s: %v", m.gameID, err)
 	}
 }
 
 // Save saves the current state to the current slot
 func (m *SaveStateManager) Save(saveStater coreif.SaveStater) error {
-	if m.gameCRC == "" {
+	if m.gameID == "" {
 		return fmt.Errorf("no game set")
 	}
 
-	saveDir, err := storage.GetGameSaveDir(m.gameCRC)
+	saveDir, err := storage.GetGameSaveDir(m.gameID)
 	if err != nil {
 		return err
 	}
@@ -125,11 +125,11 @@ func (m *SaveStateManager) Save(saveStater coreif.SaveStater) error {
 
 // Load loads the state from the current slot
 func (m *SaveStateManager) Load(saveStater coreif.SaveStater) error {
-	if m.gameCRC == "" {
+	if m.gameID == "" {
 		return fmt.Errorf("no game set")
 	}
 
-	saveDir, err := storage.GetGameSaveDir(m.gameCRC)
+	saveDir, err := storage.GetGameSaveDir(m.gameID)
 	if err != nil {
 		return err
 	}
@@ -162,11 +162,11 @@ func (m *SaveStateManager) Load(saveStater coreif.SaveStater) error {
 
 // SaveResume saves the resume state
 func (m *SaveStateManager) SaveResume(saveStater coreif.SaveStater) error {
-	if m.gameCRC == "" {
+	if m.gameID == "" {
 		return fmt.Errorf("no game set")
 	}
 
-	saveDir, err := storage.GetGameSaveDir(m.gameCRC)
+	saveDir, err := storage.GetGameSaveDir(m.gameID)
 	if err != nil {
 		return err
 	}
@@ -188,11 +188,11 @@ func (m *SaveStateManager) SaveResume(saveStater coreif.SaveStater) error {
 // SaveResumeData saves pre-serialized state data as the resume state.
 // Used by the auto-save system where the emu goroutine caches serialized state.
 func (m *SaveStateManager) SaveResumeData(state []byte) error {
-	if m.gameCRC == "" {
+	if m.gameID == "" {
 		return fmt.Errorf("no game set")
 	}
 
-	saveDir, err := storage.GetGameSaveDir(m.gameCRC)
+	saveDir, err := storage.GetGameSaveDir(m.gameID)
 	if err != nil {
 		return err
 	}
@@ -207,11 +207,11 @@ func (m *SaveStateManager) SaveResumeData(state []byte) error {
 
 // LoadResume loads the resume state
 func (m *SaveStateManager) LoadResume(saveStater coreif.SaveStater) error {
-	if m.gameCRC == "" {
+	if m.gameID == "" {
 		return fmt.Errorf("no game set")
 	}
 
-	saveDir, err := storage.GetGameSaveDir(m.gameCRC)
+	saveDir, err := storage.GetGameSaveDir(m.gameID)
 	if err != nil {
 		return err
 	}
@@ -228,11 +228,11 @@ func (m *SaveStateManager) LoadResume(saveStater coreif.SaveStater) error {
 
 // HasResumeState checks if a resume state exists
 func (m *SaveStateManager) HasResumeState() bool {
-	if m.gameCRC == "" {
+	if m.gameID == "" {
 		return false
 	}
 
-	saveDir, err := storage.GetGameSaveDir(m.gameCRC)
+	saveDir, err := storage.GetGameSaveDir(m.gameID)
 	if err != nil {
 		return false
 	}
@@ -244,7 +244,7 @@ func (m *SaveStateManager) HasResumeState() bool {
 
 // SaveSRAM saves the cartridge SRAM
 func (m *SaveStateManager) SaveSRAM(batterySaver coreif.BatterySaver) error {
-	if m.gameCRC == "" {
+	if m.gameID == "" {
 		return fmt.Errorf("no game set")
 	}
 
@@ -252,7 +252,7 @@ func (m *SaveStateManager) SaveSRAM(batterySaver coreif.BatterySaver) error {
 		return nil
 	}
 
-	saveDir, err := storage.GetGameSaveDir(m.gameCRC)
+	saveDir, err := storage.GetGameSaveDir(m.gameID)
 	if err != nil {
 		return err
 	}
@@ -267,7 +267,7 @@ func (m *SaveStateManager) SaveSRAM(batterySaver coreif.BatterySaver) error {
 
 // LoadSRAM loads the cartridge SRAM
 func (m *SaveStateManager) LoadSRAM(batterySaver coreif.BatterySaver) error {
-	if m.gameCRC == "" {
+	if m.gameID == "" {
 		return nil
 	}
 
@@ -275,7 +275,7 @@ func (m *SaveStateManager) LoadSRAM(batterySaver coreif.BatterySaver) error {
 		return nil
 	}
 
-	saveDir, err := storage.GetGameSaveDir(m.gameCRC)
+	saveDir, err := storage.GetGameSaveDir(m.gameID)
 	if err != nil {
 		return nil
 	}

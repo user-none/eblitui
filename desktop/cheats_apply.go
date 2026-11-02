@@ -120,24 +120,21 @@ func writeCheatValue(mem coreif.Memory, op cheats.Op, v uint32) {
 // loadCheatEngine builds the engine for a game's enabled cheats, custom
 // and database, or returns nil when none apply. Cheats are parsed in the
 // core's byte order and only those that can be applied are used.
-func (gm *GameplayManager) loadCheatEngine(gameCRC string) *CheatEngine {
+func (gm *GameplayManager) loadCheatEngine(gameID string) *CheatEngine {
 	if gm.cheatSystem == 0 {
 		return nil
 	}
 
-	settings, err := storage.LoadGameSettings(gameCRC)
+	settings, err := storage.LoadGameSettings(gameID)
 	if err != nil {
-		log.Printf("Failed to load game settings for %s: %v", gameCRC, err)
+		log.Printf("Failed to load game settings for %s: %v", gameID, err)
 		return nil
 	}
 	if len(settings.Cheats.Enabled) == 0 {
 		return nil
 	}
 
-	set := gamecheats.Load(gameCRC, settings, gm.cheatSystem, gm.systemInfo.BigEndianMemory)
-	if set.LoadErr != nil {
-		log.Printf("Failed to read cheats for %s: %v", gameCRC, set.LoadErr)
-	}
+	set := gamecheats.Load(gameID, gm.cheatsSource, settings, gm.cheatSystem, gm.systemInfo.BigEndianMemory)
 	enabled := set.Enabled(settings)
 	if len(enabled) == 0 {
 		return nil

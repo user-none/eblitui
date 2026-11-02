@@ -194,44 +194,6 @@ var dpadButtons = []struct {
 	{"Right", coreif.ButtonRight, "D", "DpadRight"},
 }
 
-// BuildDefaultMapping creates an InputMapping from the given button definitions.
-// It includes D-pad defaults (WASD keyboard, D-pad controller) plus adaptor buttons.
-// Keys that conflict with reserved standalone UI keys are skipped.
-func BuildDefaultMapping(buttons []coreif.Button) InputMapping {
-	m := InputMapping{
-		Keys:    make(map[int]ebiten.Key),
-		Gamepad: make(map[int]ebiten.StandardGamepadButton),
-	}
-
-	// D-pad defaults
-	for _, dp := range dpadButtons {
-		if k, ok := ParseKey(dp.DefaultKey); ok {
-			m.Keys[dp.BitID] = k
-		}
-		if b, ok := ParsePad(dp.DefaultPad); ok {
-			m.Gamepad[dp.BitID] = b
-		}
-	}
-
-	// Adaptor buttons
-	for _, btn := range buttons {
-		if btn.DefaultKey != "" {
-			if k, ok := ParseKey(btn.DefaultKey); ok {
-				if !reservedKeys[k] {
-					m.Keys[btn.ID] = k
-				}
-			}
-		}
-		if btn.DefaultPad != "" {
-			if b, ok := ParsePad(btn.DefaultPad); ok {
-				m.Gamepad[btn.ID] = b
-			}
-		}
-	}
-
-	return m
-}
-
 // BuildMappingFromConfig creates an InputMapping using config overrides with
 // adaptor defaults as fallback. D-pad defaults are WASD (keyboard) and
 // DpadUp/Down/Left/Right (controller). For each button, the override map

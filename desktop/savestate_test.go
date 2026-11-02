@@ -9,8 +9,8 @@ func TestNewSaveStateManager(t *testing.T) {
 	if m.GetCurrentSlot() != 0 {
 		t.Errorf("initial slot should be 0, got %d", m.GetCurrentSlot())
 	}
-	if m.gameCRC != "" {
-		t.Errorf("initial gameCRC should be empty, got %q", m.gameCRC)
+	if m.gameID != "" {
+		t.Errorf("initial gameID should be empty, got %q", m.gameID)
 	}
 }
 
@@ -103,6 +103,6 @@ func TestHasResumeStateNoGame(t *testing.T) {
 
 func TestPersistSlotNoGame(t *testing.T) {
 	m := NewSaveStateManager(nil)
-	// persistSlot with empty gameCRC does nothing and writes no file
+	// persistSlot with empty gameID does nothing and writes no file
 	m.persistSlot()
 }

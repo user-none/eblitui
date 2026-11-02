@@ -1,12 +1,10 @@
 package desktop
 
 import (
-	"os"
-	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/user-none/eblitui/coreif"
+	"github.com/user-none/eblitui/desktop/content"
 	"github.com/user-none/eblitui/desktop/storage"
 )
 
@@ -45,47 +43,51 @@ func TestLaunchedDiscNumber(t *testing.T) {
 	}
 }
 
-func TestRumbleGameID(t *testing.T) {
-	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
-		t.Skip("test redirects storage via XDG_DATA_HOME")
-	}
-	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	dir, err := storage.GetRumbleDir()
-	if err != nil {
-		t.Fatalf("GetRumbleDir: %v", err)
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "T-1219H.disc2.erumble"), []byte("---\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
+// mapRumbleSource is a content.RumbleSource over a map of file names to
+// contents
+type mapRumbleSource map[string]string
 
+func (m mapRumbleSource) GameRumble(name string) ([]byte, bool) {
+	s, ok := m[name]
+	return []byte(s), ok
+}
+
+func TestRumbleFile(t *testing.T) {
 	game := func(selected int) *storage.GameEntry {
 		return &storage.GameEntry{
 			Discs:        []storage.GameDisc{{Index: 0}, {Index: 1}},
 			SelectedDisc: selected,
 		}
 	}
+	both := mapRumbleSource{"T-1219H": "shared", "T-1219H.disc2": "disc2"}
+	discOnly := mapRumbleSource{"T-1219H.disc2": "disc2"}
 	tests := []struct {
-		name string
-		disc bool
-		game *storage.GameEntry
-		want string
+		name     string
+		source   content.RumbleSource
+		disc     bool
+		game     *storage.GameEntry
+		wantName string
+		wantSrc  string
+		wantOK   bool
 	}{
-		{"cartridge ignores disc files", false, game(1), "T-1219H"},
-		{"disc-specific file exists", true, game(1), "T-1219H.disc2"},
-		{"no disc-specific file", true, game(0), "T-1219H"},
-		{"no current game", true, nil, "T-1219H"},
+		{"cartridge ignores disc files", both, false, game(1), "T-1219H", "shared", true},
+		{"disc-specific file", both, true, game(1), "T-1219H.disc2", "disc2", true},
+		{"no disc-specific file", both, true, game(0), "T-1219H", "shared", true},
+		{"no current game", both, true, nil, "T-1219H", "shared", true},
+		{"disc-specific file only, other disc", discOnly, true, game(0), "", "", false},
+		{"no file", mapRumbleSource{}, true, game(1), "", "", false},
+		{"no source", nil, true, game(1), "", "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gm := &GameplayManager{
-				systemInfo:  coreif.SystemInfo{Disc: tt.disc},
-				currentGame: tt.game,
+				systemInfo:   coreif.SystemInfo{Disc: tt.disc},
+				currentGame:  tt.game,
+				rumbleSource: tt.source,
 			}
-			if got := gm.rumbleGameID("T-1219H"); got != tt.want {
-				t.Errorf("rumbleGameID() = %q, want %q", got, tt.want)
+			name, src, ok := gm.rumbleFile("T-1219H")
+			if ok != tt.wantOK || (ok && (name != tt.wantName || string(src) != tt.wantSrc)) {
+				t.Errorf("rumbleFile() = %q, %q, %v, want %q, %q, %v", name, src, ok, tt.wantName, tt.wantSrc, tt.wantOK)
 			}
 		})
 	}

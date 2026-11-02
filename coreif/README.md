@@ -200,14 +200,15 @@ Describes a configurable core setting for use in settings menus.
 
 ### SystemInfo
 
-System metadata returned by `CoreFactory.SystemInfo()`. The UI uses this
-to configure display, input, audio, settings, data paths, and
-RetroAchievements integration.
+Facts about the core returned by `CoreFactory.SystemInfo()`. The UI uses
+this to configure display, input, audio, and settings. What belongs to the
+application built around the core (its name, data directory, content, and
+download sources) is not part of the core and is supplied to the UI
+separately.
 
 | Field | Type | Description |
 |---|---|---|
-| `Name` | `string` | Emulator name (e.g. "emmd") |
-| `ConsoleName` | `string` | Full console name (e.g. "Sega Genesis") |
+| `ConsoleName` | `string` | The console the core emulates (e.g. "Sega Genesis") |
 | `Extensions` | `[]string` | Supported ROM file extensions |
 | `ScreenWidth` | `int` | Native frame width the UI assumes before the first frame; a hint for the initial window and any preallocation, not a bound |
 | `ScreenHeight` | `int` | Native frame height the UI assumes before the first frame; a hint, not a bound. Each frame's size comes from `GetFramebufferStride` and `GetActiveHeight` and may exceed both hints |
@@ -216,11 +217,6 @@ RetroAchievements integration.
 | `Buttons` | `[]Button` | System-specific buttons |
 | `Players` | `int` | Number of supported players |
 | `CoreOptions` | `[]CoreOption` | Configurable core settings |
-| `RDBName` | `string` | RetroAchievements database name |
-| `ThumbnailRepo` | `string` | Thumbnail repository name |
-| `RumbleRepoDir` | `string` | Console directory in the rumble repository |
-| `DataDirName` | `string` | Data directory name for saves and config |
-| `ConsoleID` | `int` | Console identifier for RetroAchievements |
 | `CoreName` | `string` | Core implementation name |
 | `CoreVersion` | `string` | Core version string |
 | `Disc` | `bool` | True if content is a disc image (provided via `SetDisc`) |

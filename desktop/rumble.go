@@ -6,12 +6,10 @@ package desktop
 import (
 	"fmt"
 	"log"
-	"os"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/user-none/eblitui/coreif"
-	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/rumble"
 )
 
@@ -30,42 +28,39 @@ func (gm *GameplayManager) launchedDiscNumber() int {
 	return g.Discs[g.SelectedDisc].Index + 1
 }
 
-// rumbleGameID returns the .erumble lookup ID for the game:
-// <gameID>.disc<n> when a disc-specific file exists for the disc being
-// played, else gameID unchanged.
-func (gm *GameplayManager) rumbleGameID(gameID string) string {
-	n := gm.launchedDiscNumber()
-	if n < 1 {
-		return gameID
+// rumbleFile returns the game's .erumble file from the rumble source and
+// its name: the disc-specific <gameID>.disc<n> file for the disc being
+// played when the source has one, else the file shared by all of the
+// game's discs, named gameID. ok is false when the source has neither or
+// there is no source.
+func (gm *GameplayManager) rumbleFile(gameID string) (name string, src []byte, ok bool) {
+	if gm.rumbleSource == nil {
+		return "", nil, false
 	}
-	discID := fmt.Sprintf("%s.disc%d", gameID, n)
-	path, err := storage.GetGameRumblePath(discID)
-	if err != nil {
-		return gameID
+	if n := gm.launchedDiscNumber(); n > 0 {
+		discID := fmt.Sprintf("%s.disc%d", gameID, n)
+		if src, ok := gm.rumbleSource.GameRumble(discID); ok {
+			return discID, src, true
+		}
 	}
-	if _, err := os.Stat(path); err != nil {
-		return gameID
+	if src, ok := gm.rumbleSource.GameRumble(gameID); ok {
+		return gameID, src, true
 	}
-	return discID
+	return "", nil, false
 }
 
 // loadRumbleRuleset loads and binds a game's .erumble file, returning
-// nil when the game has none. A disc game prefers a disc-specific
-// <gameID>.disc<n>.erumble file over the shared <gameID>.erumble. A file
-// that fails to parse or bind is logged and treated as absent, so the
-// CHT fallback can take over.
+// nil when the game has none. A disc game prefers a disc-specific file
+// over the shared one (see rumbleFile). A file that fails to parse or bind
+// is logged and treated as absent.
 func (gm *GameplayManager) loadRumbleRuleset(gameID string, mem coreif.Memory) *rumble.Engine {
-	path, err := storage.GetGameRumblePath(gm.rumbleGameID(gameID))
-	if err != nil {
-		return nil
-	}
-	src, err := os.ReadFile(path)
-	if err != nil {
+	name, src, ok := gm.rumbleFile(gameID)
+	if !ok {
 		return nil
 	}
 	rs, err := rumble.Parse(src)
 	if err != nil {
-		log.Printf("Rumble file %s: %v", path, err)
+		log.Printf("Rumble file %s: %v", name, err)
 		return nil
 	}
 	sys := rumble.System{BigEndian: gm.systemInfo.BigEndianMemory}
@@ -75,7 +70,7 @@ func (gm *GameplayManager) loadRumbleRuleset(gameID string, mem coreif.Memory) *
 	}
 	eng, err := rumble.NewEngine(rs, sys, gm.systemInfo.Players)
 	if err != nil {
-		log.Printf("Rumble file %s: %v", path, err)
+		log.Printf("Rumble file %s: %v", name, err)
 		return nil
 	}
 	return eng

@@ -25,27 +25,33 @@ const aboutIconSize = 128
 // AboutSection displays the application icon, name, and version, and the
 // Updates area when the update system is on.
 type AboutSection struct {
-	callback types.ScreenCallback
-	config   *storage.Config
-	updates  types.Updates // nil when the update system is off
-	name     string
-	version  string
-	iconPNG  []byte // PNG-encoded icon (may be nil)
+	callback    types.ScreenCallback
+	config      *storage.Config
+	updates     types.Updates // nil when the update system is off
+	name        string        // emulator name
+	version     string        // emulator version
+	coreName    string
+	coreVersion string
+	iconPNG     []byte // PNG-encoded icon (may be nil)
 
 	iconImg *ebiten.Image // decoded/scaled icon, cached after first Build
 }
 
-// NewAboutSection creates the About section. iconPNG may be nil, in which case
-// only the name and version are shown. updates is nil when the update system
-// is off, in which case no Updates area is shown.
-func NewAboutSection(callback types.ScreenCallback, config *storage.Config, updates types.Updates, name, version string, iconPNG []byte) *AboutSection {
+// NewAboutSection creates the About section. name and version are the
+// emulator's; the core's name and version are shown too when either differs
+// from them. iconPNG may be nil, in which case only the names and versions
+// are shown. updates is nil when the update system is off, in which case no
+// Updates area is shown.
+func NewAboutSection(callback types.ScreenCallback, config *storage.Config, updates types.Updates, name, version, coreName, coreVersion string, iconPNG []byte) *AboutSection {
 	return &AboutSection{
-		callback: callback,
-		config:   config,
-		updates:  updates,
-		name:     name,
-		version:  version,
-		iconPNG:  iconPNG,
+		callback:    callback,
+		config:      config,
+		updates:     updates,
+		name:        name,
+		version:     version,
+		coreName:    coreName,
+		coreVersion: coreVersion,
+		iconPNG:     iconPNG,
 	}
 }
 
@@ -82,6 +88,9 @@ func (a *AboutSection) Build(focus types.FocusManager) *widget.Container {
 	}
 	section.AddChild(centeredText(a.name, style.Text))
 	section.AddChild(centeredText("Version "+a.version, style.TextSecondary))
+	if a.coreName != "" && (a.coreName != a.name || a.coreVersion != a.version) {
+		section.AddChild(centeredText("Core "+a.coreName+" "+a.coreVersion, style.TextSecondary))
+	}
 
 	if a.updates != nil {
 		a.buildUpdates(section, focus)

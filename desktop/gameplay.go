@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"log"
-	"strconv"
 	"sync"
 	"time"
 
@@ -16,7 +15,7 @@ import (
 	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/desktop/achievements"
 	"github.com/user-none/eblitui/desktop/cheats"
-	"github.com/user-none/eblitui/desktop/metadata"
+	"github.com/user-none/eblitui/desktop/content"
 	"github.com/user-none/eblitui/desktop/shader"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
@@ -85,22 +84,26 @@ type GameplayManager struct {
 	autoSaving       bool
 	autoSaveWg       sync.WaitGroup
 
-	// Rumble
-	// Rumble. Exactly one engine is active per game: rumbleEngine
-	// serves the game's .erumble file, rumbleCHT is the CHT fallback.
+	// Rumble. rumbleSource supplies the .erumble files (nil when none);
+	// rumbleEngine serves the game's file.
+	rumbleSource     content.RumbleSource
 	rumbleEngine     *rumble.Engine
-	rumbleCHT        *CHTRumbleEngine
-	pendingCHTRumble []CHTRumbleEvent
 	pendingMotor     []rumble.MotorState
 	pendingMotorSet  bool
 	pendingRumbleMu  sync.Mutex
 	rumbleActivePads map[int]bool // Ebiten thread only: players vibrating last frame
 
-	// Cheats. cheatSystem is the core's cheat system (0 when unsupported);
+	// Cheats. cheatSystem is the emulator's cheat system (0 when cheats are
+	// off); cheatsSource supplies the database cheats (nil when none);
 	// cheatEngine applies the game's enabled cheats each frame, nil when
 	// none are on.
-	cheatSystem cheats.System
-	cheatEngine *CheatEngine
+	cheatSystem  cheats.System
+	cheatsSource content.CheatsSource
+	cheatEngine  *CheatEngine
+
+	// raConsoleID is the emulator's RetroAchievements console ID, used for
+	// games whose library entry has none
+	raConsoleID int
 
 	// Turbo (fast-forward)
 	turboState    *TurboState
@@ -119,7 +122,6 @@ type GameplayManager struct {
 	library            *storage.Library
 	config             *storage.Config
 	achievementManager *achievements.Manager
-	metadata           *metadata.MetadataManager
 
 	// Callbacks to App
 	onExitToLibrary func()
@@ -145,8 +147,10 @@ func NewGameplayManager(
 	library *storage.Library,
 	config *storage.Config,
 	achievementManager *achievements.Manager,
-	metadata *metadata.MetadataManager,
 	cheatSystem cheats.System,
+	cheatsSource content.CheatsSource,
+	rumbleSource content.RumbleSource,
+	raConsoleID int,
 	onExitToLibrary func(),
 	onExitApp func(),
 ) *GameplayManager {
@@ -165,8 +169,10 @@ func NewGameplayManager(
 		library:            library,
 		config:             config,
 		achievementManager: achievementManager,
-		metadata:           metadata,
 		cheatSystem:        cheatSystem,
+		cheatsSource:       cheatsSource,
+		rumbleSource:       rumbleSource,
+		raConsoleID:        raConsoleID,
 		onExitToLibrary:    onExitToLibrary,
 		onExitApp:          onExitApp,
 	}
@@ -201,10 +207,10 @@ func (gm *GameplayManager) IsPlaying() bool {
 	return gm.emulator != nil
 }
 
-// CurrentGameCRC returns the CRC of the currently loaded game, or empty string if none
-func (gm *GameplayManager) CurrentGameCRC() string {
+// CurrentGameID returns the game ID of the currently loaded game, or empty string if none
+func (gm *GameplayManager) CurrentGameID() string {
 	if gm.currentGame != nil {
-		return gm.currentGame.CRC32
+		return gm.currentGame.GameID
 	}
 	return ""
 }
@@ -219,11 +225,11 @@ func (gm *GameplayManager) GameShaders() []string {
 // which disc of a multi-disc game to launch; -1, or any index out of
 // range, uses the entry's remembered SelectedDisc. Ignored for single-disc
 // and cartridge games.
-func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bool {
+func (gm *GameplayManager) Launch(gameID string, resume bool, discIndex int) bool {
 	// Rebuild input mappings from current config (settings may have changed)
 	gm.mappings = buildPlayerMappings(gm.systemInfo, &gm.config.Input)
 
-	game := gm.library.GetGame(gameCRC)
+	game := gm.library.GetGame(gameID)
 	if game == nil {
 		gm.notification.ShowDefault("Game not found")
 		return false
@@ -233,7 +239,7 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bo
 	emu := gm.factory.CreateEmulator()
 	gm.emulator = emu
 	gm.currentGame = game
-	gm.saveStateManager.SetGame(gameCRC)
+	gm.saveStateManager.SetGame(gameID)
 
 	// Any failure path below must release the emulator (and the disc
 	// handle for disc-based systems). The success path sets launched.
@@ -286,7 +292,7 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bo
 
 	// Apply core options and resolve the game shaders, with the game's
 	// overrides of the global settings
-	overrides := loadOverrides(gameCRC)
+	overrides := loadOverrides(gameID)
 	for _, opt := range gm.systemInfo.CoreOptions {
 		emu.SetOption(opt.Key, launchCoreOption(opt, gm.config.CoreOptions, overrides))
 	}
@@ -426,20 +432,17 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bo
 			gm.achievementManager.SetEmulator(gm.memoryInspector)
 		}
 		// Resolve per-game console ID for achievements
-		gameConsoleID := uint32(gm.systemInfo.ConsoleID)
+		gameConsoleID := uint32(gm.raConsoleID)
 		if game.ConsoleID != 0 {
 			gameConsoleID = uint32(game.ConsoleID)
 		}
 		// Disc cores hash by reading sectors through the open disc (rcheevos
-		// handles the system-specific hashing); cartridge cores use the RDB
-		// MD5 fast path keyed by CRC32, falling back to re-hashing romData.
+		// handles the system-specific hashing); cartridge cores hash romData.
 		var loadErr error
 		if gm.systemInfo.Disc {
 			loadErr = gm.achievementManager.LoadGameFromDisc(gm.disc, gameConsoleID)
 		} else {
-			crc32, _ := strconv.ParseUint(game.CRC32, 16, 32)
-			md5Hash := gm.metadata.GetMD5ByCRC32(uint32(crc32))
-			loadErr = gm.achievementManager.LoadGame(romData, game.File, md5Hash, gameConsoleID)
+			loadErr = gm.achievementManager.LoadGame(romData, game.File, "", gameConsoleID)
 		}
 		if loadErr != nil {
 			log.Printf("Failed to load achievements: %v", loadErr)
@@ -450,22 +453,14 @@ func (gm *GameplayManager) Launch(gameCRC string, resume bool, discIndex int) bo
 	}
 
 	// Initialize rumble if any assigned controller profile has a non-zero
-	// rumble intensity and the emulator exposes memory. An .erumble file is
-	// preferred; the CHT database file is the fallback.
+	// rumble intensity and the emulator exposes memory.
 	if gm.config.Input.RumbleEnabled() && gm.memoryInspector != nil {
-		if eng := gm.loadRumbleRuleset(game.CRC32, gm.memoryInspector); eng != nil {
-			gm.rumbleEngine = eng
-		} else if rumblePath, err := storage.GetGameCHTRumblePath(game.CRC32); err == nil {
-			entries, err := ParseCHTRumbleFile(rumblePath)
-			if err == nil && len(entries) > 0 {
-				gm.rumbleCHT = NewCHTRumbleEngine(entries, gm.systemInfo.BigEndianMemory)
-			}
-		}
+		gm.rumbleEngine = gm.loadRumbleRuleset(game.GameID, gm.memoryInspector)
 	}
 
 	// Load the game's enabled cheats when the emulator exposes memory
 	if gm.memoryInspector != nil {
-		gm.cheatEngine = gm.loadCheatEngine(game.CRC32)
+		gm.cheatEngine = gm.loadCheatEngine(game.GameID)
 	}
 
 	// Start the emulation goroutine
@@ -556,13 +551,6 @@ func (gm *GameplayManager) emulationLoop() {
 			gm.pendingMotor = states
 			gm.pendingMotorSet = true
 			gm.pendingRumbleMu.Unlock()
-		} else if gm.rumbleCHT != nil {
-			events := gm.rumbleCHT.Evaluate(gm.memoryInspector)
-			if len(events) > 0 {
-				gm.pendingRumbleMu.Lock()
-				gm.pendingCHTRumble = append(gm.pendingCHTRumble, events...)
-				gm.pendingRumbleMu.Unlock()
-			}
 		}
 
 		// Queue one frame of audio. QueueSamples auto-pads empty input
@@ -682,17 +670,13 @@ func (gm *GameplayManager) Update() (pauseMenuOpened bool, err error) {
 
 	// Fire pending rumble output (must be on Ebiten thread)
 	gm.pendingRumbleMu.Lock()
-	rumbleEvents := gm.pendingCHTRumble
-	gm.pendingCHTRumble = nil
 	motorStates := gm.pendingMotor
 	motorSet := gm.pendingMotorSet
 	gm.pendingMotor = nil
 	gm.pendingMotorSet = false
 	gm.pendingRumbleMu.Unlock()
-	scales := gm.playerRumbleScales()
-	FireCHTRumbleEvents(rumbleEvents, scales)
 	if motorSet {
-		gm.rumbleActivePads = FireMotorStates(motorStates, scales, gm.rumbleActivePads)
+		gm.rumbleActivePads = FireMotorStates(motorStates, gm.playerRumbleScales(), gm.rumbleActivePads)
 	}
 
 	// Poll input and write to shared state (emu goroutine reads it). After
@@ -917,9 +901,7 @@ func (gm *GameplayManager) Exit(saveResume bool) {
 	}
 	gm.currentGame = nil
 	gm.rumbleEngine = nil
-	gm.rumbleCHT = nil
 	gm.cheatEngine = nil
-	gm.pendingCHTRumble = nil
 	gm.pendingMotor = nil
 	gm.pendingMotorSet = false
 	gm.rumbleActivePads = nil
@@ -1009,9 +991,6 @@ func (gm *GameplayManager) handleSaveStateKeys() {
 			}
 			if gm.rumbleEngine != nil {
 				gm.rumbleEngine.Reset()
-			}
-			if gm.rumbleCHT != nil {
-				gm.rumbleCHT.Reset()
 			}
 			// Update shared framebuffer after load
 			gm.sharedFramebuffer.Update(

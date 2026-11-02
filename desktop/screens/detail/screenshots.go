@@ -72,7 +72,7 @@ type ScreenshotsSection struct {
 
 	// gameDir returns a game's screenshot directory:
 	// storage.GetGameScreenshotDir
-	gameDir func(gameCRC string) (string, error)
+	gameDir func(gameID string) (string, error)
 	// decode reads a screenshot into a texture: decodeScreenshot
 	decode func(path string) (*ebiten.Image, error)
 	// showInFileManager shows a screenshot in the file manager:
@@ -105,7 +105,7 @@ func (s *ScreenshotsSection) SetGame(game *storage.GameEntry) {
 	if game == nil {
 		return
 	}
-	dir, err := s.gameDir(game.CRC32)
+	dir, err := s.gameDir(game.GameID)
 	if err != nil {
 		s.listErr = err
 		return

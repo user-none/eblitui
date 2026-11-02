@@ -81,21 +81,9 @@ func (o BIOSOption) HasKnownHashes() bool {
 	return false
 }
 
-// MetadataVariant pairs an RDB database with its thumbnail repository.
-// Systems that span multiple libretro databases (e.g. NGP + NGPC) have
-// multiple variants so metadata lookups can search all of them.
-type MetadataVariant struct {
-	Name          string // Display name, e.g. "Neo Geo Pocket"
-	RDBName       string // e.g. "SNK - Neo Geo Pocket"
-	ThumbnailRepo string // e.g. "SNK_-_Neo_Geo_Pocket"
-	RumbleRepoDir string // e.g. "ngp"
-	ConsoleID     int    // RetroAchievements console ID override; 0 = use SystemInfo.ConsoleID
-}
-
 // SystemInfo describes an emulator system for UI configuration.
 type SystemInfo struct {
-	Name             string
-	ConsoleName      string
+	ConsoleName      string // the console the core emulates
 	Extensions       []string
 	ScreenWidth      int // Native frame width the UI assumes before the first frame (see ScreenHeight)
 	ScreenHeight     int // Native frame height the UI assumes before the first frame: a hint for the initial window and any preallocation, not a bound; each frame's size comes from GetFramebufferStride and GetActiveHeight and may exceed it
@@ -104,9 +92,6 @@ type SystemInfo struct {
 	Buttons          []Button
 	Players          int
 	CoreOptions      []CoreOption
-	MetadataVariants []MetadataVariant
-	DataDirName      string
-	ConsoleID        int
 	CoreName         string
 	CoreVersion      string
 	SerializeSize    int

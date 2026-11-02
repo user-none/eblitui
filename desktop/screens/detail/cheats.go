@@ -11,6 +11,7 @@ import (
 
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/user-none/eblitui/desktop/cheats"
+	"github.com/user-none/eblitui/desktop/content"
 	"github.com/user-none/eblitui/desktop/gamecheats"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
@@ -50,6 +51,7 @@ type cheatForm struct {
 // and kept until the next SetGame.
 type CheatsSection struct {
 	callback     types.ScreenCallback
+	provider     content.CheatsSource // the emulator's database cheats, nil when it has none
 	system       cheats.System
 	bigEndian    bool // byte order of the core's memory
 	contentWidth func() int
@@ -64,16 +66,18 @@ type CheatsSection struct {
 	focus         types.FocusManager // from the last Build; set before any row or form handler can run
 
 	// save writes a game's settings file: storage.SaveGameSettings
-	save func(gameCRC string, settings *storage.GameSettingsFile) error
+	save func(gameID string, settings *storage.GameSettingsFile) error
 }
 
-// NewCheatsSection creates the Cheats page. system is the core's cheat
+// NewCheatsSection creates the Cheats page. provider supplies the
+// database cheats, nil when the core has none. system is the core's cheat
 // system and bigEndian the byte order of the core's memory, which cheats
 // are converted to. contentWidth returns the width of the page content
 // area.
-func NewCheatsSection(callback types.ScreenCallback, system cheats.System, bigEndian bool, contentWidth func() int) *CheatsSection {
+func NewCheatsSection(callback types.ScreenCallback, provider content.CheatsSource, system cheats.System, bigEndian bool, contentWidth func() int) *CheatsSection {
 	return &CheatsSection{
 		callback:     callback,
+		provider:     provider,
 		system:       system,
 		bigEndian:    bigEndian,
 		contentWidth: contentWidth,
@@ -95,7 +99,7 @@ func (c *CheatsSection) SetGame(game *storage.GameEntry, gameSettings *storage.G
 	}
 
 	c.gameSettings = gameSettings
-	c.set = gamecheats.Load(game.CRC32, gameSettings, c.system, c.bigEndian)
+	c.set = gamecheats.Load(game.GameID, c.provider, gameSettings, c.system, c.bigEndian)
 }
 
 // EnabledCount returns how many cheats are on. Enabled IDs with no
@@ -179,12 +183,9 @@ func (c *CheatsSection) buildLists(focus types.FocusManager, content *widget.Con
 
 	content.AddChild(widgets.SectionHeader("Database Cheats"))
 	var dbKeys []string
-	switch {
-	case c.set.LoadErr != nil:
-		content.AddChild(widgets.NoticeText("Unable to read the cheat file"))
-	case len(c.set.Database) == 0:
+	if len(c.set.Database) == 0 {
 		content.AddChild(widgets.NoticeText("No cheats available for this game"))
-	default:
+	} else {
 		dbWidth := widgets.SettingsRowLabelWidth(rowWidth, widgets.OnOffButtonWidth())
 		for i, ch := range c.set.Database {
 			key := fmt.Sprintf("cheat-%d", i)
@@ -462,7 +463,7 @@ func (c *CheatsSection) deleteCustom(i int) {
 
 // saveSettings writes the game's settings file
 func (c *CheatsSection) saveSettings() {
-	if err := c.save(c.game.CRC32, c.gameSettings); err != nil {
-		log.Printf("Failed to save game settings for %s: %v", c.game.CRC32, err)
+	if err := c.save(c.game.GameID, c.gameSettings); err != nil {
+		log.Printf("Failed to save game settings for %s: %v", c.game.GameID, err)
 	}
 }

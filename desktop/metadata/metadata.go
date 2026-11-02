@@ -5,243 +5,129 @@ package metadata
 
 import (
 	"fmt"
-	"net/url"
-	"os"
 	"path/filepath"
+	"strings"
 
-	"github.com/user-none/eblitui/coreif"
-	"github.com/user-none/eblitui/desktop/netutil"
+	"github.com/user-none/eblitui/desktop/content"
 	"github.com/user-none/eblitui/desktop/storage"
-	"github.com/user-none/eblitui/rdb"
 )
 
-const (
-	// Base URL for libretro-database RDB files
-	rdbBaseURL = "https://github.com/libretro/libretro-database/raw/refs/heads/master/rdb"
-)
-
-// metadataVariant holds the loaded RDB and config for a single variant.
-type metadataVariant struct {
-	name          string   // Display name
-	rdbName       string   // e.g. "SNK - Neo Geo Pocket Color"
-	thumbnailRepo string   // e.g. "SNK_-_Neo_Geo_Pocket_Color"
-	rumbleRepoDir string   // e.g. "ngp"
-	consoleID     int      // RetroAchievements console ID override; 0 = use default
-	rdb           *rdb.RDB // Loaded RDB, nil if not loaded
-}
-
-// MetadataManager handles RDB and artwork downloads for one or more
-// metadata variants (RDB + thumbnail repo pairs).
+// MetadataManager holds the emulator's game metadata.
 type MetadataManager struct {
-	variants []metadataVariant
+	games map[string]content.GameMetadata
 }
 
-// NewMetadataManager creates a new metadata manager from the given variants.
-func NewMetadataManager(variants []coreif.MetadataVariant) *MetadataManager {
-	mv := make([]metadataVariant, len(variants))
-	for i, v := range variants {
-		mv[i] = metadataVariant{
-			name:          v.Name,
-			rdbName:       v.RDBName,
-			thumbnailRepo: v.ThumbnailRepo,
-			rumbleRepoDir: v.RumbleRepoDir,
-			consoleID:     v.ConsoleID,
-		}
+// NewMetadataManager creates a metadata manager. When source is not nil,
+// all of its game metadata is loaded once here; the map is read-only
+// afterwards, so lookups are safe from any goroutine.
+func NewMetadataManager(source content.MetadataSource) *MetadataManager {
+	m := &MetadataManager{}
+	if source != nil {
+		m.games = source.AllGameMetadata()
 	}
-	return &MetadataManager{variants: mv}
+	return m
 }
 
-// GetRDBPath returns the path to the RDB file for the given rdbName.
-func GetRDBPath(rdbName string) (string, error) {
-	metadataDir, err := storage.GetMetadataDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(metadataDir, rdbName+".rdb"), nil
+// Game returns the metadata for a game ID and true, or false when the
+// emulator has no entry for it.
+func (m *MetadataManager) Game(gameID string) (content.GameMetadata, bool) {
+	g, ok := m.games[gameID]
+	return g, ok
 }
 
-// DownloadRDB downloads all variant RDB files from libretro-database.
-// Downloads to a temp file first, then renames on success.
-func (m *MetadataManager) DownloadRDB() error {
-	for i := range m.variants {
-		if err := m.downloadVariantRDB(i); err != nil {
-			return err
-		}
+// Title returns the title to show for a library entry: the metadata title
+// when there is one, else the entry's file name without its extension and
+// parenthesized tags.
+func (m *MetadataManager) Title(game *storage.GameEntry) string {
+	if g, ok := m.games[game.GameID]; ok && g.Title != "" {
+		return g.Title
 	}
-	return nil
+	return FallbackName(game)
 }
 
-// downloadVariantRDB downloads a single variant's RDB file.
-func (m *MetadataManager) downloadVariantRDB(idx int) error {
-	v := &m.variants[idx]
-	rdbPath, err := GetRDBPath(v.rdbName)
-	if err != nil {
-		return err
+// Region returns the region code for a library entry, or "" when the core
+// has no metadata for it.
+func (m *MetadataManager) Region(game *storage.GameEntry) string {
+	if g, ok := m.games[game.GameID]; ok {
+		return RegionCode(g.Regions)
 	}
-
-	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(rdbPath), 0755); err != nil {
-		return fmt.Errorf("failed to create metadata directory: %w", err)
-	}
-
-	// Download to temp file
-	tempPath := rdbPath + ".tmp"
-
-	rdbURL := fmt.Sprintf("%s/%s.rdb", rdbBaseURL, url.PathEscape(v.rdbName))
-	data, err := netutil.DownloadToMemory(rdbURL)
-	if err != nil {
-		return fmt.Errorf("failed to download RDB: %w", err)
-	}
-
-	// Write to temp file
-	if err := os.WriteFile(tempPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write RDB temp file: %w", err)
-	}
-
-	// Rename temp file to final location (atomic)
-	if err := os.Rename(tempPath, rdbPath); err != nil {
-		os.Remove(tempPath) // Clean up on failure
-		return fmt.Errorf("failed to rename RDB file: %w", err)
-	}
-
-	return nil
+	return ""
 }
 
-// LoadRDB loads all variant RDB files into memory.
-// Returns nil without error if a file doesn't exist.
-func (m *MetadataManager) LoadRDB() error {
-	for i := range m.variants {
-		v := &m.variants[i]
-		rdbPath, err := GetRDBPath(v.rdbName)
-		if err != nil {
-			return err
-		}
+// Info returns the title and region code for a library entry, for sorting
+// and searching the library.
+func (m *MetadataManager) Info(game *storage.GameEntry) (string, string) {
+	return m.Title(game), m.Region(game)
+}
 
-		loadedRDB, err := rdb.LoadRDB(rdbPath)
-		if err != nil {
-			if !os.IsNotExist(err) {
-				// Delete corrupted file silently
-				os.Remove(rdbPath)
+// FallbackName returns a name for a library entry without metadata: the
+// file name of its first disc, or its cartridge file, without the extension
+// and anything from the first " (" on. Returns "" when the entry has no
+// file.
+func FallbackName(game *storage.GameEntry) string {
+	file := game.File
+	if len(game.Discs) > 0 {
+		file = game.Discs[0].File
+	}
+	if file == "" {
+		return ""
+	}
+	name := filepath.Base(file)
+	name = strings.TrimSuffix(name, filepath.Ext(name))
+	if idx := strings.Index(name, " ("); idx > 0 {
+		name = strings.TrimSpace(name[:idx])
+	}
+	return name
+}
+
+// regionCodes maps a metadata region to the code shown in the library.
+// Regions not listed here have no code.
+var regionCodes = map[string]string{
+	"USA":       "us",
+	"Japan":     "jp",
+	"Europe":    "eu",
+	"UK":        "eu",
+	"Germany":   "eu",
+	"France":    "eu",
+	"Spain":     "eu",
+	"Italy":     "eu",
+	"Finland":   "eu",
+	"Sweden":    "eu",
+	"Australia": "eu",
+	"Korea":     "kr",
+	"Taiwan":    "tw",
+	"Brazil":    "br",
+}
+
+// RegionCode returns one region code for a list of regions: USA first,
+// then Japan, then any European region, then the first region that has a
+// code. Returns "" when none of the regions has a code.
+func RegionCode(regions []string) string {
+	for _, want := range []string{"us", "jp", "eu"} {
+		for _, r := range regions {
+			if regionCodes[r] == want {
+				return want
 			}
-			v.rdb = nil
-			continue
-		}
-
-		v.rdb = loadedRDB
-	}
-	return nil
-}
-
-// IsRDBLoaded returns true if any variant RDB is loaded.
-func (m *MetadataManager) IsRDBLoaded() bool {
-	for _, v := range m.variants {
-		if v.rdb != nil {
-			return true
 		}
 	}
-	return false
-}
-
-// LookupByCRC32 looks up a game by CRC32 across all loaded RDBs.
-// Returns the game and the variant index where it was found.
-// Returns nil, -1 if not found or no RDB is loaded.
-func (m *MetadataManager) LookupByCRC32(crc32 uint32) (*rdb.Game, int) {
-	for i, v := range m.variants {
-		if v.rdb == nil {
-			continue
-		}
-		if game := v.rdb.FindByCRC32(crc32); game != nil {
-			return game, i
-		}
-	}
-	return nil, -1
-}
-
-// LookupBySerial looks up a game by disc serial across all loaded RDBs.
-// Returns the game and the variant index where it was found.
-// Returns nil, -1 if not found or no RDB is loaded.
-func (m *MetadataManager) LookupBySerial(serial string) (*rdb.Game, int) {
-	for i, v := range m.variants {
-		if v.rdb == nil {
-			continue
-		}
-		if game := v.rdb.FindBySerial(serial); game != nil {
-			return game, i
-		}
-	}
-	return nil, -1
-}
-
-// GetMD5ByCRC32 searches all loaded RDBs for an MD5 hash matching the CRC32.
-func (m *MetadataManager) GetMD5ByCRC32(crc32 uint32) string {
-	for _, v := range m.variants {
-		if v.rdb == nil {
-			continue
-		}
-		if md5 := v.rdb.GetMD5ByCRC32(crc32); md5 != "" {
-			return md5
+	for _, r := range regions {
+		if c := regionCodes[r]; c != "" {
+			return c
 		}
 	}
 	return ""
 }
 
-// RDBExists checks if all variant RDB files exist on disk.
-func (m *MetadataManager) RDBExists() bool {
-	for _, v := range m.variants {
-		rdbPath, err := GetRDBPath(v.rdbName)
-		if err != nil {
-			return false
-		}
-		if _, err := os.Stat(rdbPath); err != nil {
-			return false
-		}
-	}
-	return true
-}
+var monthNames = [...]string{"January", "February", "March", "April", "May", "June",
+	"July", "August", "September", "October", "November", "December"}
 
-// VariantName returns the display name for a variant index.
-func (m *MetadataManager) VariantName(idx int) string {
-	if idx < 0 || idx >= len(m.variants) {
-		return ""
+// FormatReleaseDate formats a metadata release date for display: YYYY-MM-DD
+// becomes "Month YYYY" and YYYY is returned as is. Any other value is
+// returned unchanged.
+func FormatReleaseDate(date string) string {
+	var y, mo, d int
+	if n, _ := fmt.Sscanf(date, "%4d-%2d-%2d", &y, &mo, &d); n == 3 && len(date) == 10 && mo >= 1 && mo <= 12 {
+		return fmt.Sprintf("%s %d", monthNames[mo-1], y)
 	}
-	return m.variants[idx].name
-}
-
-// VariantCount returns the number of metadata variants.
-func (m *MetadataManager) VariantCount() int {
-	return len(m.variants)
-}
-
-// VariantThumbnailRepo returns the thumbnail repo name for a variant index.
-func (m *MetadataManager) VariantThumbnailRepo(idx int) string {
-	if idx < 0 || idx >= len(m.variants) {
-		return ""
-	}
-	return m.variants[idx].thumbnailRepo
-}
-
-// VariantRumbleRepoDir returns the rumble repo directory for a variant
-// index. Empty when the core declares none for the variant.
-func (m *MetadataManager) VariantRumbleRepoDir(idx int) string {
-	if idx < 0 || idx >= len(m.variants) {
-		return ""
-	}
-	return m.variants[idx].rumbleRepoDir
-}
-
-// VariantRDBName returns the RDB name for a variant index.
-func (m *MetadataManager) VariantRDBName(idx int) string {
-	if idx < 0 || idx >= len(m.variants) {
-		return ""
-	}
-	return m.variants[idx].rdbName
-}
-
-// ResolveConsoleID returns the console ID for a variant, falling back to
-// defaultID when the variant has no override (zero value).
-func (m *MetadataManager) ResolveConsoleID(variantIdx, defaultID int) int {
-	if variantIdx >= 0 && variantIdx < len(m.variants) && m.variants[variantIdx].consoleID != 0 {
-		return m.variants[variantIdx].consoleID
-	}
-	return defaultID
+	return date
 }

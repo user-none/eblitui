@@ -69,14 +69,14 @@ func (lib *Library) RemoveGames(keys ...string) error {
 	for _, game := range games {
 		kept := *game
 		stripRemoved(&kept)
-		removed.Games[kept.CRC32] = &kept
+		removed.Games[kept.GameID] = &kept
 	}
 	if err := SaveRemovedGames(removed); err != nil {
 		return err
 	}
 
 	for _, game := range games {
-		delete(lib.Games, game.CRC32)
+		delete(lib.Games, game.GameID)
 	}
 	return SaveLibrary(lib)
 }

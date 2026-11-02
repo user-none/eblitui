@@ -106,35 +106,6 @@ func sigLine(priv ed25519.PrivateKey, data []byte) string {
 	return "ed25519 " + base64.StdEncoding.EncodeToString(ed25519.Sign(priv, data)) + "\n"
 }
 
-func TestParseKeys(t *testing.T) {
-	_, good := newKey(t)
-	_, good2 := newKey(t)
-
-	keys, errs := ParseKeys([]string{good, good2})
-	if len(errs) != 0 || len(keys.ed25519) != 2 {
-		t.Errorf("two good keys: %d keys, errors %v", len(keys.ed25519), errs)
-	}
-
-	short := "ed25519:" + base64.StdEncoding.EncodeToString(make([]byte, 31))
-	bad := []string{"", "ed25519", "ed25519:", "ed25519:not base64!", short, "mldsa:AAAA"}
-	keys, errs = ParseKeys(append([]string{good}, bad...))
-	if len(keys.ed25519) != 1 {
-		t.Errorf("good key among bad ones: got %d keys, want 1", len(keys.ed25519))
-	}
-	if len(errs) != len(bad) {
-		t.Errorf("got %d errors, want %d: %v", len(errs), len(bad), errs)
-	}
-
-	keys, _ = ParseKeys(bad)
-	if !keys.Empty() {
-		t.Error("only bad keys should leave no usable keys")
-	}
-	keys, _ = ParseKeys(nil)
-	if !keys.Empty() {
-		t.Error("no keys should be empty")
-	}
-}
-
 // testManifest returns manifest JSON for app and version with one asset per
 // platform
 func testManifest(t *testing.T, schema int, app, version string, platforms ...string) []byte {

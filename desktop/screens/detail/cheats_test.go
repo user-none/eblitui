@@ -4,7 +4,6 @@
 package detail
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/ebitenui/ebitenui/event"
@@ -69,9 +68,9 @@ func (f *fakeCallback) RequestRebuild() { f.rebuilds++ }
 // tests that check it replace c.save.
 func newTestCheatsSection(t *testing.T, db []cheats.Cheat, custom []storage.CustomCheat) (*CheatsSection, *fakeFocus) {
 	t.Helper()
-	c := NewCheatsSection(&fakeCallback{}, cheats.SystemSaturn, true, func() int { return 800 })
+	c := NewCheatsSection(&fakeCallback{}, nil, cheats.SystemSaturn, true, func() int { return 800 })
 	c.save = func(string, *storage.GameSettingsFile) error { return nil }
-	c.game = &storage.GameEntry{CRC32: "12345678"}
+	c.game = &storage.GameEntry{GameID: "12345678"}
 	c.gameSettings = &storage.GameSettingsFile{Cheats: storage.CheatSettings{Custom: custom}}
 	c.set = gamecheats.Set{
 		Database: db,
@@ -144,12 +143,11 @@ func TestCheatsEnabledCount(t *testing.T) {
 
 func TestCheatsSetGameNilClears(t *testing.T) {
 	c, _ := newTestCheatsSection(t, []cheats.Cheat{{Name: "x", ID: "x"}}, nil)
-	c.set.LoadErr = errors.New("read failed")
 	c.form = &cheatForm{edit: -1}
 
 	c.SetGame(nil, nil)
 
-	if c.set.Database != nil || c.set.LoadErr != nil || c.gameSettings != nil || c.form != nil {
+	if c.set.Database != nil || c.gameSettings != nil || c.form != nil {
 		t.Error("cheat state not cleared by SetGame(nil)")
 	}
 }

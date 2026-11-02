@@ -14,10 +14,10 @@ import (
 
 // loadOverrides reads a game's overrides of global settings. A settings
 // file that cannot be read gives no overrides.
-func loadOverrides(gameCRC string) *storage.OverrideSettings {
-	settings, err := storage.LoadGameSettings(gameCRC)
+func loadOverrides(gameID string) *storage.OverrideSettings {
+	settings, err := storage.LoadGameSettings(gameID)
 	if err != nil {
-		log.Printf("Failed to load game settings for %s: %v", gameCRC, err)
+		log.Printf("Failed to load game settings for %s: %v", gameID, err)
 		return &storage.OverrideSettings{}
 	}
 	return &settings.Overrides

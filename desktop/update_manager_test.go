@@ -43,8 +43,8 @@ func signedManifest(t *testing.T, priv ed25519.PrivateKey, version string) (mani
 
 // testUpdateConfig returns an update configuration for erings 0.4.0
 // trusting pub
-func testUpdateConfig(pub string) UpdateConfig {
-	return UpdateConfig{
+func testUpdateConfig(pub string) *UpdateConfig {
+	return &UpdateConfig{
 		ManifestURL:    "https://example.com/erings/latest/manifest.json",
 		SignatureURL:   "https://example.com/erings/latest/manifest.sig",
 		ReleasePageURL: "https://example.com/erings/releases/{version}",
@@ -72,15 +72,15 @@ func TestNewUpdateManagerOff(t *testing.T) {
 	useTempDataDir(t)
 	_, pub := updateKey(t)
 	config := storage.DefaultConfig()
-	good := testUpdateConfig(pub)
 
-	with := func(change func(cfg *UpdateConfig)) UpdateConfig {
+	with := func(change func(cfg *UpdateConfig)) *UpdateConfig {
 		cfg := testUpdateConfig(pub)
-		change(&cfg)
+		change(cfg)
 		return cfg
 	}
-	off := map[string]UpdateConfig{
-		"not configured":         {},
+	off := map[string]*UpdateConfig{
+		"not configured":         nil,
+		"empty config":           {},
 		"no keys":                with(func(cfg *UpdateConfig) { cfg.Keys = nil }),
 		"only bad keys":          with(func(cfg *UpdateConfig) { cfg.Keys = []string{"ed25519:bad", "mldsa:AAAA"} }),
 		"no app name":            with(func(cfg *UpdateConfig) { cfg.AppName = "" }),
@@ -95,7 +95,7 @@ func TestNewUpdateManagerOff(t *testing.T) {
 			t.Errorf("%s: update manager is on", name)
 		}
 	}
-	if m := NewUpdateManager(good, config, nil); m == nil {
+	if m := NewUpdateManager(testUpdateConfig(pub), config, nil); m == nil {
 		t.Error("valid configuration: update manager is off")
 	}
 }

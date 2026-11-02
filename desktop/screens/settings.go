@@ -41,7 +41,7 @@ type SettingsScreen struct {
 // serializeSize is the bytes per save state for rewind duration estimates.
 // systemInfo provides button definitions and core options for the input section.
 // updates is nil when the update system is off.
-func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config *storage.Config, achievementMgr *achievements.Manager, serializeSize int, systemInfo coreif.SystemInfo, appIcon []byte, updates types.Updates) *SettingsScreen {
+func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config *storage.Config, achievementMgr *achievements.Manager, serializeSize int, systemInfo coreif.SystemInfo, appName, appVersion string, appIcon []byte, updates types.Updates) *SettingsScreen {
 	s := &SettingsScreen{
 		callback:   callback,
 		library:    settings.NewLibrarySection(callback, library),
@@ -49,7 +49,7 @@ func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config
 		audio:      settings.NewAudioSection(callback, config, systemInfo),
 		rewind:     settings.NewRewindSection(callback, config, serializeSize),
 		input:      settings.NewInputSection(callback, config, systemInfo),
-		about:      settings.NewAboutSection(callback, config, updates, systemInfo.CoreName, systemInfo.CoreVersion, appIcon),
+		about:      settings.NewAboutSection(callback, config, updates, appName, appVersion, systemInfo.CoreName, systemInfo.CoreVersion, appIcon),
 	}
 	s.video = settings.NewVideoSection(callback, config, systemInfo, s.contentWidth)
 	s.retroAchievements = settings.NewRetroAchievementsSection(callback, config, achievementMgr, s.contentWidth)

@@ -46,10 +46,10 @@ type LibraryScreen struct {
 	games         []*storage.GameEntry
 
 	// Selection and scroll preservation (independent for each view)
-	iconSelectedCRC string  // CRC of selected game in icon view
-	listSelectedCRC string  // CRC of selected game in list view
-	iconScrollTop   float64 // Scroll position for icon view
-	listScrollTop   float64 // Scroll position for list view
+	iconSelectedID string  // Game ID of selected game in icon view
+	listSelectedID string  // Game ID of selected game in list view
+	iconScrollTop  float64 // Scroll position for icon view
+	listScrollTop  float64 // Scroll position for list view
 
 	// Scroll containers for scroll preservation (dual view mode)
 	iconScrollContainer *widgets.ScrollView
@@ -57,7 +57,7 @@ type LibraryScreen struct {
 
 	// Set when the selected icon-view card still needs to be top-aligned once
 	// real layout rects are known (one frame after a rebuild). The card is
-	// identified by iconSelectedCRC.
+	// identified by iconSelectedID.
 	pendingIconScroll bool
 
 	// Async artwork loader
@@ -130,7 +130,7 @@ func (s *LibraryScreen) Build() *widget.Container {
 	s.ClearFocusButtons()
 
 	// Get sorted and filtered games
-	s.games = s.library.GetGamesSortedFiltered(s.config.Library.SortBy, s.config.Library.FavoritesFilter, s.searchText)
+	s.games = s.library.GetGamesSortedFiltered(s.config.Library.SortBy, s.config.Library.FavoritesFilter, s.searchText, s.callback.GameInfo)
 
 	// Check if library is truly empty vs filtered empty
 	totalGames := s.library.GameCount()
@@ -506,7 +506,7 @@ func (s *LibraryScreen) buildListView() widget.PreferredSizeLocateableWidget {
 		g := game
 
 		// Track selected index for scroll centering
-		if g.CRC32 == s.listSelectedCRC {
+		if g.GameID == s.listSelectedID {
 			selectedIndex = idx
 		}
 
@@ -515,13 +515,14 @@ func (s *LibraryScreen) buildListView() widget.PreferredSizeLocateableWidget {
 		if g.Favorite {
 			fav = "*"
 		}
-		region := strings.ToUpper(g.Region)
+		title, region := s.callback.GameInfo(g)
+		region = strings.ToUpper(region)
 		if region == "" {
 			region = "-"
 		}
-		genre := g.Genre
-		if genre == "" {
-			genre = "-"
+		genre := "-"
+		if md, ok := s.callback.GameMetadata(g.GameID); ok && len(md.Genres) > 0 {
+			genre = strings.Join(md.Genres, ", ")
 		}
 		playTime := style.FormatPlayTime(g.PlayTimeSeconds)
 		lastPlayed := style.FormatLastPlayed(g.LastPlayed)
@@ -543,7 +544,7 @@ func (s *LibraryScreen) buildListView() widget.PreferredSizeLocateableWidget {
 		)
 
 		// Truncate cell content to fit computed column widths
-		displayName, _ := style.TruncateToWidth(g.DisplayName, fontFace, float64(titleWidth))
+		displayName, _ := style.TruncateToWidth(title, fontFace, float64(titleWidth))
 		truncGenre, _ := style.TruncateToWidth(genre, fontFace, float64(genreW))
 		truncRegion, _ := style.TruncateToWidth(region, fontFace, float64(regionW))
 		truncPlayTime, _ := style.TruncateToWidth(playTime, fontFace, float64(playTimeW))
@@ -558,7 +559,7 @@ func (s *LibraryScreen) buildListView() widget.PreferredSizeLocateableWidget {
 		row.AddChild(widgets.TableCell(truncLastPlayed, lastPlayedW, style.ListRowHeight, style.TextSecondary))
 
 		// Create button with alternating row color as idle, focus/hover colors for interaction
-		gameCRC := g.CRC32 // Capture for closure
+		gameID := g.GameID // Capture for closure
 		rowButton := widget.NewButton(
 			widget.ButtonOpts.Image(&widget.ButtonImage{
 				Idle:    image.NewNineSliceColor(rowIdleBg),
@@ -575,14 +576,14 @@ func (s *LibraryScreen) buildListView() widget.PreferredSizeLocateableWidget {
 				if s.listScrollContainer != nil {
 					s.listScrollTop = s.listScrollContainer.ScrollTop
 				}
-				s.listSelectedCRC = gameCRC
-				s.SetPendingFocus("game-" + gameCRC)
-				s.callback.SwitchToDetail(gameCRC)
+				s.listSelectedID = gameID
+				s.SetPendingFocus("game-" + gameID)
+				s.callback.SwitchToDetail(gameID)
 			}),
 		)
 
 		// Store button reference for focus restoration
-		s.RegisterFocusButton("game-"+gameCRC, rowButton)
+		s.RegisterFocusButton("game-"+gameID, rowButton)
 
 		// Stack: button at bottom (shows background), row content on top (transparent)
 		rowWrapper := widget.NewContainer(
@@ -683,8 +684,8 @@ func (s *LibraryScreen) buildIconView(container *widget.Container) int {
 	// Start async artwork loading, prioritizing the artwork that is visible
 	// on return so a scrolled-into-view list does not wait on off-screen
 	// covers loading first.
-	gameCRCs := orderCRCsVisibleFirst(s.games, columns, s.visibleAnchorIndex())
-	s.artLoader.Start(gameCRCs, cardWidth, artHeight)
+	gameIDs := orderCRCsVisibleFirst(s.games, columns, s.visibleAnchorIndex())
+	s.artLoader.Start(gameIDs, cardWidth, artHeight)
 
 	// Create stretch array - all columns stretch equally to fill width
 	columnStretches := make([]bool, columns)
@@ -724,9 +725,9 @@ func (s *LibraryScreen) buildIconView(container *widget.Container) int {
 	// until after the first render, so set an estimate now and refine it next
 	// frame in ApplyPendingIconScroll.
 	selectedIndex := -1
-	if s.iconSelectedCRC != "" {
+	if s.iconSelectedID != "" {
 		for i, g := range s.games {
-			if g.CRC32 == s.iconSelectedCRC {
+			if g.GameID == s.iconSelectedID {
 				selectedIndex = i
 				break
 			}
@@ -741,10 +742,10 @@ func (s *LibraryScreen) buildIconView(container *widget.Container) int {
 	} else if s.iconScrollTop > 0 {
 		scrollContainer.SetScrollTop(s.iconScrollTop)
 		s.pendingIconScroll = false
-		s.iconSelectedCRC = ""
+		s.iconSelectedID = ""
 	} else {
 		s.pendingIconScroll = false
-		s.iconSelectedCRC = ""
+		s.iconSelectedID = ""
 	}
 
 	container.AddChild(wrapper)
@@ -762,14 +763,14 @@ func (s *LibraryScreen) ApplyPendingIconScroll() {
 	}
 	if s.config.Library.ViewMode != "icon" || s.iconScrollContainer == nil {
 		s.pendingIconScroll = false
-		s.iconSelectedCRC = ""
+		s.iconSelectedID = ""
 		return
 	}
 
-	btn := s.target("game-" + s.iconSelectedCRC)
+	btn := s.target("game-" + s.iconSelectedID)
 	if btn == nil {
 		s.pendingIconScroll = false
-		s.iconSelectedCRC = ""
+		s.iconSelectedID = ""
 		return
 	}
 
@@ -779,7 +780,7 @@ func (s *LibraryScreen) ApplyPendingIconScroll() {
 	}
 
 	s.pendingIconScroll = false
-	s.iconSelectedCRC = ""
+	s.iconSelectedID = ""
 	s.iconScrollContainer.ScrollRectToTop(btn.GetWidget().Rect)
 }
 
@@ -832,9 +833,9 @@ func topAlignScrollFraction(itemY, totalHeight, viewportHeight int) float64 {
 // visible), falls back to the restored scroll position, and otherwise anchors
 // at the top of the list.
 func (s *LibraryScreen) visibleAnchorIndex() int {
-	if s.iconSelectedCRC != "" {
+	if s.iconSelectedID != "" {
 		for i, g := range s.games {
-			if g.CRC32 == s.iconSelectedCRC {
+			if g.GameID == s.iconSelectedID {
 				return i
 			}
 		}
@@ -880,7 +881,7 @@ func orderCRCsVisibleFirst(games []*storage.GameEntry, columns, anchorIdx int) [
 			end = n
 		}
 		for i := start; i < end; i++ {
-			ordered = append(ordered, games[i].CRC32)
+			ordered = append(ordered, games[i].GameID)
 		}
 	}
 
@@ -896,7 +897,7 @@ func orderCRCsVisibleFirst(games []*storage.GameEntry, columns, anchorIdx int) [
 func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, cardHeight, artHeight int) *widget.Container {
 	// Load artwork for the card. pending is true when the loading placeholder
 	// was returned (artwork not yet processed).
-	art, pending := s.loadGameArtwork(game.CRC32)
+	art, pending := s.loadGameArtwork(game.GameID)
 
 	// Create mutable ref so closures and UpdateArtwork can swap the image
 	ref := &artRef{image: art}
@@ -916,7 +917,7 @@ func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, c
 	)
 
 	// Game title (truncated based on card pixel width)
-	displayName, _ := style.TruncateToWidth(game.DisplayName, *style.FontFace(), float64(cardWidth-4))
+	displayName, _ := style.TruncateToWidth(s.callback.GameTitle(game), *style.FontFace(), float64(cardWidth-4))
 	titleLabel := widget.NewText(
 		widget.TextOpts.Text(displayName, style.FontFace(), style.Text),
 		widget.TextOpts.Position(widget.TextPositionCenter, widget.TextPositionStart),
@@ -932,7 +933,7 @@ func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, c
 	ref.graphic = artGraphic
 
 	// Artwork button (handles bg colors, click, focus - no graphic image)
-	gameCRC := game.CRC32 // Capture for closure
+	gameID := game.GameID // Capture for closure
 	var artButton *widget.Button
 	artButton = widget.NewButton(
 		widget.ButtonOpts.Image(&widget.ButtonImage{
@@ -957,12 +958,12 @@ func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, c
 		),
 		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
 			// Save scroll position and selected game before navigating
-			s.iconSelectedCRC = gameCRC
-			s.SetPendingFocus("game-" + gameCRC)
+			s.iconSelectedID = gameID
+			s.SetPendingFocus("game-" + gameID)
 			if s.iconScrollContainer != nil {
 				s.iconScrollTop = s.iconScrollContainer.ScrollTop
 			}
-			s.callback.SwitchToDetail(gameCRC)
+			s.callback.SwitchToDetail(gameID)
 		}),
 	)
 	ref.button = artButton
@@ -986,11 +987,11 @@ func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, c
 	// lookup that chose the image, avoiding a race where the goroutine
 	// caches a result between loadGameArtwork and this point.
 	if pending {
-		s.artRefs[gameCRC] = ref
+		s.artRefs[gameID] = ref
 	}
 
 	// Store button reference for focus restoration
-	s.RegisterFocusButton("game-"+gameCRC, artButton)
+	s.RegisterFocusButton("game-"+gameID, artButton)
 
 	// Stack: button at bottom (background), graphic on top (artwork)
 	artStack := widget.NewContainer(
@@ -1022,9 +1023,9 @@ func (s *LibraryScreen) buildGameCardSized(game *storage.GameEntry, cardWidth, c
 // background goroutine has not yet processed this CRC. If processing
 // determined no artwork exists, the missing-art image is returned (stored
 // under the CRC by loadOne).
-func (s *LibraryScreen) loadGameArtwork(gameCRC string) (art *ebiten.Image, pending bool) {
+func (s *LibraryScreen) loadGameArtwork(gameID string) (art *ebiten.Image, pending bool) {
 	// Non-nil means processed: real artwork or missing-art image
-	if cached := s.artLoader.Get(gameCRC); cached != nil {
+	if cached := s.artLoader.Get(gameID); cached != nil {
 		return cached.image, false
 	}
 
@@ -1049,7 +1050,7 @@ func (s *LibraryScreen) SaveScrollPosition() {
 
 // OnEnter is called when entering the library screen
 func (s *LibraryScreen) OnEnter() {
-	s.games = s.library.GetGamesSortedFiltered(s.config.Library.SortBy, s.config.Library.FavoritesFilter, s.searchText)
+	s.games = s.library.GetGamesSortedFiltered(s.config.Library.SortBy, s.config.Library.FavoritesFilter, s.searchText, s.callback.GameInfo)
 	s.SetDefaultFocus("toolbar-icon") // Only sets if no pending focus (preserves game selection when returning)
 }
 
@@ -1092,7 +1093,7 @@ func (s *LibraryScreen) setupNavigation(gridColumns int, showBar bool) {
 	if len(s.games) > 0 {
 		gameKeys := make([]string, len(s.games))
 		for i, game := range s.games {
-			gameKeys[i] = "game-" + game.CRC32
+			gameKeys[i] = "game-" + game.GameID
 		}
 
 		zoneType := types.NavZoneGrid

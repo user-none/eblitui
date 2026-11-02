@@ -23,10 +23,7 @@ const (
 	configFile      = "config.json"
 	libraryFile     = "library.json"
 	removedFile     = "removed.json"
-	metadataDir     = "metadata"
 	artworkDir      = "artwork"
-	rumbleDir       = "rumble"
-	cheatsDir       = "cheats"
 	gameSettingsDir = "gamesettings"
 	savesDir        = "saves"
 	screenshotDir   = "screenshots"
@@ -80,10 +77,7 @@ func EnsureDirectories() error {
 
 	dirs := []string{
 		baseDir,
-		filepath.Join(baseDir, metadataDir),
 		filepath.Join(baseDir, artworkDir),
-		filepath.Join(baseDir, rumbleDir),
-		filepath.Join(baseDir, cheatsDir),
 		filepath.Join(baseDir, gameSettingsDir),
 		filepath.Join(baseDir, savesDir),
 		filepath.Join(baseDir, screenshotDir),
@@ -125,15 +119,6 @@ func GetRemovedGamesPath() (string, error) {
 	return filepath.Join(baseDir, removedFile), nil
 }
 
-// GetMetadataDir returns the full path to the metadata directory
-func GetMetadataDir() (string, error) {
-	baseDir, err := GetBaseDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(baseDir, metadataDir), nil
-}
-
 // GetArtworkDir returns the full path to the artwork directory
 func GetArtworkDir() (string, error) {
 	baseDir, err := GetBaseDir()
@@ -141,42 +126,6 @@ func GetArtworkDir() (string, error) {
 		return "", err
 	}
 	return filepath.Join(baseDir, artworkDir), nil
-}
-
-// GetRumbleDir returns the full path to the rumble directory
-func GetRumbleDir() (string, error) {
-	baseDir, err := GetBaseDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(baseDir, rumbleDir), nil
-}
-
-// GetGameCHTRumblePath returns the path to a game's rumble CHT file
-func GetGameCHTRumblePath(gameCRC string) (string, error) {
-	rumbleDir, err := GetRumbleDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(rumbleDir, gameCRC+".cht"), nil
-}
-
-// GetGameRumblePath returns the path to a game's .erumble file
-func GetGameRumblePath(gameID string) (string, error) {
-	rumbleDir, err := GetRumbleDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(rumbleDir, gameID+".erumble"), nil
-}
-
-// GetCheatsDir returns the full path to the cheats directory
-func GetCheatsDir() (string, error) {
-	baseDir, err := GetBaseDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(baseDir, cheatsDir), nil
 }
 
 // GetGameSettingsDir returns the full path to the per-game settings directory
@@ -189,21 +138,12 @@ func GetGameSettingsDir() (string, error) {
 }
 
 // GetGameSettingsPath returns the path to a game's settings file
-func GetGameSettingsPath(gameCRC string) (string, error) {
+func GetGameSettingsPath(gameID string) (string, error) {
 	dir, err := GetGameSettingsDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, gameCRC+".json"), nil
-}
-
-// GetGameCheatPath returns the path to a game's cheat CHT file
-func GetGameCheatPath(gameCRC string) (string, error) {
-	cheatsDir, err := GetCheatsDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(cheatsDir, gameCRC+".cht"), nil
+	return filepath.Join(dir, gameID+".json"), nil
 }
 
 // GetSavesDir returns the full path to the saves directory
@@ -233,31 +173,31 @@ func GetUpdateDir() (string, error) {
 	return filepath.Join(baseDir, updateDir), nil
 }
 
-// GetGameScreenshotDir returns the screenshot directory for a specific game (by CRC32)
-func GetGameScreenshotDir(gameCRC string) (string, error) {
+// GetGameScreenshotDir returns the screenshot directory for a specific game (by game ID)
+func GetGameScreenshotDir(gameID string) (string, error) {
 	dir, err := GetScreenshotDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, gameCRC), nil
+	return filepath.Join(dir, gameID), nil
 }
 
-// GetGameSaveDir returns the save directory for a specific game (by CRC32)
-func GetGameSaveDir(gameCRC string) (string, error) {
+// GetGameSaveDir returns the save directory for a specific game (by game ID)
+func GetGameSaveDir(gameID string) (string, error) {
 	savesDir, err := GetSavesDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(savesDir, gameCRC), nil
+	return filepath.Join(savesDir, gameID), nil
 }
 
-// GetGameArtworkPath returns the path to a game's box art
-func GetGameArtworkPath(gameCRC string) (string, error) {
+// GetGameArtworkDir returns the directory holding a game's artwork images
+func GetGameArtworkDir(gameID string) (string, error) {
 	artworkDir, err := GetArtworkDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(artworkDir, gameCRC, "boxart.png"), nil
+	return filepath.Join(artworkDir, gameID), nil
 }
 
 // AtomicWriteJSON writes data to a JSON file atomically.

@@ -183,14 +183,14 @@ func TestRemoveMissing(t *testing.T) {
 	gone := filepath.Join(roms, "gone")
 
 	lib := DefaultLibrary()
-	lib.AddGame(&GameEntry{CRC32: "cart", File: cart})
-	lib.AddGame(&GameEntry{CRC32: "lostcart", File: gone, PlayTimeSeconds: 30})
+	lib.AddGame(&GameEntry{GameID: "cart", File: cart})
+	lib.AddGame(&GameEntry{GameID: "lostcart", File: gone, PlayTimeSeconds: 30})
 	lib.AddGame(&GameEntry{
-		CRC32:        "partial",
+		GameID:       "partial",
 		Discs:        []GameDisc{{Index: 0, File: gone}, {Index: 1, File: d1}},
 		SelectedDisc: 1,
 	})
-	lib.AddGame(&GameEntry{CRC32: "lostdisc", Discs: []GameDisc{{Index: 0, File: gone}}})
+	lib.AddGame(&GameEntry{GameID: "lostdisc", Discs: []GameDisc{{Index: 0, File: gone}}})
 
 	n, err := lib.RemoveMissing(missingFiles(lib))
 	if err != nil {
@@ -229,7 +229,7 @@ func TestRemoveMissingOnlyPrunedDiscs(t *testing.T) {
 	d1 := touch(t, roms, "d1.chd")
 
 	lib := DefaultLibrary()
-	lib.AddGame(&GameEntry{CRC32: "partial", Discs: []GameDisc{{File: d1}, {File: filepath.Join(roms, "gone")}}})
+	lib.AddGame(&GameEntry{GameID: "partial", Discs: []GameDisc{{File: d1}, {File: filepath.Join(roms, "gone")}}})
 
 	n, err := lib.RemoveMissing(missingFiles(lib))
 	if err != nil {
@@ -250,7 +250,7 @@ func TestRemoveMissingOnlyPrunedDiscs(t *testing.T) {
 func TestRemoveMissingNothingMissing(t *testing.T) {
 	useTempDataDir(t)
 	lib := DefaultLibrary()
-	lib.AddGame(&GameEntry{CRC32: "cart", File: touch(t, t.TempDir(), "cart.sms")})
+	lib.AddGame(&GameEntry{GameID: "cart", File: touch(t, t.TempDir(), "cart.sms")})
 
 	n, err := lib.RemoveMissing(missingFiles(lib))
 	if err != nil {
@@ -268,7 +268,7 @@ func TestRemoveMissingNothingMissing(t *testing.T) {
 func TestRemoveMissingSkipsStaleStatus(t *testing.T) {
 	useTempDataDir(t)
 	lib := DefaultLibrary()
-	lib.AddGame(&GameEntry{CRC32: "discs", Discs: []GameDisc{{File: "a"}, {File: "b"}, {File: "c"}}})
+	lib.AddGame(&GameEntry{GameID: "discs", Discs: []GameDisc{{File: "a"}, {File: "b"}, {File: "c"}}})
 
 	// The statuses no longer match the library: an unknown game, and a
 	// disc count that changed since the check

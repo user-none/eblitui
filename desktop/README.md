@@ -21,15 +21,35 @@ import (
 
 func main() {
     var factory coreif.CoreFactory = myFactory()
-    if err := desktop.Run(factory); err != nil {
+    emu := desktop.Emulator{
+        Name:        "myemu",
+        Version:     "1.0.0",
+        DataDirName: "myemu",
+    }
+    if err := desktop.Run(factory, emu); err != nil {
         log.Fatal(err)
     }
 }
 ```
 
 `Run` is the single entry point. It initializes storage, configures the
-Ebiten window, and starts the application loop. Everything is driven
-from the `CoreFactory` passed in.
+Ebiten window, and starts the application loop. The `CoreFactory`
+supplies the core: the emulation and the facts about it in
+`coreif.SystemInfo`. The `Emulator` describes the application built
+around the core:
+
+| Field | Description |
+|---|---|
+| `Name`, `Version` | Window title, About, and the RetroAchievements client name |
+| `DataDirName` | Data directory name (see Data Storage) |
+| `Icon` | PNG, JPEG, or WebP icon for the window and About |
+| `RetroAchievementsConsoleID` | The console's RetroAchievements ID; 0 turns achievements off |
+| `CheatFormat` | The `cheats` system whose code formats the emulator's cheats use (e.g. `"saturn"`); empty turns cheats off |
+| `Update` | Where releases are published, the running version, and the update signing public keys (`algorithm:base64`); nil or no keys turns update checks off |
+| `Artwork` | The artwork site's HTTPS base URL and the public keys (`algorithm:base64`) trusted to sign its index; nil turns artwork downloads off |
+| `Metadata` | Source of game metadata (`content.MetadataSource`); nil shows file names only |
+| `Cheats` | Source of database cheats (`content.CheatsSource`); nil offers custom cheats only |
+| `Rumble` | Source of .erumble rumble files (`content.RumbleSource`); nil turns rumble off |
 
 
 ## Application States
@@ -39,9 +59,9 @@ The app is a state machine that transitions between screens:
 | State | Screen | Description |
 |---|---|---|
 | `StateLibrary` | Library | Game grid/list with artwork, search, and sorting |
-| `StateDetail` | Detail | Artwork and page sidebar: Overview (game info, discs, achievement progress), Cheats, Settings, and Screenshots |
+| `StateDetail` | Detail | Box art over the page sidebar: Overview (game info, discs, achievement progress), Artwork (box art and box back), Cheats, Settings, and Screenshots |
 | `StateSettings` | Settings | Tabbed configuration (Library, Appearance, Video, Audio, Rewind, RetroAchievements) |
-| `StateScanProgress` | Scan Progress | ROM scanning with discovery, artwork, rumble, and cheat phases |
+| `StateScanProgress` | Scan Progress | ROM scanning with discovery and artwork phases |
 | `StateError` | Error | Startup error handling (corrupted config recovery) |
 | `StatePlaying` | Gameplay | Active emulation with pause menu overlay |
 | `StateFilePicker` | File Picker | Full-screen file and folder selection |
@@ -51,9 +71,21 @@ The app is a state machine that transitions between screens:
 
 ### Game Library
 
-- Scan directories for ROMs with CRC32 hashing
-- Metadata matching via RetroArch RDB databases (auto-downloaded)
-- Artwork downloading from libretro thumbnail repositories
+- Scan directories for ROMs, keyed by CRC32 for cartridges and the disc's
+  product number for disc games
+- Game metadata (title, region, developer, and more) from the emulator's
+  `Metadata` source, looked up when shown; the library stores none of it,
+  and a game without metadata shows its file name
+- Artwork downloaded during library scans from the emulator's artwork site
+  (`Emulator.Artwork`): the site's `index.json` lists each game ID's images
+  with their size, CRC-32, and SHA-256. The index is used only when
+  `index.sig` holds a valid signature by one of the artwork `Keys`;
+  otherwise no artwork is downloaded. A scan downloads the box art and box
+  back that are missing or
+  whose size or CRC-32 differs from the index, and keeps a download only
+  when its size and SHA-256 match. Box art larger than 4096x4096 is not
+  decoded. A game without `boxart.webp` shows its older `boxart.png`,
+  which Clean Library removes once `boxart.webp` is present
 - Grid (icon) and list view modes
 - Sort by title, last played, or play time
 - Favorites filter
@@ -66,7 +98,7 @@ The app is a state machine that transitions between screens:
 - Aspect-ratio-correct scaling with optional display cropping
 - Keyboard input: WASD for D-pad, JKL/UIO for buttons
 - Gamepad input: standard layout with 2-player support
-- Gamepad rumble/haptic feedback via RetroArch CHT rumble files
+- Gamepad rumble/haptic feedback via .erumble rumble files
 - Pause menu with resume, return to library, and exit options
 - Play time tracking per game
 
@@ -91,25 +123,19 @@ The app is a state machine that transitions between screens:
 
 ### Rumble
 
-Gamepad rumble support using RetroArch CHT rumble files. Per-game rumble
-definitions are downloaded automatically during library scans from the
-libretro-database repository.
+Gamepad rumble support using .erumble rumble files (see the `rumble`
+module), supplied by the emulator's `Rumble` source and looked up by game
+ID when a game starts. A disc game uses a file for the disc being played
+(`<gameid>.disc<n>`) when the source has one, otherwise the game's shared
+file. Rumble needs the core to expose memory.
 
-CHT files define memory addresses to monitor and conditions that trigger
-haptic feedback (value changes, increases, decreases, comparisons).
-The rumble engine evaluates these conditions each frame and fires
-vibration events via CoreHaptics on macOS.
+Rumble files define memory addresses to monitor and the conditions that
+trigger haptic feedback. The rumble engine evaluates these conditions
+each frame and drives the gamepad motors.
 
-Rumble strength is configurable with multiple levels:
-
-| Level | Intensity | Duration |
-|---|---|---|
-| Off | - | - |
-| 1x | 1x (min 40%) | 1x (min 250ms) |
-| 2x | 2x | 2x (min 250ms) |
-| 3x | 3x | 3x (min 250ms) |
-| 4x | 4x | 2x (min 250ms) |
-| Max | 100% | 2x (min 250ms) |
+Rumble intensity is set per controller profile as a multiplier from 0
+(off) to 3x in 0.05 steps. The authored motor levels are multiplied by
+it and clamped to the gamepad maximum.
 
 Requires the core to implement `coreif.Memory`.
 
@@ -124,13 +150,11 @@ The detail screen's Cheats page lists a game's cheats with an On/Off
 toggle each. Cheats are applied between emulated frames through the
 core's memory interface, so they take effect without changing the core.
 
-Database cheats come from RetroArch CHT cheat files, downloaded during
-library scans from the libretro-database repository for games matched
-in the RDB. Both code string entries (such as Action Replay codes) and
-RetroArch format entries are decoded. Master codes, entries that cannot
-be decoded, and entries that cannot be converted to the core's memory
-byte order are hidden. Every cheat starts off; the file's own enable
-values are ignored.
+Database cheats come from the emulator's `Cheats` source, looked up by
+the game's ID: a name and a code string per cheat, decoded the same way
+as custom cheats. Cheats whose code cannot be decoded or converted to the
+core's memory byte order are hidden, and the master code is not applied.
+Every cheat starts off.
 
 Custom cheats are added on the Cheats page with a name and a code
 string. Codes can be pasted with several codes separated by spaces, "+",
@@ -138,8 +162,8 @@ or new lines. Duplicate codes are rejected, and a custom cheat whose code
 no longer parses shows why in place of its code.
 
 Cheat support is available when the core implements `coreif.Memory` and
-the `cheats` package knows the system's code formats. Currently that is
-the Sega Saturn.
+the emulator's `CheatFormat` names a system the `cheats` package knows.
+Currently that is `"saturn"` (Action Replay codes).
 
 ### Per-Game Settings
 
@@ -218,7 +242,7 @@ Organized in tabbed sections:
 
 ## Data Storage
 
-Application data is stored per-emulator using the core's `DataDirName`:
+Application data is stored per-emulator using `Emulator.DataDirName`:
 
 | Platform | Path |
 |---|---|
@@ -234,17 +258,16 @@ Directory structure:
     library.json     - Game library and scan state
     removed.json     - User data of games removed from the library
     gamesettings/    - Per-game settings (save state slot, cheat choices, setting overrides)
-    metadata/        - RDB databases and artwork index
-    artwork/         - Game artwork images
-    rumble/          - CHT rumble definition files
-    cheats/          - CHT cheat files
+    artwork/         - Game artwork images, a directory per game (boxart.webp, boxback.webp)
     saves/           - SRAM and save state files
     screenshots/     - Screenshot captures
 ```
 
 Per-game settings live in one JSON file per game under `gamesettings/`,
 with a section per feature. The library file holds no per-game settings;
-a version 1 library's save slots are moved there on first load.
+a version 1 library's save slots are moved there on first load. Library
+entries hold a game's ID, files, and user data only; a version 2
+library's metadata fields are dropped on first load.
 
 Scanning never removes games. The detail screen offers Remove Disc when
 the selected disc's file is missing and Remove from Library when every
@@ -265,7 +288,7 @@ corruption.
 | `screens` | UI screens (library, detail, settings, scan, error, file picker) |
 | `screens/detail` | Detail screen pages: Overview, Cheats, Settings, and Screenshots |
 | `screens/settings` | Settings screen sections |
-| `cheats` | CHT cheat file and code string decoding into memory operations (standard library only) |
+| `cheats` | Cheat code string decoding into memory operations (standard library only) |
 | `gamecheats` | A game's database and custom cheats, shared by the Cheats page and the cheat engine |
 | `storage` | Config, library, and per-game settings persistence with validation |
 | `widgets` | Shared ebitenui widget builders, the scroll view, sidebar, and multi-line text input |
@@ -275,8 +298,11 @@ corruption.
 | `types` | Shared interfaces for cross-package use |
 | `achievements` | RetroAchievements manager and unlock sounds |
 | `filebrowser` | Directory listing, path input parsing and sidebar places for the file picker |
-| `scanner` | Background ROM scanning and artwork, rumble, and cheat file downloads |
-| `metadata` | RDB downloads and lookups for the core's metadata variants |
+| `scanner` | Background ROM scanning and artwork downloads |
+| `artwork` | The artwork index format, which artwork files to download, and box art lookup |
+| `signing` | Signing key parsing and detached signature verification for the update manifest and the artwork index |
+| `metadata` | The emulator's game metadata, and title and region resolution |
+| `content` | The game metadata and cheat types, and the source interfaces an emulator supplies metadata, cheats, and rumble files through |
 | `netutil` | HTTP download helpers |
 | `display` | Aspect ratio sizing, scaling, and DPI helpers for the game image |
 
@@ -290,7 +316,6 @@ Key external dependencies:
 - `github.com/ebitengine/oto/v3` - Audio output
 - `github.com/user-none/eblitui/coreif` - Core interfaces
 - `github.com/user-none/eblitui/romloader` - ROM loading
-- `github.com/user-none/eblitui/rdb` - RetroArch database (RDB) binary parser
 - `github.com/user-none/go-rcheevos` - RetroAchievements client
 - `golang.design/x/clipboard` - Clipboard access
 - `golang.org/x/image` - Font rendering
@@ -307,4 +332,4 @@ Test coverage includes state management, audio buffering, save states,
 rewind, turbo, pause menu, achievement overlay, search, scanning,
 storage validation, shader ordering, themes, rumble engine, cheat
 decoding and the cheat engine, the Cheats page, the text edit model, and
-RDB parsing.
+game metadata resolution.

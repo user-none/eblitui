@@ -5,13 +5,13 @@ package detail
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/user-none/eblitui/desktop/achievements"
+	"github.com/user-none/eblitui/desktop/metadata"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/desktop/types"
@@ -52,8 +52,7 @@ type OverviewSection struct {
 // the UI thread may change it.
 type progressRequest struct {
 	gen       int    // loadGen when the lookup started
-	crc32     string // game key, for the RDB MD5 lookup
-	consoleID uint32 // console used to hash the game when not in the RDB
+	consoleID uint32 // console used to hash the game
 	discFile  string // selected disc to hash, for disc games; empty when missing
 	romFile   string // ROM to hash, for cartridge games; empty when missing
 }
@@ -91,7 +90,6 @@ func (o *OverviewSection) SetGame(game *storage.GameEntry, files storage.FileSta
 	}
 
 	// Copy what the lookup needs before handing it to the goroutine
-	req.crc32 = game.CRC32
 	req.consoleID = uint32(o.defaultConsoleID)
 	if game.ConsoleID != 0 {
 		req.consoleID = uint32(game.ConsoleID)
@@ -159,34 +157,29 @@ func (o *OverviewSection) loadAchievementProgress(req progressRequest) {
 		o.achievementManager.ClearProgressDirty()
 	}
 
-	// Get MD5 from RDB (fast path - no ROM loading needed)
-	crc32, _ := strconv.ParseUint(req.crc32, 16, 32)
-	md5Hash := o.callback.GetMD5ByCRC32(uint32(crc32))
-
-	// Fallback: compute the hash directly when not in the RDB. Disc games hash
-	// the selected disc (rcheevos reads sectors through it); cartridge games
-	// hash the ROM file. A game whose file is missing cannot be hashed.
-	if md5Hash == "" {
-		switch {
-		case req.discFile != "":
-			disc, err := romloader.OpenDisc(req.discFile)
-			if err != nil {
-				o.finishLoad(req.gen, false, nil, err)
-				return
-			}
-			md5Hash = o.achievementManager.ComputeGameHashFromDisc(disc, req.consoleID)
-			disc.Close()
-		case req.romFile != "":
-			romData, _, err := romloader.Load(req.romFile, o.callback.GetExtensions())
-			if err != nil {
-				o.finishLoad(req.gen, false, nil, err)
-				return
-			}
-			md5Hash = o.achievementManager.ComputeGameHash(romData, req.consoleID)
-		default:
-			o.finishLoad(req.gen, false, nil, nil)
+	// Compute the game's hash. Disc games hash the selected disc (rcheevos
+	// reads sectors through it); cartridge games hash the ROM file. A game
+	// whose file is missing cannot be hashed.
+	var md5Hash string
+	switch {
+	case req.discFile != "":
+		disc, err := romloader.OpenDisc(req.discFile)
+		if err != nil {
+			o.finishLoad(req.gen, false, nil, err)
 			return
 		}
+		md5Hash = o.achievementManager.ComputeGameHashFromDisc(disc, req.consoleID)
+		disc.Close()
+	case req.romFile != "":
+		romData, _, err := romloader.Load(req.romFile, o.callback.GetExtensions())
+		if err != nil {
+			o.finishLoad(req.gen, false, nil, err)
+			return
+		}
+		md5Hash = o.achievementManager.ComputeGameHash(romData, req.consoleID)
+	default:
+		o.finishLoad(req.gen, false, nil, nil)
+		return
 	}
 
 	// Look up progress using MD5
@@ -240,28 +233,27 @@ func (o *OverviewSection) Build(focus types.FocusManager) *widget.Container {
 	// Game Info section
 	metadataContainer.AddChild(widgets.SectionHeader("Game Info"))
 
+	md, hasMetadata := o.callback.GameMetadata(o.game.GameID)
+
 	// Title (with warning icon if missing)
-	titleText := o.game.DisplayName
+	titleText := o.callback.GameTitle(o.game)
 	if o.files.Missing {
 		titleText = "[!] " + titleText
 	}
 	metadataContainer.AddChild(buildMetadataRow("Title", titleText, valueWidth))
 
-	if o.game.Name != "" && o.game.Name != o.game.DisplayName {
-		metadataContainer.AddChild(buildMetadataRow("Name", o.game.Name, valueWidth))
+	// Game ID: the metadata serial, else the product number of a disc game
+	switch {
+	case hasMetadata && md.Serial != "":
+		metadataContainer.AddChild(buildMetadataRow("Game ID", md.Serial, valueWidth))
+	case len(o.game.Discs) > 0:
+		metadataContainer.AddChild(buildMetadataRow("Game ID", o.game.GameID, valueWidth))
 	}
-	if o.game.Serial != "" {
-		metadataContainer.AddChild(buildMetadataRow("Game ID", o.game.Serial, valueWidth))
-	}
-	region := strings.ToUpper(o.game.Region)
+	region := strings.ToUpper(metadata.RegionCode(md.Regions))
 	if region == "" {
 		region = "Unknown"
 	}
 	metadataContainer.AddChild(buildMetadataRow("Region", region, valueWidth))
-
-	if o.game.System != "" {
-		metadataContainer.AddChild(buildMetadataRow("System", o.game.System, valueWidth))
-	}
 
 	// Discs section (multi-disc disc-based games only). Each disc is a
 	// focusable selection button; activating it only marks that disc as
@@ -303,28 +295,26 @@ func (o *OverviewSection) Build(focus types.FocusManager) *widget.Container {
 	}
 
 	// Production section
-	hasProduction := o.game.Developer != "" || o.game.Publisher != "" ||
-		o.game.Genre != "" || o.game.Franchise != "" ||
-		o.game.ReleaseDate != "" || o.game.ESRBRating != ""
+	genre := strings.Join(md.Genres, ", ")
+	released := metadata.FormatReleaseDate(md.ReleaseDate)
+	hasProduction := md.Developer != "" || md.Publisher != "" ||
+		genre != "" || released != "" || md.ESRB != ""
 	if hasProduction {
 		metadataContainer.AddChild(widgets.SectionHeader("Production"))
-		if o.game.Developer != "" {
-			metadataContainer.AddChild(buildMetadataRow("Developer", o.game.Developer, valueWidth))
+		if md.Developer != "" {
+			metadataContainer.AddChild(buildMetadataRow("Developer", md.Developer, valueWidth))
 		}
-		if o.game.Publisher != "" {
-			metadataContainer.AddChild(buildMetadataRow("Publisher", o.game.Publisher, valueWidth))
+		if md.Publisher != "" {
+			metadataContainer.AddChild(buildMetadataRow("Publisher", md.Publisher, valueWidth))
 		}
-		if o.game.Genre != "" {
-			metadataContainer.AddChild(buildMetadataRow("Genre", o.game.Genre, valueWidth))
+		if genre != "" {
+			metadataContainer.AddChild(buildMetadataRow("Genre", genre, valueWidth))
 		}
-		if o.game.Franchise != "" {
-			metadataContainer.AddChild(buildMetadataRow("Franchise", o.game.Franchise, valueWidth))
+		if released != "" {
+			metadataContainer.AddChild(buildMetadataRow("Released", released, valueWidth))
 		}
-		if o.game.ReleaseDate != "" {
-			metadataContainer.AddChild(buildMetadataRow("Released", o.game.ReleaseDate, valueWidth))
-		}
-		if o.game.ESRBRating != "" {
-			metadataContainer.AddChild(buildMetadataRow("ESRB", o.game.ESRBRating, valueWidth))
+		if md.ESRB != "" {
+			metadataContainer.AddChild(buildMetadataRow("ESRB", md.ESRB, valueWidth))
 		}
 	}
 

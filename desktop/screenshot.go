@@ -31,10 +31,10 @@ const screenshotQueueDepth = 14
 
 // screenshotJob is one captured frame and the files to write from it
 type screenshotJob struct {
-	frame   *image.RGBA
-	ts      time.Time // capture time, used in the filenames
-	gameCRC string
-	tags    []string // one file per tag
+	frame  *image.RGBA
+	ts     time.Time // capture time, used in the filenames
+	gameID string
+	tags   []string // one file per tag
 }
 
 // ScreenshotManager saves screenshots of gameplay. Captures are queued
@@ -52,7 +52,7 @@ type ScreenshotManager struct {
 
 	// gameDir returns a game's screenshot directory:
 	// storage.GetGameScreenshotDir
-	gameDir func(gameCRC string) (string, error)
+	gameDir func(gameID string) (string, error)
 }
 
 // NewScreenshotManager creates a screenshot manager with its encoder
@@ -87,15 +87,15 @@ func (m *ScreenshotManager) Queue(tag string) {
 // frame is encoded and written later, once per capture, in the game's
 // screenshot directory. Captures queued while no game is loaded are
 // dropped. Capture is silent, with no notification; failures are logged.
-func (m *ScreenshotManager) Flush(screen *ebiten.Image, picture image.Rectangle, gameCRC string) {
+func (m *ScreenshotManager) Flush(screen *ebiten.Image, picture image.Rectangle, gameID string) {
 	tags := m.drain()
-	if len(tags) == 0 || gameCRC == "" {
+	if len(tags) == 0 || gameID == "" {
 		return
 	}
 	r := screenshotCaptureRect(picture, screen.Bounds())
 	frame := image.NewRGBA(image.Rect(0, 0, r.Dx(), r.Dy()))
 	screen.SubImage(r).(*ebiten.Image).ReadPixels(frame.Pix)
-	m.capture(frame, gameCRC, tags)
+	m.capture(frame, gameID, tags)
 }
 
 // screenshotCaptureRect returns the region of a screen with the bounds to
@@ -132,11 +132,11 @@ func (m *ScreenshotManager) drain() []string {
 	return tags
 }
 
-// capture hands frame to the encoder to be written under gameCRC, one file
+// capture hands frame to the encoder to be written under gameID, one file
 // per tag. The frame is dropped when the encoder is too far behind or the
 // manager is closed.
-func (m *ScreenshotManager) capture(frame *image.RGBA, gameCRC string, tags []string) {
-	job := screenshotJob{frame: frame, ts: time.Now(), gameCRC: gameCRC, tags: tags}
+func (m *ScreenshotManager) capture(frame *image.RGBA, gameID string, tags []string) {
+	job := screenshotJob{frame: frame, ts: time.Now(), gameID: gameID, tags: tags}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.closed {
@@ -163,7 +163,7 @@ func (m *ScreenshotManager) run() {
 // save encodes the job's frame once and writes it to a file per tag. A
 // file that cannot be written is logged and the rest are still written.
 func (m *ScreenshotManager) save(job screenshotJob) error {
-	dir, err := m.gameDir(job.gameCRC)
+	dir, err := m.gameDir(job.gameID)
 	if err != nil {
 		return err
 	}

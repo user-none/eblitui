@@ -167,8 +167,8 @@ func screenshotTestFrame() *image.RGBA {
 // running
 func tempDirManager(dir string, depth int) *ScreenshotManager {
 	m := newScreenshotManager(depth)
-	m.gameDir = func(gameCRC string) (string, error) {
-		return filepath.Join(dir, gameCRC), nil
+	m.gameDir = func(gameID string) (string, error) {
+		return filepath.Join(dir, gameID), nil
 	}
 	go m.run()
 	return m

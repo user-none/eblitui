@@ -6,15 +6,16 @@ package screens
 import (
 	"bytes"
 	goimage "image"
-	"os"
 	"sync"
 	"sync/atomic"
 
 	_ "image/png"
 
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/user-none/eblitui/desktop/artwork"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
+	_ "golang.org/x/image/webp"
 )
 
 // artworkLoader fills the artwork cache asynchronously in a background goroutine.
@@ -77,12 +78,12 @@ func (a *artworkLoader) stop() {
 	}
 }
 
-// findMissing returns CRCs from gameCRCs that are not yet in the cache.
-func (a *artworkLoader) findMissing(gameCRCs []string) []string {
+// findMissing returns CRCs from gameIDs that are not yet in the cache.
+func (a *artworkLoader) findMissing(gameIDs []string) []string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	var missing []string
-	for _, crc := range gameCRCs {
+	for _, crc := range gameIDs {
 		if a.cache[crc] == nil {
 			missing = append(missing, crc)
 		}
@@ -125,7 +126,7 @@ func (a *artworkLoader) CancelAndClear() {
 // Start cancels any running goroutine and starts a new one to load artwork
 // for the given game CRCs at the specified dimensions. If dimensions match the
 // current run, this is a no-op. If the loader has been halted, this is a no-op.
-func (a *artworkLoader) Start(gameCRCs []string, cardWidth, artHeight int) {
+func (a *artworkLoader) Start(gameIDs []string, cardWidth, artHeight int) {
 	if a.halted {
 		return
 	}
@@ -133,7 +134,7 @@ func (a *artworkLoader) Start(gameCRCs []string, cardWidth, artHeight int) {
 	if a.cardWidth == cardWidth && a.artHeight == artHeight && a.cancel != nil {
 		// Dimensions match but CRC list may have changed (e.g. filter toggle).
 		// Load any CRCs not yet in the cache.
-		missing := a.findMissing(gameCRCs)
+		missing := a.findMissing(gameIDs)
 		if len(missing) == 0 {
 			return
 		}
@@ -157,15 +158,15 @@ func (a *artworkLoader) Start(gameCRCs []string, cardWidth, artHeight int) {
 	a.cancel = make(chan struct{})
 	a.done = make(chan struct{})
 
-	go a.run(gameCRCs, cardWidth, artHeight, a.cancel, a.done)
+	go a.run(gameIDs, cardWidth, artHeight, a.cancel, a.done)
 }
 
 // run iterates over game CRCs, loading and scaling artwork for each.
 // It checks the cancel channel between each game.
-func (a *artworkLoader) run(gameCRCs []string, cardWidth, artHeight int, cancel chan struct{}, done chan struct{}) {
+func (a *artworkLoader) run(gameIDs []string, cardWidth, artHeight int, cancel chan struct{}, done chan struct{}) {
 	defer close(done)
 
-	for _, crc := range gameCRCs {
+	for _, crc := range gameIDs {
 		select {
 		case <-cancel:
 			return
@@ -180,19 +181,13 @@ func (a *artworkLoader) run(gameCRCs []string, cardWidth, artHeight int, cancel 
 // On failure the "missing" entry is stored under the CRC so the UI
 // can distinguish "missing" from "still loading" (nil).
 func (a *artworkLoader) loadOne(crc string, cardWidth, artHeight int, cancel chan struct{}) {
-	artPath, err := storage.GetGameArtworkPath(crc)
+	artDir, err := storage.GetGameArtworkDir(crc)
 	if err != nil {
 		a.storeMissing(crc)
 		return
 	}
 
-	data, err := os.ReadFile(artPath)
-	if err != nil {
-		a.storeMissing(crc)
-		return
-	}
-
-	img, _, err := goimage.Decode(bytes.NewReader(data))
+	img, err := artwork.Load(artwork.BoxArtPath(artDir))
 	if err != nil {
 		a.storeMissing(crc)
 		return
