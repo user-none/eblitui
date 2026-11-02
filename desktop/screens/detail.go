@@ -78,7 +78,7 @@ func NewDetailScreen(callback ScreenCallback, library *storage.Library, achievem
 
 	s.pages.sections = []sectionDescriptor{
 		{label: "Overview", focusKey: "page-overview", build: s.overviewPage.Build, setupNav: s.setupOverviewNav},
-		{label: "Artwork", focusKey: "page-artwork", build: s.artworkPage.Build},
+		{label: "Artwork", focusKey: "page-artwork", build: s.artworkPage.Build, setupNav: s.setupArtworkNav},
 	}
 	// Cheats is listed only when the core supports cheats
 	if cheatSystem != 0 {
@@ -457,6 +457,10 @@ func (s *DetailScreen) setupNavigation() {
 
 func (s *DetailScreen) setupOverviewNav() {
 	s.setupPageNav(s.overviewPage.NavZones())
+}
+
+func (s *DetailScreen) setupArtworkNav() {
+	s.setupPageNav(s.artworkPage.NavZones())
 }
 
 func (s *DetailScreen) setupCheatsNav() {

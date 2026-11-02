@@ -109,6 +109,69 @@ func TestArtworkLoadsOncePerGame(t *testing.T) {
 	}
 }
 
+// newLoadedArtworkSection creates a page whose game has the given artwork
+// files, decoded to small textures and loaded
+func newLoadedArtworkSection(t *testing.T, names ...string) (*ArtworkSection, *shotCallback) {
+	t.Helper()
+	s, cb, _, _ := newTestArtworkSection(t, names...)
+	s.images.decode = func(string) (*ebiten.Image, error) {
+		return ebiten.NewImage(10, 20), nil
+	}
+	s.load()
+	waitRebuilds(t, cb, 1)
+	return s, cb
+}
+
+func TestArtworkCarouselMoves(t *testing.T) {
+	s, cb := newLoadedArtworkSection(t, "boxart.webp", "boxback.webp")
+	focus := newFakeFocus()
+	s.Build(focus)
+	if got := focus.zones[artworkZone]; len(got) != 1 || got[0] != artworkNextKey {
+		t.Fatalf("first image zone = %v, want [%s]", got, artworkNextKey)
+	}
+
+	pressButton(t, focus.targets[artworkNextKey])
+	if s.index != 1 || s.from != 0 {
+		t.Errorf("after next: index %d from %d, want 1 from 0", s.index, s.from)
+	}
+	if focus.pending != artworkPrevKey {
+		t.Errorf("pending focus %q, want %q at the last image", focus.pending, artworkPrevKey)
+	}
+	if cb.rebuildCount() != 2 {
+		t.Errorf("rebuilds %d, want 2", cb.rebuildCount())
+	}
+
+	focus = newFakeFocus()
+	s.Build(focus)
+	if got := focus.zones[artworkZone]; len(got) != 1 || got[0] != artworkPrevKey {
+		t.Errorf("last image zone = %v, want [%s]", got, artworkPrevKey)
+	}
+	s.move(1, 2)
+	if s.index != 1 || cb.rebuildCount() != 2 {
+		t.Errorf("move past the end changed index to %d with %d rebuilds", s.index, cb.rebuildCount())
+	}
+
+	pressButton(t, focus.targets[artworkPrevKey])
+	if s.index != 0 || s.from != 1 || focus.pending != artworkNextKey {
+		t.Errorf("after prev: index %d from %d focus %q", s.index, s.from, focus.pending)
+	}
+
+	s.move(1, 2)
+	s.SetGame(&storage.GameEntry{GameID: "T-2"})
+	if s.index != 0 || s.from != 0 {
+		t.Errorf("SetGame left index %d from %d", s.index, s.from)
+	}
+}
+
+func TestArtworkSingleImageNoZone(t *testing.T) {
+	s, _ := newLoadedArtworkSection(t, "boxback.webp")
+	focus := newFakeFocus()
+	s.Build(focus)
+	if len(s.NavZones()) != 0 || len(focus.targets) != 0 {
+		t.Errorf("single image: zones %v, targets %d", s.NavZones(), len(focus.targets))
+	}
+}
+
 func TestArtworkNilGame(t *testing.T) {
 	s, cb, rec, _ := newTestArtworkSection(t, "boxart.webp")
 	s.SetGame(nil)
