@@ -44,6 +44,9 @@ func (f *fakeFocus) SetPendingFocus(key string)                         { f.pend
 func (f *fakeFocus) SetScrollContainer(*widgets.ScrollView)             {}
 func (f *fakeFocus) SaveScrollPosition()                                {}
 func (f *fakeFocus) RestoreScrollPosition()                             {}
+func (f *fakeFocus) RegisterScrollBar(key string, _ *widgets.ScrollView, bar *widget.Slider) {
+	f.targets[key] = bar
+}
 func (f *fakeFocus) RegisterNavZone(name string, _ string, keys []string, _ int) {
 	f.zones[name] = append([]string(nil), keys...)
 }

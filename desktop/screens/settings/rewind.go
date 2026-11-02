@@ -113,8 +113,9 @@ func (r *RewindSection) Build(focus types.FocusManager) *widget.Container {
 	r.setupNavigation(focus)
 
 	// Wrap in scrollable container
-	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.PageScrollOpts(section))
+	scrollContainer, bar, scrollWrapper := widgets.ScrollableContainer(widgets.PageScrollOpts(section))
 	focus.SetScrollContainer(scrollContainer)
+	focus.RegisterScrollBar("scrollbar", scrollContainer, bar)
 	focus.RestoreScrollPosition()
 	outer.AddChild(scrollWrapper)
 	return outer

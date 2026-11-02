@@ -311,7 +311,7 @@ func (s *FilePickerScreen) Build() *widget.Container {
 			widget.RowLayoutOpts.Spacing(0),
 		)),
 	)
-	scroll, _, wrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
+	scroll, bar, wrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
 		Content:     s.listContent,
 		BgColor:     style.Surface,
 		BorderColor: style.Border,
@@ -319,6 +319,7 @@ func (s *FilePickerScreen) Build() *widget.Container {
 		Padding:     2,
 	})
 	s.SetScrollContainer(scroll)
+	s.RegisterScrollBar("scrollbar", scroll, bar)
 	right.AddChild(wrapper)
 
 	right.AddChild(s.buildButtons())

@@ -30,8 +30,11 @@ func (f *inputFocus) SetPendingFocus(key string)                         { f.pen
 func (f *inputFocus) SetScrollContainer(*widgets.ScrollView)             {}
 func (f *inputFocus) SaveScrollPosition()                                {}
 func (f *inputFocus) RestoreScrollPosition()                             {}
-func (f *inputFocus) RegisterNavZone(string, string, []string, int)      {}
-func (f *inputFocus) SetNavTransition(string, int, string, int)          {}
+func (f *inputFocus) RegisterScrollBar(key string, _ *widgets.ScrollView, bar *widget.Slider) {
+	f.targets[key] = bar
+}
+func (f *inputFocus) RegisterNavZone(string, string, []string, int) {}
+func (f *inputFocus) SetNavTransition(string, int, string, int)     {}
 
 // inputCallback counts rebuild requests
 type inputCallback struct {

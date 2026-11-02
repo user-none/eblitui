@@ -142,8 +142,9 @@ func (v *VideoSection) buildShadersList(focus types.FocusManager) widget.Preferr
 	}
 
 	// Wrap in scrollable container
-	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.PageScrollOpts(listContent))
+	scrollContainer, bar, scrollWrapper := widgets.ScrollableContainer(widgets.PageScrollOpts(listContent))
 	focus.SetScrollContainer(scrollContainer)
+	focus.RegisterScrollBar("scrollbar", scrollContainer, bar)
 	focus.RestoreScrollPosition()
 
 	return scrollWrapper

@@ -278,10 +278,11 @@ func (s *ScreenshotsSection) buildList(focus types.FocusManager, rowWidth int) (
 	s.zones = append(s.zones, screenshotsZone)
 
 	opts := widgets.PageScrollOpts(list)
-	scroll, _, wrapper := widgets.ScrollableContainer(opts)
+	scroll, bar, wrapper := widgets.ScrollableContainer(opts)
 	outerWidth := rowWidth + opts.Spacing + style.ScrollbarWidth
 	wrapper.GetWidget().MinWidth = outerWidth
 	focus.SetScrollContainer(scroll)
+	focus.RegisterScrollBar("scrollbar", scroll, bar)
 	focus.RestoreScrollPosition()
 	return wrapper, outerWidth
 }

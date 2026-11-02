@@ -148,6 +148,40 @@ func (s *ScrollView) scrollRange() int {
 	return r
 }
 
+// ScrollStep scrolls one step, a quarter of the viewport height, down for
+// a positive dir and up for a negative one, clamped to the scroll range.
+// It reports whether the view moved: false at the end in that direction
+// and when the content fits.
+func (s *ScrollView) ScrollStep(dir int) bool {
+	maxScroll := s.scrollRange()
+	if maxScroll == 0 || dir == 0 {
+		return false
+	}
+	step := max(1, s.ViewRect().Dy()/4)
+	offset := int(math.Round(s.ScrollTop * float64(maxScroll)))
+	next := offset + step
+	if dir < 0 {
+		next = offset - step
+	}
+	next = max(0, min(next, maxScroll))
+	if next == offset {
+		return false
+	}
+	s.SetScrollTop(float64(next) / float64(maxScroll))
+	return true
+}
+
+// Contains reports whether w is the view's content or inside it
+func (s *ScrollView) Contains(w *widget.Widget) bool {
+	cw := s.content.GetWidget()
+	for p := w; p != nil; p = p.Parent() {
+		if p == cw {
+			return true
+		}
+	}
+	return false
+}
+
 // ScrollRectIntoView scrolls the minimum amount so rect (in screen coordinates)
 // is visible: aligning its top to the viewport top when above, or its bottom to
 // the viewport bottom when below. Does nothing when the content fits.

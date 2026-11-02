@@ -290,13 +290,14 @@ func (l *LibrarySection) buildFolderList(focus types.FocusManager) widget.Prefer
 	}
 
 	// Create scrollable container with border
-	_, _, wrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
+	scroll, bar, wrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
 		Content:     listContent,
 		BgColor:     style.Surface,
 		BorderColor: style.Border,
 		Spacing:     0,
 		Padding:     2,
 	})
+	focus.RegisterScrollBar("scrollbar", scroll, bar)
 
 	return wrapper
 }

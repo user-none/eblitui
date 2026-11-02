@@ -61,7 +61,11 @@ func SettingsRowLabelWidth(rowWidth int, controlWidths ...int) int {
 // Returns the slider widget.
 func ScrollSlider(scrollContainer *ScrollView, needsScroll func() bool) *widget.Slider {
 	return widget.NewSlider(
-		widget.SliderOpts.TabOrder(-1), // Non-focusable for gamepad navigation
+		// Out of ebitenui's tab order: screens register the slider as a
+		// navigation target, and the app scrolls it with Up and Down, so
+		// the slider's own arrow-key paging is off
+		widget.SliderOpts.TabOrder(-1),
+		widget.SliderOpts.DisableDefaultKeys(true),
 		widget.SliderOpts.Direction(widget.DirectionVertical),
 		widget.SliderOpts.MinMax(0, 1000),
 		widget.SliderOpts.Images(

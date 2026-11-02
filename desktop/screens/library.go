@@ -602,11 +602,12 @@ func (s *LibraryScreen) buildListView() widget.PreferredSizeLocateableWidget {
 	}
 
 	// Create scrollable container (we use custom layout for header alignment, so ignore wrapper)
-	scrollContainer, _, scrollRow := widgets.ScrollableContainer(widgets.ScrollableOpts{
+	scrollContainer, bar, scrollRow := widgets.ScrollableContainer(widgets.ScrollableOpts{
 		Content: listContent,
 		BgColor: style.Background,
 		Spacing: style.TinySpacing,
 	})
+	s.RegisterScrollBar("scrollbar", scrollContainer, bar)
 
 	// Store reference for scroll preservation
 	s.listScrollContainer = scrollContainer
@@ -709,11 +710,12 @@ func (s *LibraryScreen) buildIconView(container *widget.Container) int {
 	}
 
 	// Create scrollable container
-	scrollContainer, _, wrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
+	scrollContainer, bar, wrapper := widgets.ScrollableContainer(widgets.ScrollableOpts{
 		Content: gridContainer,
 		BgColor: style.Background,
 		Spacing: 4,
 	})
+	s.RegisterScrollBar("scrollbar", scrollContainer, bar)
 
 	// Store reference for scroll preservation
 	s.iconScrollContainer = scrollContainer

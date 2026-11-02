@@ -930,6 +930,7 @@ func (a *App) applySpatialNavigation(direction int) {
 		FindFocusInDirection(widget.Focuser, int) widget.Focuser
 		FindFocusLinear(widget.Focuser, bool) widget.Focuser
 		IsFocusTarget(widget.Focuser) bool
+		ScrollBy(widget.Focuser, int) bool
 	}
 	switch a.state {
 	case StateLibrary:
@@ -946,6 +947,12 @@ func (a *App) applySpatialNavigation(direction int) {
 			return
 		}
 		screen = a.filePicker
+	}
+
+	// A focused scroll bar scrolls with Up and Down until the end of its
+	// view; past that, and for the other directions, focus moves on
+	if screen != nil && screen.ScrollBy(focused, direction) {
+		return
 	}
 
 	forward := !(direction == types.DirUp || direction == types.DirLeft)

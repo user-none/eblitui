@@ -141,8 +141,9 @@ func (s *SettingsSection) Build(focus types.FocusManager) *widget.Container {
 	focus.RegisterNavZone(gameSettingsZone, types.NavZoneVertical, keys, 0)
 	s.zones = append(s.zones, gameSettingsZone)
 
-	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.PageScrollOpts(content))
+	scrollContainer, bar, scrollWrapper := widgets.ScrollableContainer(widgets.PageScrollOpts(content))
 	focus.SetScrollContainer(scrollContainer)
+	focus.RegisterScrollBar("scrollbar", scrollContainer, bar)
 	focus.RestoreScrollPosition()
 	page.AddChild(scrollWrapper)
 	return page

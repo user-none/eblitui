@@ -400,8 +400,9 @@ func (o *OverviewSection) Build(focus types.FocusManager) *widget.Container {
 	)
 	scrollContent.AddChild(metadataOuter)
 
-	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.PageScrollOpts(scrollContent))
+	scrollContainer, bar, scrollWrapper := widgets.ScrollableContainer(widgets.PageScrollOpts(scrollContent))
 	focus.SetScrollContainer(scrollContainer)
+	focus.RegisterScrollBar("scrollbar", scrollContainer, bar)
 	focus.RestoreScrollPosition()
 
 	page := widgets.FillContainer()

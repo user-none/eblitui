@@ -41,6 +41,17 @@ type BaseScreen struct {
 	navZones       map[string]*NavZone               // Zone name -> zone definition
 	navTransitions map[string]map[int]*NavTransition // Zone name -> direction -> transition
 	buttonToZone   map[string]string                 // Button key -> zone name
+
+	// Scroll bars registered as navigation targets, and the key of the
+	// target the last one was entered from, which Left returns to
+	scrollBars   []scrollBar
+	scrollReturn string
+}
+
+// scrollBar is a scroll view's slider registered as a navigation target
+type scrollBar struct {
+	view *widgets.ScrollView
+	bar  *widget.Slider
 }
 
 // InitBase initializes the base screen state.
@@ -124,6 +135,132 @@ func (b *BaseScreen) ClearFocusButtons() {
 	b.navZones = make(map[string]*NavZone)
 	b.navTransitions = make(map[string]map[int]*NavTransition)
 	b.buttonToZone = make(map[string]string)
+	b.scrollBars = nil
+}
+
+// RegisterScrollBar registers a scroll view's slider as a navigation
+// target under key. Right at the right edge of a zone inside the view
+// moves to it, as does Right from the sidebar when the page has nowhere
+// else to go. On it, Up and Down scroll the view (see ScrollBy). Left
+// returns to the target it was entered from, and every other way out goes
+// to the nearest target in that direction outside the view.
+func (b *BaseScreen) RegisterScrollBar(key string, view *widgets.ScrollView, bar *widget.Slider) {
+	b.RegisterFocusWidget(key, bar)
+	b.scrollBars = append(b.scrollBars, scrollBar{view: view, bar: bar})
+}
+
+// ScrollBy scrolls the view of the scroll bar focused one step for Up or
+// Down. It reports false, leaving the move to navigation, when focused is
+// not a scroll bar, for any other direction, and at the end of the view.
+func (b *BaseScreen) ScrollBy(focused widget.Focuser, direction int) bool {
+	sb := b.scrollBarOf(focused)
+	if sb == nil {
+		return false
+	}
+	switch direction {
+	case types.DirUp:
+		return sb.view.ScrollStep(-1)
+	case types.DirDown:
+		return sb.view.ScrollStep(1)
+	}
+	return false
+}
+
+// scrollBarOf returns the registered scroll bar f is, or nil
+func (b *BaseScreen) scrollBarOf(f widget.Focuser) *scrollBar {
+	if f == nil {
+		return nil
+	}
+	for i := range b.scrollBars {
+		if b.scrollBars[i].bar.GetWidget() == f.GetWidget() {
+			return &b.scrollBars[i]
+		}
+	}
+	return nil
+}
+
+// scrollBarContaining returns the registered scroll bar whose view holds
+// w, or nil
+func (b *BaseScreen) scrollBarContaining(w *widget.Widget) *scrollBar {
+	for i := range b.scrollBars {
+		if b.scrollBars[i].view.Contains(w) {
+			return &b.scrollBars[i]
+		}
+	}
+	return nil
+}
+
+// pageScrollBar returns the registered scroll bar of the page's scroll
+// container, or nil
+func (b *BaseScreen) pageScrollBar() *scrollBar {
+	for i := range b.scrollBars {
+		if b.scrollBars[i].view == b.scrollContainer {
+			return &b.scrollBars[i]
+		}
+	}
+	return nil
+}
+
+// leaveScrollBar returns where a move off scroll bar sb goes. Left goes
+// into the view (see enterScrollView), or back to where the bar was
+// entered from when nothing in the view is visible. Every other move goes
+// to the nearest target outside the view that lies wholly past the bar's
+// edge in the direction. The edge, not the center, decides, since the bar
+// runs the height of the view.
+func (b *BaseScreen) leaveScrollBar(sb *scrollBar, direction int) widget.Focuser {
+	if direction == types.DirLeft {
+		if t := b.enterScrollView(sb); t != nil {
+			return t
+		}
+		if t := b.target(b.scrollReturn); t != nil && t.GetWidget() != sb.bar.GetWidget() {
+			return t
+		}
+	}
+	edge := sb.bar.GetWidget().Rect
+	return b.findFocusSpatialExcept(sb.bar, direction, func(f widget.Focuser) bool {
+		if sb.view.Contains(f.GetWidget()) {
+			return true
+		}
+		r := f.GetWidget().Rect
+		switch direction {
+		case types.DirUp:
+			return r.Max.Y > edge.Min.Y
+		case types.DirDown:
+			return r.Min.Y < edge.Max.Y
+		case types.DirLeft:
+			return r.Max.X > edge.Min.X
+		case types.DirRight:
+			return r.Min.X < edge.Max.X
+		}
+		return true
+	})
+}
+
+// enterScrollView returns the target inside sb's view, at least partly
+// visible, nearest the point on the view's height matching the scroll
+// position: its top when scrolled to the top, its bottom when scrolled to
+// the bottom. Of targets at the same height, the one nearest the bar wins.
+// It returns nil when no target in the view is visible.
+func (b *BaseScreen) enterScrollView(sb *scrollBar) widget.Focuser {
+	view := sb.view.ViewRect()
+	y := view.Min.Y + int(sb.view.ScrollTop*float64(view.Dy()))
+	x := sb.bar.GetWidget().Rect.Min.X
+
+	var best widget.Focuser
+	bestDist := int(^uint(0) >> 1)
+	for _, t := range b.focusTargets {
+		w := t.GetWidget()
+		if w == sb.bar.GetWidget() || !sb.view.Contains(w) || !w.Rect.Overlaps(view) {
+			continue
+		}
+		dx := x - (w.Rect.Min.X+w.Rect.Max.X)/2
+		dy := y - (w.Rect.Min.Y+w.Rect.Max.Y)/2
+		if dist := dx*dx + dy*dy*4; dist < bestDist {
+			bestDist = dist
+			best = t
+		}
+	}
+	return best
 }
 
 // SetPendingFocus sets the key of the button to focus after rebuild.
@@ -225,13 +362,22 @@ func (b *BaseScreen) FindFocusInDirection(current widget.Focuser, direction int)
 		return nil
 	}
 
-	// If zones are defined, use zone-based navigation
-	if len(b.navZones) > 0 {
-		return b.findFocusInZone(currentKey, direction)
+	if sb := b.scrollBarOf(current); sb != nil {
+		return b.leaveScrollBar(sb, direction)
 	}
 
-	// Fallback to spatial navigation (legacy behavior)
-	return b.findFocusSpatial(current, direction)
+	// If zones are defined, use zone-based navigation
+	var next widget.Focuser
+	if len(b.navZones) > 0 {
+		next = b.findFocusInZone(currentKey, direction)
+	} else {
+		// Fallback to spatial navigation (legacy behavior)
+		next = b.findFocusSpatial(current, direction)
+	}
+	if b.scrollBarOf(next) != nil {
+		b.scrollReturn = currentKey
+	}
+	return next
 }
 
 // FindFocusLinear moves focus to the next or previous target in the current
@@ -348,9 +494,22 @@ func (b *BaseScreen) findFocusInZone(currentKey string, direction int) widget.Fo
 		return nil
 	}
 
-	// If we should transition to another zone
+	// If we should transition to another zone. Right at the right edge of
+	// a zone inside a scroll view goes to its scroll bar, and Right from
+	// the sidebar with nowhere else to go goes to the page's scroll bar.
 	if shouldTransition {
-		return b.handleZoneTransition(zoneName, currentIndex, zone, direction)
+		if direction == types.DirRight {
+			if sb := b.scrollBarContaining(b.focusTargets[currentKey].GetWidget()); sb != nil {
+				return sb.bar
+			}
+		}
+		next := b.handleZoneTransition(zoneName, currentIndex, zone, direction)
+		if next == nil && direction == types.DirRight && zoneName == sidebarZone {
+			if sb := b.pageScrollBar(); sb != nil {
+				return sb.bar
+			}
+		}
+		return next
 	}
 
 	// Stay within zone
@@ -518,6 +677,12 @@ func (b *BaseScreen) calculatePreservedIndex(fromIndex int, fromZone, toZone *Na
 
 // findFocusSpatial is the legacy spatial navigation (fallback)
 func (b *BaseScreen) findFocusSpatial(current widget.Focuser, direction int) widget.Focuser {
+	return b.findFocusSpatialExcept(current, direction, nil)
+}
+
+// findFocusSpatialExcept is findFocusSpatial over the targets skip does not
+// exclude. A nil skip excludes none.
+func (b *BaseScreen) findFocusSpatialExcept(current widget.Focuser, direction int, skip func(widget.Focuser) bool) widget.Focuser {
 	currentWidget := current.GetWidget()
 	if currentWidget == nil {
 		return nil
@@ -532,7 +697,7 @@ func (b *BaseScreen) findFocusSpatial(current widget.Focuser, direction int) wid
 
 	for _, btn := range b.focusTargets {
 		btnWidget := btn.GetWidget()
-		if btnWidget == currentWidget {
+		if btnWidget == currentWidget || (skip != nil && skip(btn)) {
 			continue
 		}
 

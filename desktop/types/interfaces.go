@@ -133,6 +133,9 @@ type FocusManager interface {
 	SetScrollContainer(sc *widgets.ScrollView)
 	SaveScrollPosition()
 	RestoreScrollPosition()
+	// RegisterScrollBar registers a scroll view's slider as a navigation
+	// target that Up and Down scroll
+	RegisterScrollBar(key string, view *widgets.ScrollView, bar *widget.Slider)
 	// Zone-based navigation
 	RegisterNavZone(name string, zoneType string, keys []string, columns int)
 	SetNavTransition(fromZone string, direction int, toZone string, toIndex int)

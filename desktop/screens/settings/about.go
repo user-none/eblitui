@@ -96,8 +96,9 @@ func (a *AboutSection) Build(focus types.FocusManager) *widget.Container {
 		a.buildUpdates(section, focus)
 	}
 
-	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.PageScrollOpts(section))
+	scrollContainer, bar, scrollWrapper := widgets.ScrollableContainer(widgets.PageScrollOpts(section))
 	focus.SetScrollContainer(scrollContainer)
+	focus.RegisterScrollBar("scrollbar", scrollContainer, bar)
 	focus.RestoreScrollPosition()
 	outer.AddChild(scrollWrapper)
 	return outer

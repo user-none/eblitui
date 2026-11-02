@@ -160,8 +160,9 @@ func (c *CheatsSection) Build(focus types.FocusManager) *widget.Container {
 		c.buildLists(focus, content)
 	}
 
-	scrollContainer, _, scrollWrapper := widgets.ScrollableContainer(widgets.PageScrollOpts(content))
+	scrollContainer, bar, scrollWrapper := widgets.ScrollableContainer(widgets.PageScrollOpts(content))
 	focus.SetScrollContainer(scrollContainer)
+	focus.RegisterScrollBar("scrollbar", scrollContainer, bar)
 	focus.RestoreScrollPosition()
 	page.AddChild(scrollWrapper)
 	return page

@@ -30,12 +30,13 @@ func newNavRecorder() *navRecorder {
 	return &navRecorder{zones: make(map[string][]string), transitions: make(map[string]map[int]transition)}
 }
 
-func (n *navRecorder) RegisterFocusButton(string, *widget.Button) {}
-func (n *navRecorder) RegisterFocusWidget(string, widget.Focuser) {}
-func (n *navRecorder) SetPendingFocus(string)                     {}
-func (n *navRecorder) SetScrollContainer(*widgets.ScrollView)     {}
-func (n *navRecorder) SaveScrollPosition()                        {}
-func (n *navRecorder) RestoreScrollPosition()                     {}
+func (n *navRecorder) RegisterFocusButton(string, *widget.Button)                    {}
+func (n *navRecorder) RegisterFocusWidget(string, widget.Focuser)                    {}
+func (n *navRecorder) SetPendingFocus(string)                                        {}
+func (n *navRecorder) SetScrollContainer(*widgets.ScrollView)                        {}
+func (n *navRecorder) SaveScrollPosition()                                           {}
+func (n *navRecorder) RestoreScrollPosition()                                        {}
+func (n *navRecorder) RegisterScrollBar(string, *widgets.ScrollView, *widget.Slider) {}
 func (n *navRecorder) RegisterNavZone(name, _ string, keys []string, _ int) {
 	n.zones[name] = keys
 }
