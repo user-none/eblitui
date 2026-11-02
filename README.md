@@ -35,15 +35,6 @@ Libretro core wrapper that bridges the coreif interfaces to the
 (`.so`/`.dylib`/`.dll`) loadable by any libretro-compatible frontend
 such as RetroArch.
 
-### rdb
-
-Parser for RetroArch/libretro RDB files. These are MessagePack-encoded
-binary databases containing game metadata (name, developer, publisher,
-genre, CRC32, MD5, serial, release date, etc.). Provides fast lookups
-by CRC32 and MD5 for identifying ROMs and retrieving their metadata.
-
-Zero external dependencies.
-
 ### romloader
 
 ROM loading utility that handles raw files and compressed archives
