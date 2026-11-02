@@ -102,12 +102,9 @@ func (s *DetailScreen) SetGame(gameID string) {
 		s.files = s.game.CheckFiles()
 	}
 
-	// A different game starts on Overview at the top. The scroll container
-	// belongs to the previous game's build, so drop it to keep its offset
-	// from being saved and restored onto this game.
+	// A different game starts on Overview at the top
 	s.pages.selected = 0
-	s.scrollContainer = nil
-	s.scrollTop = 0
+	s.resetScroll()
 
 	// The Cheats and Settings pages edit the same settings file, so they
 	// share one copy and neither saves over the other's changes

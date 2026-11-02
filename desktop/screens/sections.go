@@ -75,7 +75,8 @@ func (ss *sidebarSections) selectKey(key string) bool {
 
 // buildSidebar creates the sidebar with one button per enabled section and
 // registers the buttons for focus. Disabled sections are shown as disabled
-// items. Selecting a section focuses its button and calls rebuild.
+// items. Selecting a section focuses its button and calls rebuild. A
+// different section starts scrolled to the top.
 func (ss *sidebarSections) buildSidebar(b *BaseScreen, minWidth int, rebuild func()) *widget.Container {
 	sidebar := widgets.NewSidebar(minWidth)
 	for i, sec := range ss.sections {
@@ -86,6 +87,9 @@ func (ss *sidebarSections) buildSidebar(b *BaseScreen, minWidth int, rebuild fun
 		idx := i
 		key := sec.focusKey
 		btn := sidebar.AddButton(sec.label, ss.selected == idx, func() {
+			if ss.selected != idx {
+				b.resetScroll()
+			}
 			ss.selected = idx
 			b.SetPendingFocus(key)
 			rebuild()

@@ -287,9 +287,14 @@ func (s *SettingsScreen) OnEnter() {
 }
 
 // SelectSection makes the section with the given focus key active and
-// focuses its sidebar button. Unknown keys are ignored.
+// focuses its sidebar button. A different section starts scrolled to the
+// top. Unknown keys are ignored.
 func (s *SettingsScreen) SelectSection(focusKey string) {
+	prev := s.selected
 	if s.selectKey(focusKey) {
+		if s.selected != prev {
+			s.resetScroll()
+		}
 		s.SetPendingFocus(focusKey)
 	}
 }

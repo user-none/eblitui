@@ -66,6 +66,13 @@ func (b *BaseScreen) SaveScrollPosition() {
 	}
 }
 
+// resetScroll starts the next build at the top. The scroll container is
+// dropped so the save before that rebuild keeps nothing of its offset.
+func (b *BaseScreen) resetScroll() {
+	b.scrollContainer = nil
+	b.scrollTop = 0
+}
+
 // RestoreScrollPosition restores the saved scroll position.
 // Call this after rebuilding the screen, once the scroll container is set.
 func (b *BaseScreen) RestoreScrollPosition() {
