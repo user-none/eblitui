@@ -304,7 +304,6 @@ func (s *ScreenshotsSection) buildPreview(focus types.FocusManager, width int) *
 	shot := s.shots[s.selected]
 
 	box := widget.NewContainer(
-		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Black)),
 		widget.ContainerOpts.Layout(widget.NewAnchorLayout()),
 	)
 	s.mu.Lock()
