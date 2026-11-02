@@ -5,6 +5,7 @@ package style
 
 import (
 	"bytes"
+	_ "embed"
 	"image/color"
 	"log"
 	"math"
@@ -330,18 +331,12 @@ func applyScale() {
 	// Replace font faces in-place rather than nil-ing them. Existing widgets hold
 	// &fontFace (a pointer to the package var), so setting fontFace = nil would cause
 	// widgets to see a nil face and crash before the UI rebuild completes.
-	source := loadFontSource()
-	if source == nil {
+	face := newFace(fontSize())
+	if face == nil {
 		return
 	}
-	fontFace = &text.GoTextFace{
-		Source: source,
-		Size:   fontSize(),
-	}
-	largeFontFace = &text.GoTextFace{
-		Source: source,
-		Size:   fontSize() * largeFontFactor,
-	}
+	fontFace = face
+	largeFontFace = newFace(fontSize() * largeFontFactor)
 }
 
 // fontSize returns the font size in physical pixels at the current scales.
@@ -349,53 +344,78 @@ func fontSize() float64 {
 	return baseFontSize * windowScale * dpiScale
 }
 
-// sharedFontSource is the cached TrueType font source shared by all font faces
-var sharedFontSource *text.GoTextFaceSource
+// mplusTTF is M+ 1p Regular 1.063a, which draws the characters Go Regular
+// lacks, such as Japanese. Its hhea ascender, descender, and line gap are
+// set to 944, -210, and 0, at or under Go Regular's proportions, so the
+// combined face keeps Go Regular's line height.
+//
+//go:embed mplus-1p-regular.ttf
+var mplusTTF []byte
+
+// fontSources are the cached TrueType font sources shared by all font
+// faces, in fallback order: Go Regular, then M+ 1p
+var fontSources []*text.GoTextFaceSource
 
 // fontFace is the cached font face
 var fontFace text.Face
 
 // largeFontFace is the cached large font face for achievements
-var largeFontFace *text.GoTextFace
+var largeFontFace text.Face
 
-// loadFontSource loads the shared GoTextFaceSource from goregular.TTF (once)
-func loadFontSource() *text.GoTextFaceSource {
-	if sharedFontSource == nil {
-		source, err := text.NewGoTextFaceSource(bytes.NewReader(goregular.TTF))
-		if err != nil {
-			log.Printf("Failed to load font source: %v", err)
-			return nil
+// loadFontSources loads the font sources (once). A font that fails to load
+// is logged and left out.
+func loadFontSources() []*text.GoTextFaceSource {
+	if fontSources == nil {
+		for _, ttf := range [][]byte{goregular.TTF, mplusTTF} {
+			source, err := text.NewGoTextFaceSource(bytes.NewReader(ttf))
+			if err != nil {
+				log.Printf("Failed to load font source: %v", err)
+				continue
+			}
+			fontSources = append(fontSources, source)
 		}
-		sharedFontSource = source
 	}
-	return sharedFontSource
+	return fontSources
+}
+
+// newFace returns a face of the given size drawing each character with
+// the first font source that has it, or nil when no font loaded
+func newFace(size float64) text.Face {
+	sources := loadFontSources()
+	if len(sources) == 0 {
+		return nil
+	}
+	faces := make([]text.Face, len(sources))
+	for i, source := range sources {
+		faces[i] = &text.GoTextFace{Source: source, Size: size}
+	}
+	if len(faces) == 1 {
+		return faces[0]
+	}
+	face, err := text.NewMultiFace(faces...)
+	if err != nil {
+		log.Printf("Failed to combine font faces: %v", err)
+		return faces[0]
+	}
+	return face
 }
 
 // FontFace returns the font face to use for UI text
 func FontFace() *text.Face {
 	if fontFace == nil {
-		source := loadFontSource()
-		if source == nil {
-			return &fontFace
-		}
-		fontFace = &text.GoTextFace{
-			Source: source,
-			Size:   fontSize(),
+		if face := newFace(fontSize()); face != nil {
+			fontFace = face
 		}
 	}
 	return &fontFace
 }
 
-// LargeFontFace returns a larger font face for prominent displays like achievements
-func LargeFontFace() *text.GoTextFace {
+// LargeFontFace returns a larger font face for prominent displays like
+// achievements, or nil when no font loaded
+func LargeFontFace() text.Face {
 	if largeFontFace == nil {
-		source := loadFontSource()
-		if source == nil {
-			return nil
-		}
-		largeFontFace = &text.GoTextFace{
-			Source: source,
-			Size:   fontSize() * largeFontFactor,
+		if face := newFace(fontSize() * largeFontFactor); face != nil {
+			largeFontFace = face
 		}
 	}
 	return largeFontFace

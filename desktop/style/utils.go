@@ -184,12 +184,59 @@ func WrapToBox(s string, face text.Face, maxWidth, maxHeight float64) string {
 		return w <= maxWidth
 	}
 
+	lines := wrapWords(strings.Fields(s), face, maxWidth)
+	if len(lines) <= maxLines {
+		return strings.Join(lines, "\n")
+	}
+
+	// Too tall: keep the first maxLines lines and mark the last visible
+	// line as truncated.
+	lines = lines[:maxLines]
+	last := lines[maxLines-1]
+	if !strings.HasSuffix(last, "...") {
+		if withEllipsis := last + "..."; fits(withEllipsis) {
+			last = withEllipsis
+		} else {
+			last, _ = TruncateToWidth(last, face, maxWidth)
+		}
+	}
+	lines[maxLines-1] = last
+	return strings.Join(lines, "\n")
+}
+
+// WrapLines lays s out as word-wrapped lines that fit within maxWidth
+// pixels, keeping its line breaks: each line of s is wrapped on its own and
+// an empty line stays empty. A single word wider than maxWidth is truncated
+// with an ellipsis.
+func WrapLines(s string, face text.Face, maxWidth float64) []string {
+	if s == "" {
+		return nil
+	}
+	var lines []string
+	for _, para := range strings.Split(s, "\n") {
+		words := strings.Fields(para)
+		if len(words) == 0 {
+			lines = append(lines, "")
+			continue
+		}
+		lines = append(lines, wrapWords(words, face, maxWidth)...)
+	}
+	return lines
+}
+
+// wrapWords joins words into lines that fit within maxWidth pixels. A
+// single word wider than maxWidth gets a line of its own, truncated with an
+// ellipsis.
+func wrapWords(words []string, face text.Face, maxWidth float64) []string {
+	fits := func(str string) bool {
+		w, _ := text.Measure(str, face, 0)
+		return w <= maxWidth
+	}
+
 	var lines []string
 	cur := ""
-	for _, word := range strings.Fields(s) {
+	for _, word := range words {
 		if !fits(word) {
-			// A single word wider than the box: flush the current
-			// line, then add the word truncated to the box width.
 			if cur != "" {
 				lines = append(lines, cur)
 				cur = ""
@@ -212,24 +259,7 @@ func WrapToBox(s string, face text.Face, maxWidth, maxHeight float64) string {
 	if cur != "" {
 		lines = append(lines, cur)
 	}
-
-	if len(lines) <= maxLines {
-		return strings.Join(lines, "\n")
-	}
-
-	// Too tall: keep the first maxLines lines and mark the last visible
-	// line as truncated.
-	lines = lines[:maxLines]
-	last := lines[maxLines-1]
-	if !strings.HasSuffix(last, "...") {
-		if withEllipsis := last + "..."; fits(withEllipsis) {
-			last = withEllipsis
-		} else {
-			last, _ = TruncateToWidth(last, face, maxWidth)
-		}
-	}
-	lines[maxLines-1] = last
-	return strings.Join(lines, "\n")
+	return lines
 }
 
 // FormatPlayTime formats a duration in seconds into a human-readable string.

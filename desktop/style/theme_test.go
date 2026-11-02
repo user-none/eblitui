@@ -2,7 +2,31 @@ package style
 
 import (
 	"testing"
+
+	"github.com/hajimehoshi/ebiten/v2/text/v2"
 )
+
+func TestFontSourcesLoad(t *testing.T) {
+	if got := len(loadFontSources()); got != 2 {
+		t.Fatalf("loaded %d font sources, want Go Regular and M+ 1p", got)
+	}
+	if _, ok := (*FontFace()).(*text.MultiFace); !ok {
+		t.Errorf("FontFace is %T, want *text.MultiFace", *FontFace())
+	}
+}
+
+func TestFontMetricsMatchGoRegular(t *testing.T) {
+	sources := loadFontSources()
+	if len(sources) != 2 {
+		t.Fatalf("loaded %d font sources, want 2", len(sources))
+	}
+	want := (&text.GoTextFace{Source: sources[0], Size: 28}).Metrics()
+	got := newFace(28).Metrics()
+	if got.HAscent != want.HAscent || got.HDescent != want.HDescent || got.HLineGap != want.HLineGap {
+		t.Errorf("combined metrics ascent %v descent %v gap %v, want Go Regular's %v %v %v",
+			got.HAscent, got.HDescent, got.HLineGap, want.HAscent, want.HDescent, want.HLineGap)
+	}
+}
 
 func TestGetThemeByName(t *testing.T) {
 	tests := []struct {

@@ -241,6 +241,9 @@ func (o *OverviewSection) Build(focus types.FocusManager) *widget.Container {
 		titleText = "[!] " + titleText
 	}
 	metadataContainer.AddChild(buildMetadataRow("Title", titleText, valueWidth))
+	if md.NativeTitle != "" {
+		metadataContainer.AddChild(buildMetadataRow("Native Title", md.NativeTitle, valueWidth))
+	}
 
 	// Game ID: the metadata serial, else the product number of a disc game
 	switch {
@@ -359,22 +362,30 @@ func (o *OverviewSection) Build(focus types.FocusManager) *widget.Container {
 		metadataContainer.AddChild(warningRow)
 	}
 
-	// Overview: the game's description, wrapped, last on the page
+	// Overview: the game's description, wrapped, last on the page. Each
+	// line is its own text so the lines can be spaced apart; an empty line
+	// holds a space to keep its height.
 	if md.Overview != "" {
 		metadataContainer.AddChild(widgets.SectionHeader("Overview"))
 		overviewRow := widget.NewContainer(
 			widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
 			widget.ContainerOpts.Layout(widget.NewRowLayout(
+				widget.RowLayoutOpts.Direction(widget.DirectionVertical),
 				widget.RowLayoutOpts.Padding(widget.NewInsetsSimple(style.SmallSpacing)),
+				widget.RowLayoutOpts.Spacing(style.Px(2)),
 			)),
 			widget.ContainerOpts.WidgetOpts(
 				widget.WidgetOpts.LayoutData(widget.RowLayoutData{Stretch: true}),
 			),
 		)
-		overviewRow.AddChild(widget.NewText(
-			widget.TextOpts.Text(md.Overview, style.FontFace(), style.Text),
-			widget.TextOpts.MaxWidth(float64(metadataWidth-style.SmallSpacing*2)),
-		))
+		for _, line := range style.WrapLines(md.Overview, *style.FontFace(), float64(metadataWidth-style.SmallSpacing*2)) {
+			if line == "" {
+				line = " "
+			}
+			overviewRow.AddChild(widget.NewText(
+				widget.TextOpts.Text(line, style.FontFace(), style.Text),
+			))
+		}
 		metadataContainer.AddChild(overviewRow)
 	}
 

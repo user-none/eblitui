@@ -191,12 +191,14 @@ func TestSetWindowScale(t *testing.T) {
 	if AchievementOverlayPadding != 32 {
 		t.Errorf("at 2x, AchievementOverlayPadding = %d, want 32", AchievementOverlayPadding)
 	}
-	face := FontFace()
-	if goFace, ok := (*face).(*text.GoTextFace); ok && goFace.Size != 28.0 {
-		t.Errorf("FontFace size at 2x = %f, want 28.0", goFace.Size)
+	if fontSize() != 28.0 {
+		t.Errorf("font size at 2x = %f, want 28.0", fontSize())
 	}
-	if LargeFontFace().Size != 56.0 {
-		t.Errorf("LargeFontFace size at 2x = %f, want 56.0", LargeFontFace().Size)
+	if fontSize()*largeFontFactor != 56.0 {
+		t.Errorf("large font size at 2x = %f, want 56.0", fontSize()*largeFontFactor)
+	}
+	if *FontFace() == nil || LargeFontFace() == nil {
+		t.Error("font faces not created at 2x")
 	}
 
 	// Fractional scale flows through
@@ -376,13 +378,9 @@ func TestSetDPIScale(t *testing.T) {
 		t.Errorf("ListRowHeight at 1x/2x DPI = %d, want 80", ListRowHeight)
 	}
 
-	// Font face should incorporate DPI scale
-	face := FontFace()
-	if face != nil && *face != nil {
-		goFace, ok := (*face).(*text.GoTextFace)
-		if ok && goFace.Size != 28.0 {
-			t.Errorf("FontFace size at 1x/2x DPI = %f, want 28.0", goFace.Size)
-		}
+	// Font size should incorporate DPI scale
+	if fontSize() != 28.0 {
+		t.Errorf("font size at 1x/2x DPI = %f, want 28.0", fontSize())
 	}
 
 	// Restore to 1.0
@@ -489,6 +487,35 @@ func TestSetDPIScaleClampsBelowOne(t *testing.T) {
 	SetDPIScale(0.5) // Should be clamped to 1.0
 	if DPIScale() != 1.0 {
 		t.Errorf("DPIScale() after setting 0.5 = %f, want 1.0", DPIScale())
+	}
+}
+
+func TestWrapLines(t *testing.T) {
+	face := *FontFace()
+	if face == nil {
+		t.Fatal("FontFace() returned nil")
+	}
+	w, _ := text.Measure("alpha beta", face, 0)
+
+	got := WrapLines("alpha beta gamma\n\ndelta", face, w)
+	want := []string{"alpha beta", "gamma", "", "delta"}
+	if len(got) != len(want) {
+		t.Fatalf("WrapLines = %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("line %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+
+	for _, ln := range WrapLines("averyveryverylongword short", face, w/2) {
+		if lw, _ := text.Measure(ln, face, 0); lw > w/2 {
+			t.Errorf("line %q is %v wide, over %v", ln, lw, w/2)
+		}
+	}
+
+	if got := WrapLines("", face, w); len(got) != 0 {
+		t.Errorf("empty text = %q, want no lines", got)
 	}
 }
 
