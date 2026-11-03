@@ -3,41 +3,46 @@
 
 package widgets
 
-import "golang.design/x/clipboard"
+import (
+	"context"
+	"time"
 
-// clipboardReady tracks a successful clipboard.Init. Init fails without
-// cgo or a display server, and reading or writing before it succeeds
-// panics. Each use retries Init so a clipboard that becomes available
-// later still works.
-var clipboardReady bool
+	"golang.design/x/clipboard"
+)
 
-func clipboardInit() bool {
-	if !clipboardReady {
-		if err := clipboard.Init(); err == nil {
-			clipboardReady = true
-		}
-	}
-	return clipboardReady
+// clipboardTimeout bounds a clipboard call made from the UI thread. On X11
+// a read waits on the selection owner and can otherwise block for seconds.
+const clipboardTimeout = time.Second
+
+// clipboardAvailable reports whether clipboard.Init succeeded. Init fails
+// without a display server. It runs once and later calls return the first
+// result.
+func clipboardAvailable() bool {
+	return clipboard.Init() == nil
 }
 
 // ClipboardWrite puts s on the system clipboard. It reports false when no
-// clipboard is available.
+// clipboard is available or the write fails.
 func ClipboardWrite(s string) bool {
-	if !clipboardInit() {
+	if !clipboardAvailable() {
 		return false
 	}
-	clipboard.Write(clipboard.FmtText, []byte(s))
-	return true
+	ctx, cancel := context.WithTimeout(context.Background(), clipboardTimeout)
+	defer cancel()
+	_, err := clipboard.Write(ctx, clipboard.FmtText, []byte(s))
+	return err == nil
 }
 
 // ClipboardRead returns the clipboard text. ok is false when no clipboard
 // is available or it holds no text.
 func ClipboardRead() (string, bool) {
-	if !clipboardInit() {
+	if !clipboardAvailable() {
 		return "", false
 	}
-	b := clipboard.Read(clipboard.FmtText)
-	if b == nil {
+	ctx, cancel := context.WithTimeout(context.Background(), clipboardTimeout)
+	defer cancel()
+	b, err := clipboard.Read(ctx, clipboard.FmtText)
+	if err != nil {
 		return "", false
 	}
 	return string(b), true
