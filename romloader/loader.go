@@ -33,7 +33,8 @@ var ErrNoFile = errors.New("no matching file found in archive")
 // ErrUnsupportedFormat is returned for unrecognized file formats
 var ErrUnsupportedFormat = errors.New("unsupported file format")
 
-// ErrFileTooLarge is returned when extracted content exceeds size limit
+// ErrFileTooLarge is returned when extracted content or a cue sheet
+// exceeds its size limit
 var ErrFileTooLarge = errors.New("file exceeds maximum size limit")
 
 // ErrArchiveTooLarge is returned when an archive decompresses to more than

@@ -5,7 +5,9 @@ package romloader
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -64,6 +66,10 @@ type buildTrack struct {
 	postgap int        // POSTGAP command frames
 }
 
+// maxCueSize is the largest cue sheet accepted. Real sheets are a few KB,
+// and the whole sheet is held in memory while it is parsed.
+const maxCueSize = 1024 * 1024
+
 // openBinCue parses a cue sheet and builds the backend, opening each referenced
 // bin file once and computing the disc layout. On any failure every opened
 // handle is closed before returning.
@@ -81,11 +87,21 @@ func openBinCue(path string) (discBackend, error) {
 	}
 	defer cf.Close()
 
+	// Read one byte past the limit so an oversized sheet is detected from
+	// the bytes read rather than a separate size check of the path.
+	sheet, err := io.ReadAll(io.LimitReader(cf, maxCueSize+1))
+	if err != nil {
+		return nil, fmt.Errorf("cue: reading sheet: %w", err)
+	}
+	if len(sheet) > maxCueSize {
+		return nil, fmt.Errorf("cue: sheet is larger than %d bytes: %w", maxCueSize, ErrFileTooLarge)
+	}
+
 	cueDir := filepath.Dir(path)
 	var curFd *os.File
 	var built []buildTrack
 
-	sc := bufio.NewScanner(cf)
+	sc := bufio.NewScanner(bytes.NewReader(sheet))
 	lineNo := 0
 	for sc.Scan() {
 		lineNo++
