@@ -3,14 +3,18 @@
 
 // Package artwork reads a core's artwork index and decides which local
 // artwork files to download. The index lists, per game ID, the
-// images the artwork site serves: their type, path relative to the index,
-// size, and hashes. The index is used only when its signature file holds a
-// valid signature by one of the core's artwork keys, and a downloaded image
-// is kept only when its size and SHA-256 match the signed index. A game's
-// images are stored in its own directory as <type>.<ext>.
+// images the artwork site serves: their type, the values that tell images
+// of one type apart (disc number, region, variant), path relative to the
+// index, size, and hashes. The index is used only when its signature file
+// holds a valid signature by one of the core's artwork keys, and a
+// downloaded image is kept only when its size and SHA-256 match the signed
+// index. A game's images are stored in its own directory under names built
+// from the entry's values, never from its path:
+// <type>[_<disc>][_<region>][_<variant>].<ext>.
 package artwork
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -25,6 +29,8 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 
 	_ "image/jpeg"
@@ -55,8 +61,34 @@ const MaxImageSize = 10 * 1024 * 1024
 // maxRedirects is the most redirects followed for one request.
 const maxRedirects = 10
 
-// imageTypes are the image types this build downloads and shows, in order.
-var imageTypes = []string{"boxart", "boxback"}
+// imageTypes are the image types this build downloads and shows, in display
+// order. Entries of any other type are ignored.
+var imageTypes = []string{"boxart", "boxback", "disc", "flyer", "poster"}
+
+// typeFields are the values an image type is told apart by
+var typeFields = map[string]struct{ disc, region, variant bool }{
+	"boxart":  {region: true},
+	"boxback": {region: true},
+	"disc":    {disc: true, region: true},
+	"flyer":   {variant: true},
+	"poster":  {variant: true},
+}
+
+// typeCaptions name the image types on screen
+var typeCaptions = map[string]string{
+	"boxart":  "Front",
+	"boxback": "Back",
+	"disc":    "Disc",
+	"flyer":   "Flyer",
+	"poster":  "Poster",
+}
+
+// regionOrder is the order regional versions are shown and chosen in:
+// no region first, then these, then any other region
+var regionOrder = []string{"", "us", "jp", "eu"}
+
+// regionNames name the regions shown by name; any other is "Other"
+var regionNames = map[string]string{"us": "USA", "jp": "Japan", "eu": "Europe"}
 
 // httpClient fetches the index and images. It follows redirects only to
 // HTTPS URLs and uses the default transport, which verifies server
@@ -87,18 +119,29 @@ var extensions = map[string]bool{".webp": true, ".png": true, ".jpg": true}
 const MaxImageDimension = 4096
 
 var (
-	crcPattern    = regexp.MustCompile(`^[0-9a-f]{8}$`)
-	sha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	crcPattern     = regexp.MustCompile(`^[0-9a-f]{8}$`)
+	sha256Pattern  = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	regionPattern  = regexp.MustCompile(`^[a-z]{2,}$`)
+	variantPattern = regexp.MustCompile(`^[a-z]$`)
+
+	// Local file name stems, per type
+	boxStem   = regexp.MustCompile(`^(boxart|boxback)(?:_([a-z]{2,}))?$`)
+	discStem  = regexp.MustCompile(`^disc(?:_([1-9][0-9]*))?(?:_([a-z]{2,}))?$`)
+	flyerStem = regexp.MustCompile(`^(flyer|poster)(?:_([a-z]))?$`)
 )
 
-// File is one image in the index.
+// File is one image in the index. Disc, Region and Variant tell images of
+// one type apart; each is set only on the types it applies to (see
+// typeFields) and only when the game has more than one such image.
 type File struct {
-	Type   string `json:"type"`
-	Path   string `json:"path"`
-	Disc   int    `json:"disc,omitempty"`
-	Size   int64  `json:"size"`
-	CRC32  string `json:"crc32"`
-	SHA256 string `json:"sha256"`
+	Type    string `json:"type"`
+	Path    string `json:"path"`
+	Disc    int    `json:"disc,omitempty"`    // disc number, 1 and up
+	Region  string `json:"region,omitempty"`  // lower case letters, such as "us"
+	Variant string `json:"variant,omitempty"` // one lower case letter
+	Size    int64  `json:"size"`
+	CRC32   string `json:"crc32"`
+	SHA256  string `json:"sha256"`
 }
 
 // Index is a parsed artwork index.
@@ -152,6 +195,19 @@ func checkFile(f File) error {
 	}
 	if f.Disc < 0 {
 		return fmt.Errorf("invalid disc %d for %q", f.Disc, f.Path)
+	}
+	fields, known := typeFields[f.Type]
+	if !known {
+		return nil
+	}
+	if f.Disc != 0 && !fields.disc {
+		return fmt.Errorf("invalid disc %d for %q", f.Disc, f.Path)
+	}
+	if f.Region != "" && (!fields.region || !regionPattern.MatchString(f.Region)) {
+		return fmt.Errorf("invalid region %q for %q", f.Region, f.Path)
+	}
+	if f.Variant != "" && (!fields.variant || !variantPattern.MatchString(f.Variant)) {
+		return fmt.Errorf("invalid variant %q for %q", f.Variant, f.Path)
 	}
 	return nil
 }
@@ -241,31 +297,173 @@ func Download(baseURL, dir string, f File) error {
 	return storage.AtomicWriteFile(filepath.Join(dir, LocalName(f)), data)
 }
 
-// Files returns the images this build uses for a game: for each of
-// imageTypes in order, the first entry of that type that applies to every
-// disc. Entries for a single disc and further entries of a type are not
-// used.
-func (ix *Index) Files(gameID string) []File {
+// Files returns a game's index entries whose type is one of types, in index
+// order. Types this build does not know are never returned.
+func (ix *Index) Files(gameID string, types []string) []File {
 	if ix == nil {
 		return nil
 	}
-	entries := ix.Games[gameID]
 	var out []File
-	for _, t := range imageTypes {
-		for _, f := range entries {
-			if f.Type == t && f.Disc == 0 {
-				out = append(out, f)
-				break
-			}
+	for _, f := range ix.Games[gameID] {
+		if _, known := typeFields[f.Type]; known && slices.Contains(types, f.Type) {
+			out = append(out, f)
 		}
 	}
 	return out
 }
 
+// DownloadTypes returns the image types a scan downloads for an artwork
+// download setting (storage.ArtworkDownload*): the front cover, the
+// covers, or every type this build knows. Any other value downloads every
+// type.
+func DownloadTypes(setting string) []string {
+	switch setting {
+	case storage.ArtworkDownloadFront:
+		return []string{"boxart"}
+	case storage.ArtworkDownloadCovers:
+		return []string{"boxart", "boxback"}
+	default:
+		return slices.Clone(imageTypes)
+	}
+}
+
 // LocalName returns the file name an image is stored under in its game's
-// directory: its type and its path's extension, such as "boxart.webp".
+// directory, built from the entry's values and its path's extension:
+// <type>[_<disc>][_<region>][_<variant>].<ext>, such as "disc_2_eu.webp".
+// Parse has checked the values, so the name is a plain file name.
 func LocalName(f File) string {
-	return f.Type + strings.ToLower(path.Ext(f.Path))
+	name := f.Type
+	if f.Disc > 0 {
+		name += "_" + strconv.Itoa(f.Disc)
+	}
+	if f.Region != "" {
+		name += "_" + f.Region
+	}
+	if f.Variant != "" {
+		name += "_" + f.Variant
+	}
+	return name + strings.ToLower(path.Ext(f.Path))
+}
+
+// LocalFile is an artwork image in a game's directory, with the values its
+// name carries
+type LocalFile struct {
+	Path    string
+	Type    string
+	Disc    int
+	Region  string
+	Variant string
+}
+
+// LocalFiles returns the artwork images in the game directory dir whose
+// names follow LocalName for a known type, in display order: by type
+// (front, back, disc, flyer, poster), then disc number, then region (none,
+// USA, Japan, Europe, then any other by code), then variant. When two
+// files carry the same values, the .webp one is used. Other files are
+// ignored. A missing or empty directory gives nil.
+func LocalFiles(dir string) []LocalFile {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	type key struct {
+		typ, region, variant string
+		disc                 int
+	}
+	found := map[key]LocalFile{}
+	for _, e := range entries {
+		name := e.Name()
+		ext := strings.ToLower(filepath.Ext(name))
+		if strings.HasPrefix(name, ".") || !e.Type().IsRegular() || !extensions[ext] {
+			continue
+		}
+		f, ok := parseLocalName(strings.TrimSuffix(name, filepath.Ext(name)))
+		if !ok {
+			continue
+		}
+		f.Path = filepath.Join(dir, name)
+		k := key{f.Type, f.Region, f.Variant, f.Disc}
+		if prev, dup := found[k]; dup && strings.ToLower(filepath.Ext(prev.Path)) == ".webp" {
+			continue
+		}
+		found[k] = f
+	}
+	if len(found) == 0 {
+		return nil
+	}
+	out := make([]LocalFile, 0, len(found))
+	for _, f := range found {
+		out = append(out, f)
+	}
+	slices.SortFunc(out, func(a, b LocalFile) int {
+		if c := cmp.Compare(slices.Index(imageTypes, a.Type), slices.Index(imageTypes, b.Type)); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.Disc, b.Disc); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(regionRank(a.Region), regionRank(b.Region)); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.Region, b.Region); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Variant, b.Variant)
+	})
+	return out
+}
+
+// parseLocalName reads the values from a local file name without its
+// extension. ok is false when the name does not follow LocalName for a
+// known type.
+func parseLocalName(stem string) (f LocalFile, ok bool) {
+	if m := boxStem.FindStringSubmatch(stem); m != nil {
+		return LocalFile{Type: m[1], Region: m[2]}, true
+	}
+	if m := discStem.FindStringSubmatch(stem); m != nil {
+		f = LocalFile{Type: "disc", Region: m[2]}
+		if m[1] != "" {
+			n, err := strconv.Atoi(m[1])
+			if err != nil {
+				return LocalFile{}, false
+			}
+			f.Disc = n
+		}
+		return f, true
+	}
+	if m := flyerStem.FindStringSubmatch(stem); m != nil {
+		return LocalFile{Type: m[1], Variant: m[2]}, true
+	}
+	return LocalFile{}, false
+}
+
+// regionRank orders regions: none, USA, Japan, Europe, then any other
+func regionRank(region string) int {
+	if i := slices.Index(regionOrder, region); i >= 0 {
+		return i
+	}
+	return len(regionOrder)
+}
+
+// Caption returns the on-screen name of a local image, such as "Front",
+// "Disc 2 (USA)" or "Flyer B". A region other than USA, Japan and Europe
+// is shown as "Other".
+func Caption(f LocalFile) string {
+	s := typeCaptions[f.Type]
+	if f.Disc > 0 {
+		s += " " + strconv.Itoa(f.Disc)
+	}
+	if f.Variant != "" {
+		s += " " + strings.ToUpper(f.Variant)
+	}
+	if f.Region != "" {
+		name, ok := regionNames[f.Region]
+		if !ok {
+			name = "Other"
+		}
+		s += " (" + name + ")"
+	}
+	return s
 }
 
 // NeedsDownload reports whether the game directory dir lacks f or holds a
@@ -370,23 +568,16 @@ func SupersededBoxArt(dir string) (path string, ok bool) {
 	return legacy, true
 }
 
-// BoxArtPath returns the path of a game's box art in the game directory
-// dir: boxart.webp when present, otherwise the legacy boxart.png. When
-// neither exists the boxart.webp path is returned.
+// BoxArtPath returns the path of the front cover shown for a game in its
+// game directory dir: the first front in LocalFiles order, so a front with
+// no region, then USA, Japan, Europe and any other. A .webp file is used
+// over the legacy boxart.png. When the game has no front, the boxart.webp
+// path is returned.
 func BoxArtPath(dir string) string {
-	webp := filepath.Join(dir, "boxart.webp")
-	if _, err := os.Stat(webp); err == nil {
-		return webp
+	for _, f := range LocalFiles(dir) {
+		if f.Type == "boxart" {
+			return f.Path
+		}
 	}
-	legacy := filepath.Join(dir, legacyBoxArt)
-	if _, err := os.Stat(legacy); err == nil {
-		return legacy
-	}
-	return webp
-}
-
-// BoxBackPath returns the path of a game's box back in the game directory
-// dir. The box back has no legacy name.
-func BoxBackPath(dir string) string {
-	return filepath.Join(dir, "boxback.webp")
+	return filepath.Join(dir, "boxart.webp")
 }

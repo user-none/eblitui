@@ -100,7 +100,7 @@ func runClean(t *testing.T, cm *CleanManager, cancel bool) string {
 	}
 	cm.Start()
 	if cancel {
-		cm.Cancel()
+		cm.screen.Cancel()
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for !completed {

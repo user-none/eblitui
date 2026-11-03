@@ -23,16 +23,20 @@ const (
 	artworkNextKey = "artwork-next" // focus key of the slice after
 )
 
-// ArtworkSection is the detail Artwork page: the game's box art and box
-// back in a carousel, one at a time with a slice of the other beside it.
-// A side the game has no image for is left out. The images load in the
-// background the first time the page is built for a game.
+// ArtworkSection is the detail Artwork page: the game's artwork on disk in
+// a carousel, one image at a time with a slice of its neighbors beside it,
+// in artwork.LocalFiles order (front, back, discs, flyers, posters) with
+// artwork.Caption labels. The page shows what is on disk; the library's
+// artwork download setting only limits what scans download. The images
+// load in the background the first time the page is built for a game.
 type ArtworkSection struct {
 	callback types.ScreenCallback
 	game     *storage.GameEntry
-	images   *ImageLoader // the box art and box back, in that order
+	files    []artwork.LocalFile // the game's artwork files, listed when the load starts
+	listed   bool                // files was listed for game
+	images   *ImageLoader        // one texture per entry of files
 
-	index      int       // image shown, among the sides the game has
+	index      int       // image shown, among the images the game has
 	from       int       // image the last move started at
 	slideStart time.Time // when the last move started
 	zones      []string  // navigation zones from the last Build
@@ -61,13 +65,15 @@ func NewArtworkSection(callback types.ScreenCallback) *ArtworkSection {
 func (s *ArtworkSection) SetGame(game *storage.GameEntry) {
 	s.images.Release()
 	s.game = game
+	s.files, s.listed = nil, false
 	s.index = 0
 	s.from = 0
 }
 
-// Release frees the textures. The next Build loads them again.
+// Release frees the textures. The next Build lists and loads them again.
 func (s *ArtworkSection) Release() {
 	s.images.Release()
+	s.files, s.listed = nil, false
 }
 
 // NavZones returns the page's navigation zones from the last Build
@@ -75,43 +81,47 @@ func (s *ArtworkSection) NavZones() []string {
 	return s.zones
 }
 
-// load starts loading the game's box art and box back unless they are
-// loaded or loading
+// load lists the game's artwork files and starts loading them, unless that
+// was done since the game was set or the textures released. Listing reads
+// only the game's artwork directory; decoding runs in the background.
 func (s *ArtworkSection) load() {
-	if s.game == nil {
+	if s.game == nil || s.listed {
 		return
 	}
-	gameID := s.game.GameID
-	gameDir := s.gameDir
-	s.images.Start(func() []string {
-		dir, err := gameDir(gameID)
-		if err != nil {
-			log.Printf("Artwork %s: %v", gameID, err)
-			return nil
-		}
-		return []string{artwork.BoxArtPath(dir), artwork.BoxBackPath(dir)}
-	})
+	s.listed = true
+	dir, err := s.gameDir(s.game.GameID)
+	if err != nil {
+		log.Printf("Artwork %s: %v", s.game.GameID, err)
+		return
+	}
+	s.files = artwork.LocalFiles(dir)
+	paths := make([]string, len(s.files))
+	for i, f := range s.files {
+		paths[i] = f.Path
+	}
+	s.images.Start(func() []string { return paths })
 }
 
-// Build creates the page: the carousel of the sides the game has, with
-// the slices beside the image shown in one navigation zone. While the
-// images load, and when the game has none, a message is shown instead.
+// Build creates the page: the carousel of the game's artwork, with the
+// slices beside the image shown in one navigation zone. An image that
+// cannot be read is left out. While the images load, and when the game has
+// none, a message is shown instead.
 func (s *ArtworkSection) Build(focus types.FocusManager) *widget.Container {
 	s.focus = focus
 	s.zones = s.zones[:0]
 	s.load()
 	imgs, loading := s.images.Images()
 
-	var sides []*ebiten.Image
+	var shown []*ebiten.Image
 	var labels []string
-	for i, label := range []string{"Front", "Back"} {
+	for i, f := range s.files {
 		if i < len(imgs) && imgs[i] != nil {
-			sides = append(sides, imgs[i])
-			labels = append(labels, label)
+			shown = append(shown, imgs[i])
+			labels = append(labels, artwork.Caption(f))
 		}
 	}
 
-	if len(sides) == 0 {
+	if len(shown) == 0 {
 		msg := "No artwork"
 		if loading {
 			msg = "Loading..."
@@ -121,10 +131,10 @@ func (s *ArtworkSection) Build(focus types.FocusManager) *widget.Container {
 		return empty
 	}
 
-	s.index = max(0, min(s.index, len(sides)-1))
-	s.from = max(0, min(s.from, len(sides)-1))
+	s.index = max(0, min(s.index, len(shown)-1))
+	s.from = max(0, min(s.from, len(shown)-1))
 	c := widgets.NewCarousel(widgets.CarouselOptions{
-		Images: sides,
+		Images: shown,
 		Labels: labels,
 		Index:  s.index,
 		From:   s.from,
@@ -132,7 +142,7 @@ func (s *ArtworkSection) Build(focus types.FocusManager) *widget.Container {
 		Now:    s.now,
 		Gap:    style.DefaultSpacing,
 		Peek:   4 * style.DefaultSpacing,
-		Move:   func(dir int) { s.move(dir, len(sides)) },
+		Move:   func(dir int) { s.move(dir, len(shown)) },
 	})
 
 	var keys []string

@@ -14,6 +14,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/user-none/eblitui/desktop/storage"
@@ -112,6 +114,117 @@ func TestResolveArtworkDownloadsMissingAndChanged(t *testing.T) {
 	}
 	if jobs := s.resolveArtwork(); len(jobs) != 1 {
 		t.Errorf("changed boxback: jobs = %d, want 1", len(jobs))
+	}
+}
+
+// allTypesServer serves a signed index listing T-1's front, back, disc 2
+// from Europe and flyer a, and returns the local names they are stored as
+func allTypesServer(t *testing.T, priv ed25519.PrivateKey) (*httptest.Server, map[string]string) {
+	t.Helper()
+	files := []struct{ typ, path, fields, local string }{
+		{"boxart", "boxart/T-1.webp", "", "boxart.webp"},
+		{"boxback", "boxback/T-1.webp", "", "boxback.webp"},
+		{"disc", "disc/T-1.2.eu.webp", `"disc":2,"region":"eu",`, "disc_2_eu.webp"},
+		{"flyer", "flyer/T-1.a.webp", `"variant":"a",`, "flyer_a.webp"},
+	}
+	data := map[string][]byte{}
+	locals := map[string]string{}
+	var entries []string
+	for _, f := range files {
+		d := []byte("image " + f.path)
+		data["/"+f.path] = d
+		locals[f.typ] = f.local
+		sum := sha256.Sum256(d)
+		entries = append(entries, fmt.Sprintf(`{"type":%q,"path":%q,%s"size":%d,"crc32":"%08x","sha256":"%x"}`,
+			f.typ, f.path, f.fields, len(d), crc32.ChecksumIEEE(d), sum))
+	}
+	index := []byte(`{"version":1,"games":{"T-1":[` + strings.Join(entries, ",") + `]}}`)
+	sig := "ed25519 " + base64.StdEncoding.EncodeToString(ed25519.Sign(priv, index)) + "\n"
+	srv := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/index.sig":
+			w.Write([]byte(sig))
+		case "/index.json":
+			w.Write(index)
+		default:
+			if d, ok := data[r.URL.Path]; ok {
+				w.Write(d)
+				return
+			}
+			http.NotFound(w, r)
+		}
+	}))
+	return srv, locals
+}
+
+func TestResolveArtworkDownloadLevel(t *testing.T) {
+	for _, tc := range []struct {
+		level string
+		want  []string
+	}{
+		{storage.ArtworkDownloadFront, []string{"boxart"}},
+		{storage.ArtworkDownloadCovers, []string{"boxart", "boxback"}},
+		{storage.ArtworkDownloadAll, []string{"boxart", "boxback", "disc", "flyer"}},
+	} {
+		t.Run(tc.level, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("XDG_DATA_HOME", dir)
+			t.Setenv("HOME", dir)
+			t.Setenv("APPDATA", dir)
+			priv, pub := newSigningKey(t)
+			srv, locals := allTypesServer(t, priv)
+
+			s := NewScanner(nil, nil, nil, nil, 0, true, nil, Sources{ArtworkURL: srv.URL + "/", ArtworkKeys: []string{pub}, ArtworkDownload: tc.level})
+			s.games["T-1"] = &storage.GameEntry{GameID: "T-1"}
+			jobs := s.resolveArtwork()
+			if len(jobs) != len(tc.want) {
+				t.Fatalf("jobs = %d, want %d", len(jobs), len(tc.want))
+			}
+			s.downloadAssets(jobs, ScanPhaseArtwork, "")
+
+			artDir, err := storage.GetGameArtworkDir("T-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for typ, name := range locals {
+				_, err := os.Stat(filepath.Join(artDir, name))
+				if want := slices.Contains(tc.want, typ); want != (err == nil) {
+					t.Errorf("%s: present = %v, want %v", name, err == nil, want)
+				}
+			}
+		})
+	}
+}
+
+func TestResolveArtworkKeepsOtherFiles(t *testing.T) {
+	// A lower level only limits downloads; artwork already on disk stays
+	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dir)
+	t.Setenv("HOME", dir)
+	t.Setenv("APPDATA", dir)
+	priv, pub := newSigningKey(t)
+	srv, _ := allTypesServer(t, priv)
+
+	artDir, err := storage.GetGameArtworkDir("T-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(artDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	kept := []string{"flyer_a.webp", "disc_2_eu.webp", "poster_c.webp", "boxback_jp.webp"}
+	for _, n := range kept {
+		if err := os.WriteFile(filepath.Join(artDir, n), []byte("old"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := NewScanner(nil, nil, nil, nil, 0, true, nil, Sources{ArtworkURL: srv.URL + "/", ArtworkKeys: []string{pub}, ArtworkDownload: storage.ArtworkDownloadFront})
+	s.games["T-1"] = &storage.GameEntry{GameID: "T-1"}
+	s.downloadAssets(s.resolveArtwork(), ScanPhaseArtwork, "")
+	for _, n := range kept {
+		if got, err := os.ReadFile(filepath.Join(artDir, n)); err != nil || string(got) != "old" {
+			t.Errorf("%s: %q, %v, want it left as it was", n, got, err)
+		}
 	}
 }
 

@@ -25,9 +25,9 @@ type ScanManager struct {
 	scanScreen       *screens.ScanProgressScreen
 	extensions       []string // Supported ROM file extensions
 	defaultConsoleID int
-	disc             bool                  // disc-based system (group-key identity)
-	discID           coreif.DiscIdentifier // reads disc info (may be nil)
-	sources          scanner.Sources       // where artwork and rumble files are downloaded from
+	disc             bool                   // disc-based system (group-key identity)
+	discID           coreif.DiscIdentifier  // reads disc info (may be nil)
+	sources          func() scanner.Sources // where and which artwork a scan downloads, read when it starts
 
 	// Callbacks to App
 	onProgress func() // Called when progress updates (triggers UI rebuild)
@@ -42,7 +42,7 @@ func NewScanManager(
 	defaultConsoleID int,
 	disc bool,
 	discID coreif.DiscIdentifier,
-	sources scanner.Sources,
+	sources func() scanner.Sources,
 	onProgress func(),
 	onComplete func(msg string),
 ) *ScanManager {
@@ -75,7 +75,7 @@ func (sm *ScanManager) Start() {
 		sm.defaultConsoleID,
 		sm.disc,
 		sm.discID,
-		sm.sources,
+		sm.sources(),
 	)
 
 	// Configure scan screen
@@ -138,13 +138,6 @@ func (sm *ScanManager) Update() {
 		sm.handleComplete(result)
 	default:
 		// Still running
-	}
-}
-
-// Cancel stops the current scan
-func (sm *ScanManager) Cancel() {
-	if sm.activeScanner != nil {
-		sm.activeScanner.Cancel()
 	}
 }
 

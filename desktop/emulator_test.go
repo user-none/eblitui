@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/user-none/eblitui/desktop/cheats"
+	"github.com/user-none/eblitui/desktop/storage"
 )
 
 func TestScanSources(t *testing.T) {
@@ -21,6 +22,17 @@ func TestScanSources(t *testing.T) {
 
 	if src := (&App{emu: Emulator{}}).scanSources(); src.ArtworkURL != "" || src.ArtworkKeys != nil {
 		t.Errorf("no artwork config: %+v", src)
+	}
+
+	// The artwork download setting is read from the config each time, so a
+	// change applies to the next scan
+	a := &App{emu: emu, config: storage.DefaultConfig()}
+	if src := a.scanSources(); src.ArtworkDownload != storage.ArtworkDownloadAll {
+		t.Errorf("default artwork download = %q, want %q", src.ArtworkDownload, storage.ArtworkDownloadAll)
+	}
+	a.config.Library.ArtworkDownload = storage.ArtworkDownloadFront
+	if src := a.scanSources(); src.ArtworkDownload != storage.ArtworkDownloadFront {
+		t.Errorf("changed artwork download = %q, want %q", src.ArtworkDownload, storage.ArtworkDownloadFront)
 	}
 }
 

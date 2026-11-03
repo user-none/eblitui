@@ -5,6 +5,7 @@ package settings
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
@@ -15,21 +16,29 @@ import (
 	"github.com/user-none/eblitui/desktop/widgets"
 )
 
-// LibrarySection manages ROM folder settings
+// LibrarySection manages ROM folder settings and the library's artwork
+// download setting
 type LibrarySection struct {
 	callback     types.ScreenCallback
 	library      *storage.Library
+	config       *storage.Config
 	selectedDirs map[int]bool
 	pendingScan  bool
 }
 
 // NewLibrarySection creates a new library section
-func NewLibrarySection(callback types.ScreenCallback, library *storage.Library) *LibrarySection {
+func NewLibrarySection(callback types.ScreenCallback, library *storage.Library, config *storage.Config) *LibrarySection {
 	return &LibrarySection{
 		callback:     callback,
 		library:      library,
+		config:       config,
 		selectedDirs: make(map[int]bool),
 	}
+}
+
+// SetConfig updates the config reference
+func (l *LibrarySection) SetConfig(config *storage.Config) {
+	l.config = config
 }
 
 // HasPendingScan returns true if a scan should be triggered
@@ -53,8 +62,9 @@ func (l *LibrarySection) Build(focus types.FocusManager) *widget.Container {
 	section := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewGridLayout(
 			widget.GridLayoutOpts.Columns(1),
-			// Row stretch: label=no, list=YES, buttons=no, count=no
-			widget.GridLayoutOpts.Stretch([]bool{true}, []bool{false, true, false, false}),
+			// Row stretch: folders header=no, list=YES, buttons=no,
+			// options header=no, artwork download=no, count=no
+			widget.GridLayoutOpts.Stretch([]bool{true}, []bool{false, true, false, false, false, false}),
 			widget.GridLayoutOpts.Spacing(0, style.ButtonPaddingMedium),
 		)),
 	)
@@ -119,7 +129,11 @@ func (l *LibrarySection) Build(focus types.FocusManager) *widget.Container {
 
 	section.AddChild(buttonRow)
 
-	// Game count
+	// Library options
+	section.AddChild(widgets.SectionHeader("Options"))
+	section.AddChild(l.buildArtworkDownloadRow(focus))
+
+	// Game count, the last row
 	gameCount := len(l.library.Games)
 	countText := "No games in library"
 	if gameCount == 1 {
@@ -144,6 +158,36 @@ func (l *LibrarySection) Build(focus types.FocusManager) *widget.Container {
 	return section
 }
 
+// buildArtworkDownloadRow creates the row choosing which artwork a library
+// scan downloads. It only limits downloads; artwork already on disk is
+// kept and shown.
+func (l *LibrarySection) buildArtworkDownloadRow(focus types.FocusManager) *widget.Container {
+	row := widgets.SettingsRow(2)
+
+	label := widget.NewText(
+		widget.TextOpts.Text("Artwork download", style.FontFace(), style.Text),
+		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
+	)
+	row.AddChild(label)
+
+	options := storage.ValidArtworkDownloads
+	current := l.config.Library.ArtworkDownload
+	minWidth := 0
+	for _, o := range options {
+		minWidth = max(minWidth, widgets.ButtonWidth(storage.ArtworkDownloadDisplayName(o)))
+	}
+	cycleBtn := widgets.CycleButton(storage.ArtworkDownloadDisplayName(current), slices.Index(options, current), len(options), minWidth, func(next int) {
+		l.config.Library.ArtworkDownload = options[next]
+		storage.SaveConfig(l.config)
+		focus.SetPendingFocus("lib-artwork-download")
+		l.callback.RequestRebuild()
+	})
+	focus.RegisterFocusButton("lib-artwork-download", cycleBtn)
+	row.AddChild(cycleBtn)
+
+	return row
+}
+
 // setupNavigation registers navigation zones for the library section
 func (l *LibrarySection) setupNavigation(focus types.FocusManager, folderCount int) {
 	// Folder list zone (vertical)
@@ -159,11 +203,16 @@ func (l *LibrarySection) setupNavigation(focus types.FocusManager, folderCount i
 	buttonKeys := []string{"lib-add", "lib-remove", "lib-scan", "lib-clean"}
 	focus.RegisterNavZone("lib-buttons", types.NavZoneHorizontal, buttonKeys, 0)
 
+	// Artwork download row
+	focus.RegisterNavZone("lib-artwork", types.NavZoneVertical, []string{"lib-artwork-download"}, 0)
+
 	// Transitions
 	if folderCount > 0 {
 		focus.SetNavTransition("lib-folders", types.DirDown, "lib-buttons", types.NavIndexFirst)
 		focus.SetNavTransition("lib-buttons", types.DirUp, "lib-folders", types.NavIndexLast)
 	}
+	focus.SetNavTransition("lib-buttons", types.DirDown, "lib-artwork", types.NavIndexFirst)
+	focus.SetNavTransition("lib-artwork", types.DirUp, "lib-buttons", types.NavIndexFirst)
 }
 
 // buildFolderList creates a selectable folder list with scrolling

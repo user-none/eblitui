@@ -14,12 +14,6 @@ func TestScanManagerIsScanning(t *testing.T) {
 	}
 }
 
-func TestScanManagerCancelNilScanner(t *testing.T) {
-	sm := &ScanManager{}
-	// Should not panic
-	sm.Cancel()
-}
-
 func TestGameCount(t *testing.T) {
 	for n, want := range map[int]string{0: "0 games", 1: "1 game", 2: "2 games"} {
 		if got := gameCount(n); got != want {

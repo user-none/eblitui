@@ -85,13 +85,6 @@ func (cm *CleanManager) Update() {
 	}
 }
 
-// Cancel stops the current clean
-func (cm *CleanManager) Cancel() {
-	if cm.active != nil {
-		cm.active.Cancel()
-	}
-}
-
 // handleComplete removes the missing files and the superseded box art the
 // check found, or nothing when it was cancelled (res is nil)
 func (cm *CleanManager) handleComplete(res *cleanResult) {

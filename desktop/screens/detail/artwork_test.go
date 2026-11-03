@@ -6,11 +6,13 @@ package detail
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/user-none/eblitui/desktop/artwork"
 	"github.com/user-none/eblitui/desktop/storage"
 )
 
@@ -63,6 +65,15 @@ func TestArtworkLoadsPresentSides(t *testing.T) {
 		{"back only", []string{"boxback.webp"}, []string{"boxback.webp"}},
 		{"legacy front", []string{"boxart.png"}, []string{"boxart.png"}},
 		{"none", nil, nil},
+		{"every type in display order",
+			[]string{"poster_b.webp", "poster_a.webp", "flyer.webp", "disc_2.webp", "disc_1.webp", "boxback.webp", "boxart.webp"},
+			[]string{"boxart.webp", "boxback.webp", "disc_1.webp", "disc_2.webp", "flyer.webp", "poster_a.webp", "poster_b.webp"}},
+		{"regional discs",
+			[]string{"disc_2_eu.webp", "disc_1_kr.webp", "disc_1_eu.webp", "disc_1_jp.webp", "disc_1_us.webp", "disc_2_us.webp"},
+			[]string{"disc_1_us.webp", "disc_1_jp.webp", "disc_1_eu.webp", "disc_1_kr.webp", "disc_2_us.webp", "disc_2_eu.webp"}},
+		{"other files skipped",
+			[]string{"boxart.webp", "notes.txt", "screenshot.webp", "flyer_1.webp", "disc_a.webp"},
+			[]string{"boxart.webp"}},
 	}
 	for _, tt := range tests {
 		s, cb, rec, dir := newTestArtworkSection(t, tt.files...)
@@ -160,6 +171,22 @@ func TestArtworkCarouselMoves(t *testing.T) {
 	s.SetGame(&storage.GameEntry{GameID: "T-2"})
 	if s.index != 0 || s.from != 0 {
 		t.Errorf("SetGame left index %d from %d", s.index, s.from)
+	}
+}
+
+func TestArtworkListsFilesWithCaptions(t *testing.T) {
+	s, _ := newLoadedArtworkSection(t, "flyer_b.webp", "disc_us.webp", "boxart.webp", "disc_eu.webp", "flyer_a.webp")
+	var got []string
+	for _, f := range s.files {
+		got = append(got, filepath.Base(f.Path)+"="+artwork.Caption(f))
+	}
+	want := []string{"boxart.webp=Front", "disc_us.webp=Disc (USA)", "disc_eu.webp=Disc (Europe)", "flyer_a.webp=Flyer A", "flyer_b.webp=Flyer B"}
+	if strings.Join(got, ", ") != strings.Join(want, ", ") {
+		t.Errorf("files = %v, want %v", got, want)
+	}
+	imgs, _ := s.images.Images()
+	if len(imgs) != len(s.files) {
+		t.Errorf("%d textures for %d files", len(imgs), len(s.files))
 	}
 }
 

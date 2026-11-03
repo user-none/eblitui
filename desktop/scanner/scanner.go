@@ -45,12 +45,13 @@ type ScanResult struct {
 	Cancelled bool
 }
 
-// Sources are where a scan downloads artwork from. An empty URL turns
-// artwork downloads off; the app leaves it empty when the emulator does
-// not publish artwork.
+// Sources are where a scan downloads artwork from, and which artwork. An
+// empty URL turns artwork downloads off; the app leaves it empty when the
+// emulator does not publish artwork.
 type Sources struct {
-	ArtworkURL  string   // HTTPS base URL of the artwork site
-	ArtworkKeys []string // keys trusted to sign the artwork index, as algorithm:base64
+	ArtworkURL      string   // HTTPS base URL of the artwork site
+	ArtworkKeys     []string // keys trusted to sign the artwork index, as algorithm:base64
+	ArtworkDownload string   // which images to download: a storage.ArtworkDownload* setting
 }
 
 // Scanner handles ROM scanning in the background
@@ -429,10 +430,11 @@ func discLabelFromFilename(filename string) string {
 }
 
 // resolveArtwork checks the artwork of every game found by this scan against
-// the artwork index and returns downloads for the images that are missing
-// locally or differ from the index. An index that cannot be fetched, does
-// not verify against the artwork keys, or cannot be read is logged; no
-// local file is changed then.
+// the artwork index and returns downloads for the images of the types the
+// artwork download setting includes that are missing locally or differ
+// from the index. No local file is removed. An index that cannot be
+// fetched, does not verify against the artwork keys, or cannot be read is
+// logged; no local file is changed then.
 func (s *Scanner) resolveArtwork() []resolvedJob {
 	baseURL := s.sources.ArtworkURL
 	if baseURL == "" || s.isCancelled() {
@@ -447,6 +449,8 @@ func (s *Scanner) resolveArtwork() []resolvedJob {
 		log.Printf("Artwork index %s: %v", baseURL, err)
 		return nil
 	}
+
+	types := artwork.DownloadTypes(s.sources.ArtworkDownload)
 
 	s.mu.Lock()
 	gameIDs := make([]string, 0, len(s.games))
@@ -465,7 +469,7 @@ func (s *Scanner) resolveArtwork() []resolvedJob {
 		if err != nil {
 			continue
 		}
-		for _, f := range ix.Files(gameID) {
+		for _, f := range ix.Files(gameID, types) {
 			if !artwork.NeedsDownload(dir, f) {
 				continue
 			}

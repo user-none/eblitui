@@ -98,6 +98,9 @@ func TestDefaultConfig(t *testing.T) {
 	if config.Library.ViewMode != "icon" {
 		t.Errorf("expected view mode 'icon', got '%s'", config.Library.ViewMode)
 	}
+	if config.Library.ArtworkDownload != ArtworkDownloadAll {
+		t.Errorf("expected artwork download %q, got %q", ArtworkDownloadAll, config.Library.ArtworkDownload)
+	}
 }
 
 func TestDefaultLibrary(t *testing.T) {

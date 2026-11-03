@@ -59,7 +59,7 @@ The app is a state machine that transitions between screens:
 | State | Screen | Description |
 |---|---|---|
 | `StateLibrary` | Library | Game grid/list with artwork, search, and sorting |
-| `StateDetail` | Detail | Box art over the page sidebar: Overview (game info, discs, achievement progress), Artwork (box art and box back), Cheats, Settings, and Screenshots |
+| `StateDetail` | Detail | Box art over the page sidebar: Overview (game info, discs, achievement progress), Artwork (covers, discs, flyers and posters on disk), Cheats, Settings, and Screenshots |
 | `StateSettings` | Settings | Tabbed configuration (Library, Appearance, Video, Audio, Rewind, RetroAchievements) |
 | `StateScanProgress` | Scan Progress | ROM scanning with discovery and artwork phases |
 | `StateError` | Error | Startup error handling (corrupted config recovery) |
@@ -78,14 +78,23 @@ The app is a state machine that transitions between screens:
   and a game without metadata shows its file name
 - Artwork downloaded during library scans from the emulator's artwork site
   (`Emulator.Artwork`): the site's `index.json` lists each game ID's images
-  with their size, CRC-32, and SHA-256. The index is used only when
-  `index.sig` holds a valid signature by one of the artwork `Keys`;
-  otherwise no artwork is downloaded. A scan downloads the box art and box
-  back that are missing or
-  whose size or CRC-32 differs from the index, and keeps a download only
-  when its size and SHA-256 match. Box art larger than 4096x4096 is not
-  decoded. A game without `boxart.webp` shows its older `boxart.png`,
-  which Clean Library removes once `boxart.webp` is present
+  (front and back covers, discs, flyers, posters) with the values that tell
+  images of one type apart (disc number, region, variant letter), and their
+  size, CRC-32, and SHA-256. The index is used only when `index.sig` holds
+  a valid signature by one of the artwork `Keys`; otherwise no artwork is
+  downloaded. A scan downloads the images that are missing or whose size or
+  CRC-32 differs from the index, and keeps a download only when its size
+  and SHA-256 match. The Library setting "Artwork download" limits which
+  images a scan downloads (front cover, covers, or all artwork); it never
+  removes artwork already on disk. Images are stored under names built from
+  the index values, such as `disc_2_eu.webp` or `flyer_b.webp`. Images
+  larger than 4096x4096 are not decoded
+- The library and the detail sidebar show the front cover: one without a
+  region first, then USA, Japan, Europe, and any other region. The detail
+  Artwork page shows every image on disk, in order front, back, discs,
+  flyers, posters, by disc number, region and variant. A game without
+  `boxart.webp` shows its older `boxart.png`, which Clean Library removes
+  once `boxart.webp` is present
 - Grid (icon) and list view modes
 - Sort by title, last played, or play time
 - Favorites filter
@@ -258,7 +267,7 @@ Directory structure:
     library.json     - Game library and scan state
     removed.json     - User data of games removed from the library
     gamesettings/    - Per-game settings (save state slot, cheat choices, setting overrides)
-    artwork/         - Game artwork images, a directory per game (boxart.webp, boxback.webp)
+    artwork/         - Game artwork images, a directory per game (<type>[_<disc>][_<region>][_<variant>].webp)
     saves/           - SRAM and save state files
     screenshots/     - Screenshot captures
 ```
@@ -299,7 +308,7 @@ corruption.
 | `achievements` | RetroAchievements manager and unlock sounds |
 | `filebrowser` | Directory listing, path input parsing and sidebar places for the file picker |
 | `scanner` | Background ROM scanning and artwork downloads |
-| `artwork` | The artwork index format, which artwork files to download, and box art lookup |
+| `artwork` | The artwork index format, which artwork files to download, local artwork listing and captions, and box art lookup |
 | `signing` | Signing key parsing and detached signature verification for the update manifest and the artwork index |
 | `metadata` | The emulator's game metadata, and title and region resolution |
 | `content` | The game metadata and cheat types, and the source interfaces an emulator supplies metadata, cheats, and rumble files through |

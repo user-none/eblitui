@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/user-none/eblitui/desktop/signing"
+	"github.com/user-none/eblitui/desktop/storage"
 )
 
 // validSHA is a well-formed SHA-256 for entries whose hash is not checked
@@ -46,31 +47,72 @@ func fileJSON(typ, path string, size int, crc, sha string) string {
 	return fmt.Sprintf(`{"type":%q,"path":%q,"size":%d,"crc32":%q,"sha256":%q}`, typ, path, size, crc, sha)
 }
 
+// fieldsJSON returns one valid index entry of typ at path with the extra
+// JSON members fields, such as `"disc":2,"region":"eu"`
+func fieldsJSON(typ, path, fields string) string {
+	return fmt.Sprintf(`{"type":%q,"path":%q,%s,"size":10,"crc32":"0a1b2c3d","sha256":%q}`, typ, path, fields, validSHA)
+}
+
 func TestParse(t *testing.T) {
-	ix, err := Parse(indexJSON(fileJSON("boxart", "boxart/T-1.webp", 10, "0a1b2c3d", validSHA)))
+	ix, err := Parse(indexJSON(fileJSON("boxart", "boxart/T-1.webp", 10, "0a1b2c3d", validSHA) + "," +
+		fieldsJSON("disc", "disc/T-1.2.eu.webp", `"disc":2,"region":"eu"`) + "," +
+		fieldsJSON("flyer", "flyer/T-1.b.webp", `"variant":"b"`)))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if f := ix.Games["T-1"]; len(f) != 1 || f[0].Path != "boxart/T-1.webp" || f[0].Size != 10 {
-		t.Errorf("games = %+v", ix.Games)
+	f := ix.Games["T-1"]
+	if len(f) != 3 || f[0].Path != "boxart/T-1.webp" || f[0].Size != 10 {
+		t.Fatalf("games = %+v", ix.Games)
+	}
+	if f[1].Disc != 2 || f[1].Region != "eu" || f[1].Variant != "" {
+		t.Errorf("disc entry = %+v, want disc 2 region eu", f[1])
+	}
+	if f[2].Variant != "b" || f[2].Disc != 0 || f[2].Region != "" {
+		t.Errorf("flyer entry = %+v, want variant b", f[2])
 	}
 }
 
 func TestParseRejects(t *testing.T) {
 	for name, data := range map[string]string{
-		"version":   `{"version":2,"games":{}}`,
-		"not json":  `{"version":1,`,
-		"absolute":  string(indexJSON(fileJSON("boxart", "/boxart/T-1.webp", 10, "0a1b2c3d", validSHA))),
-		"parent":    string(indexJSON(fileJSON("boxart", "../x.webp", 10, "0a1b2c3d", validSHA))),
-		"extension": string(indexJSON(fileJSON("boxart", "boxart/T-1.exe", 10, "0a1b2c3d", validSHA))),
-		"crc":       string(indexJSON(fileJSON("boxart", "boxart/T-1.webp", 10, "XYZ", validSHA))),
-		"sha256":    string(indexJSON(fileJSON("boxart", "boxart/T-1.webp", 10, "0a1b2c3d", "x"))),
-		"size":      string(indexJSON(fileJSON("boxart", "boxart/T-1.webp", 0, "0a1b2c3d", validSHA))),
-		"type":      string(indexJSON(fileJSON("../boxart", "boxart/T-1.webp", 10, "0a1b2c3d", validSHA))),
+		"version":          `{"version":2,"games":{}}`,
+		"not json":         `{"version":1,`,
+		"absolute":         string(indexJSON(fileJSON("boxart", "/boxart/T-1.webp", 10, "0a1b2c3d", validSHA))),
+		"parent":           string(indexJSON(fileJSON("boxart", "../x.webp", 10, "0a1b2c3d", validSHA))),
+		"extension":        string(indexJSON(fileJSON("boxart", "boxart/T-1.exe", 10, "0a1b2c3d", validSHA))),
+		"crc":              string(indexJSON(fileJSON("boxart", "boxart/T-1.webp", 10, "XYZ", validSHA))),
+		"sha256":           string(indexJSON(fileJSON("boxart", "boxart/T-1.webp", 10, "0a1b2c3d", "x"))),
+		"size":             string(indexJSON(fileJSON("boxart", "boxart/T-1.webp", 0, "0a1b2c3d", validSHA))),
+		"type":             string(indexJSON(fileJSON("../boxart", "boxart/T-1.webp", 10, "0a1b2c3d", validSHA))),
+		"negative disc":    string(indexJSON(fieldsJSON("disc", "disc/T-1.webp", `"disc":-1`))),
+		"disc on boxart":   string(indexJSON(fieldsJSON("boxart", "boxart/T-1.webp", `"disc":2`))),
+		"disc on flyer":    string(indexJSON(fieldsJSON("flyer", "flyer/T-1.webp", `"disc":2`))),
+		"region path":      string(indexJSON(fieldsJSON("disc", "disc/T-1.webp", `"region":"../x"`))),
+		"region one":       string(indexJSON(fieldsJSON("disc", "disc/T-1.webp", `"region":"e"`))),
+		"region upper":     string(indexJSON(fieldsJSON("boxart", "boxart/T-1.webp", `"region":"EU"`))),
+		"region on flyer":  string(indexJSON(fieldsJSON("flyer", "flyer/T-1.webp", `"region":"eu"`))),
+		"region on poster": string(indexJSON(fieldsJSON("poster", "poster/T-1.webp", `"region":"eu"`))),
+		"variant two":      string(indexJSON(fieldsJSON("flyer", "flyer/T-1.webp", `"variant":"ab"`))),
+		"variant upper":    string(indexJSON(fieldsJSON("flyer", "flyer/T-1.webp", `"variant":"B"`))),
+		"variant digit":    string(indexJSON(fieldsJSON("poster", "poster/T-1.webp", `"variant":"1"`))),
+		"variant path":     string(indexJSON(fieldsJSON("flyer", "flyer/T-1.webp", `"variant":"/"`))),
+		"variant on disc":  string(indexJSON(fieldsJSON("disc", "disc/T-1.webp", `"variant":"a"`))),
+		"variant on box":   string(indexJSON(fieldsJSON("boxback", "boxback/T-1.webp", `"variant":"a"`))),
 	} {
 		if _, err := Parse([]byte(data)); err == nil {
 			t.Errorf("%s: parsed without an error", name)
 		}
+	}
+}
+
+func TestParseIgnoresUnknownTypeFields(t *testing.T) {
+	// Fields of a type this build does not know are not evaluated; the
+	// entry is never used
+	ix, err := Parse(indexJSON(fieldsJSON("screenshot", "screenshot/T-1.webp", `"disc":3,"region":"X","variant":"zz"`)))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got := ix.Files("T-1", DownloadTypes(storage.ArtworkDownloadAll)); len(got) != 0 {
+		t.Errorf("unknown type used: %+v", got)
 	}
 }
 
@@ -187,22 +229,80 @@ func TestFileURL(t *testing.T) {
 
 func TestFiles(t *testing.T) {
 	ix := &Index{Version: 1, Games: map[string][]File{"T-1": {
-		{Type: "poster", Path: "poster/T-1.webp"},
-		{Type: "boxback", Path: "boxback/T-1.webp"},
-		{Type: "boxart", Path: "boxart/T-1.disc2.webp", Disc: 2},
 		{Type: "boxart", Path: "boxart/T-1.webp"},
-		{Type: "boxart", Path: "boxart/T-1.alt1.webp"},
+		{Type: "boxback", Path: "boxback/T-1.webp"},
+		{Type: "disc", Path: "disc/T-1.1.eu.webp", Disc: 1, Region: "eu"},
+		{Type: "disc", Path: "disc/T-1.1.us.webp", Disc: 1, Region: "us"},
+		{Type: "flyer", Path: "flyer/T-1.a.webp", Variant: "a"},
+		{Type: "flyer", Path: "flyer/T-1.b.webp", Variant: "b"},
+		{Type: "poster", Path: "poster/T-1.webp"},
+		{Type: "screenshot", Path: "screenshot/T-1.webp"},
 	}}}
-	got := ix.Files("T-1")
-	if len(got) != 2 || got[0].Path != "boxart/T-1.webp" || got[1].Path != "boxback/T-1.webp" {
-		t.Errorf("Files = %+v, want the default boxart then boxback", got)
+	paths := func(fs []File) []string {
+		var out []string
+		for _, f := range fs {
+			out = append(out, f.Path)
+		}
+		return out
 	}
-	if got := ix.Files("T-2"); got != nil {
+	for _, tc := range []struct {
+		level string
+		want  []string
+	}{
+		{storage.ArtworkDownloadFront, []string{"boxart/T-1.webp"}},
+		{storage.ArtworkDownloadCovers, []string{"boxart/T-1.webp", "boxback/T-1.webp"}},
+		{storage.ArtworkDownloadAll, []string{"boxart/T-1.webp", "boxback/T-1.webp", "disc/T-1.1.eu.webp", "disc/T-1.1.us.webp",
+			"flyer/T-1.a.webp", "flyer/T-1.b.webp", "poster/T-1.webp"}},
+	} {
+		got := paths(ix.Files("T-1", DownloadTypes(tc.level)))
+		if strings.Join(got, " ") != strings.Join(tc.want, " ") {
+			t.Errorf("%s: Files = %v, want %v", tc.level, got, tc.want)
+		}
+	}
+	if got := ix.Files("T-2", DownloadTypes(storage.ArtworkDownloadAll)); got != nil {
 		t.Errorf("unlisted game: %+v", got)
 	}
 	var nilIndex *Index
-	if got := nilIndex.Files("T-1"); got != nil {
+	if got := nilIndex.Files("T-1", DownloadTypes(storage.ArtworkDownloadAll)); got != nil {
 		t.Errorf("nil index: %+v", got)
+	}
+}
+
+func TestDownloadTypes(t *testing.T) {
+	for level, want := range map[string]string{
+		storage.ArtworkDownloadFront:  "boxart",
+		storage.ArtworkDownloadCovers: "boxart boxback",
+		storage.ArtworkDownloadAll:    "boxart boxback disc flyer poster",
+		"":                            "boxart boxback disc flyer poster",
+	} {
+		if got := strings.Join(DownloadTypes(level), " "); got != want {
+			t.Errorf("DownloadTypes(%q) = %q, want %q", level, got, want)
+		}
+	}
+}
+
+func TestLocalName(t *testing.T) {
+	for _, tc := range []struct {
+		f    File
+		want string
+	}{
+		{File{Type: "boxart", Path: "boxart/T-1.webp"}, "boxart.webp"},
+		{File{Type: "boxart", Path: "boxart/T-1.eu.webp", Region: "eu"}, "boxart_eu.webp"},
+		{File{Type: "boxback", Path: "boxback/T-1.PNG"}, "boxback.png"},
+		{File{Type: "disc", Path: "disc/T-1.webp"}, "disc.webp"},
+		{File{Type: "disc", Path: "disc/T-1.us.webp", Region: "us"}, "disc_us.webp"},
+		{File{Type: "disc", Path: "disc/T-1.2.webp", Disc: 2}, "disc_2.webp"},
+		{File{Type: "disc", Path: "disc/T-1.2.eu.webp", Disc: 2, Region: "eu"}, "disc_2_eu.webp"},
+		{File{Type: "disc", Path: "disc/T-1.10.kr.webp", Disc: 10, Region: "kr"}, "disc_10_kr.webp"},
+		{File{Type: "flyer", Path: "flyer/T-1.webp"}, "flyer.webp"},
+		{File{Type: "flyer", Path: "flyer/T-1.b.webp", Variant: "b"}, "flyer_b.webp"},
+		{File{Type: "poster", Path: "poster/T-1.a.webp", Variant: "a"}, "poster_a.webp"},
+		// The fields name the file, not the path
+		{File{Type: "disc", Path: "disc/whatever.name.webp", Disc: 3}, "disc_3.webp"},
+	} {
+		if got := LocalName(tc.f); got != tc.want {
+			t.Errorf("LocalName(%+v) = %q, want %q", tc.f, got, tc.want)
+		}
 	}
 }
 
@@ -263,7 +363,7 @@ func TestSupersededBoxArt(t *testing.T) {
 
 func TestBoxArtPath(t *testing.T) {
 	dir := t.TempDir()
-	if got := BoxArtPath(dir); filepath.Base(got) != "boxart.webp" {
+	if got := BoxArtPath(dir); got != filepath.Join(dir, "boxart.webp") {
 		t.Errorf("none: %s", got)
 	}
 	touch(t, dir, "boxart.png")
@@ -274,12 +374,85 @@ func TestBoxArtPath(t *testing.T) {
 	if got := BoxArtPath(dir); filepath.Base(got) != "boxart.webp" {
 		t.Errorf("both: %s", got)
 	}
+
+	// Regional fronts: USA, then Japan, then Europe, then any other; a
+	// front with no region comes first
+	dir = t.TempDir()
+	steps := []struct{ add, want string }{
+		{"boxart_kr.webp", "boxart_kr.webp"},
+		{"boxart_eu.webp", "boxart_eu.webp"},
+		{"boxart_jp.webp", "boxart_jp.webp"},
+		{"boxart_us.webp", "boxart_us.webp"},
+		{"boxart.webp", "boxart.webp"},
+	}
+	for _, s := range steps {
+		touch(t, dir, s.add)
+		if got := BoxArtPath(dir); filepath.Base(got) != s.want {
+			t.Errorf("after adding %s: %s, want %s", s.add, filepath.Base(got), s.want)
+		}
+	}
 }
 
-func TestBoxBackPath(t *testing.T) {
+func TestLocalFiles(t *testing.T) {
 	dir := t.TempDir()
-	if got := BoxBackPath(dir); got != filepath.Join(dir, "boxback.webp") {
-		t.Errorf("BoxBackPath = %s", got)
+	touch(t, dir,
+		"poster.webp", "flyer_b.webp", "flyer_a.webp",
+		"disc_2_eu.webp", "disc_2_us.webp", "disc_1_kr.webp", "disc_1_eu.webp", "disc_1_us.webp", "disc_1_jp.webp",
+		"boxback_eu.webp", "boxback_us.webp",
+		"boxart.png", "boxart.webp",
+		// Not artwork this build shows
+		"notes.txt", "screenshot.webp", "disc_a.webp", "flyer_ab.webp", "flyer_1.webp", "boxart_1.webp",
+		"disc_0.webp", "disc_x_.webp", "boxart.exe", ".hidden.webp")
+	if err := os.Mkdir(filepath.Join(dir, "disc.webp"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var got []string
+	for _, f := range LocalFiles(dir) {
+		got = append(got, filepath.Base(f.Path)+"="+Caption(f))
+	}
+	want := []string{
+		"boxart.webp=Front",
+		"boxback_us.webp=Back (USA)",
+		"boxback_eu.webp=Back (Europe)",
+		"disc_1_us.webp=Disc 1 (USA)",
+		"disc_1_jp.webp=Disc 1 (Japan)",
+		"disc_1_eu.webp=Disc 1 (Europe)",
+		"disc_1_kr.webp=Disc 1 (Other)",
+		"disc_2_us.webp=Disc 2 (USA)",
+		"disc_2_eu.webp=Disc 2 (Europe)",
+		"flyer_a.webp=Flyer A",
+		"flyer_b.webp=Flyer B",
+		"poster.webp=Poster",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("LocalFiles =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+
+	if got := LocalFiles(filepath.Join(t.TempDir(), "none")); got != nil {
+		t.Errorf("missing directory: %+v", got)
+	}
+}
+
+func TestCaption(t *testing.T) {
+	for _, tc := range []struct {
+		f    LocalFile
+		want string
+	}{
+		{LocalFile{Type: "boxart"}, "Front"},
+		{LocalFile{Type: "boxart", Region: "jp"}, "Front (Japan)"},
+		{LocalFile{Type: "boxback"}, "Back"},
+		{LocalFile{Type: "disc"}, "Disc"},
+		{LocalFile{Type: "disc", Region: "eu"}, "Disc (Europe)"},
+		{LocalFile{Type: "disc", Disc: 2}, "Disc 2"},
+		{LocalFile{Type: "disc", Disc: 2, Region: "br"}, "Disc 2 (Other)"},
+		{LocalFile{Type: "flyer"}, "Flyer"},
+		{LocalFile{Type: "flyer", Variant: "c"}, "Flyer C"},
+		{LocalFile{Type: "poster", Variant: "a"}, "Poster A"},
+	} {
+		if got := Caption(tc.f); got != tc.want {
+			t.Errorf("Caption(%+v) = %q, want %q", tc.f, got, tc.want)
+		}
 	}
 }
 

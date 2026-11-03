@@ -468,13 +468,17 @@ func (a *App) startAchievementAutoLogin() {
 	}()
 }
 
-// scanSources returns where scans download artwork from: the emulator's
-// artwork config
+// scanSources returns where a scan downloads artwork from, the emulator's
+// artwork config, and which artwork, the library's artwork download
+// setting
 func (a *App) scanSources() scanner.Sources {
 	var src scanner.Sources
 	if a.emu.Artwork != nil {
 		src.ArtworkURL = a.emu.Artwork.URL
 		src.ArtworkKeys = append([]string(nil), a.emu.Artwork.Keys...)
+	}
+	if a.config != nil {
+		src.ArtworkDownload = a.config.Library.ArtworkDownload
 	}
 	return src
 }
@@ -489,8 +493,8 @@ func (a *App) newScanManager() *ScanManager {
 		a.emu.RetroAchievementsConsoleID,
 		a.systemInfo.Disc,
 		discIdentifier(a.factory),
-		a.scanSources(),
-		func() { a.rebuildCurrentScreen() }, // onProgress
+		a.scanSources,
+		nil, // onProgress: the scan screen updates its widgets in place
 		func(msg string) { // onComplete
 			a.libraryScreen.ClearArtworkCache()
 			a.state = StateSettings
@@ -508,7 +512,7 @@ func (a *App) newCleanManager() *CleanManager {
 	return NewCleanManager(
 		a.library,
 		a.scanScreen,
-		func() { a.rebuildCurrentScreen() }, // onProgress
+		nil, // onProgress: the scan screen updates its widgets in place
 		func(msg string) { // onComplete
 			a.state = StateSettings
 			a.rebuildCurrentScreen()
@@ -1045,12 +1049,10 @@ func (a *App) handleGamepadBack() {
 			return
 		}
 		a.SwitchToLibrary()
-	case StateScanProgress:
-		// Cancel scan and return to settings
-		a.scanManager.Cancel()
-	case StateCleanProgress:
-		// Cancel clean and return to settings
-		a.cleanManager.Cancel()
+	case StateScanProgress, StateCleanProgress:
+		// Cancel the scan or clean, as the Cancel button does; settings
+		// show once it has stopped
+		a.scanScreen.Cancel()
 	case StateFilePicker:
 		a.filePicker.Cancel()
 	}

@@ -233,6 +233,32 @@ type LibraryView struct {
 	ViewMode        string `json:"viewMode"`        // "icon" or "list"
 	SortBy          string `json:"sortBy"`          // "title", "lastPlayed", "playTime"
 	FavoritesFilter bool   `json:"favoritesFilter"` // Show only favorites
+	ArtworkDownload string `json:"artworkDownload"` // which artwork a scan downloads: one of ValidArtworkDownloads
+}
+
+// Artwork download settings: which images a library scan downloads. They
+// only limit downloads; artwork already on disk is kept and shown.
+const (
+	ArtworkDownloadFront  = "front"  // the front cover
+	ArtworkDownloadCovers = "covers" // the front and back covers
+	ArtworkDownloadAll    = "all"    // the covers, discs, flyers and posters
+)
+
+// ValidArtworkDownloads lists the artwork download settings, from least to
+// most downloaded
+var ValidArtworkDownloads = []string{ArtworkDownloadFront, ArtworkDownloadCovers, ArtworkDownloadAll}
+
+// ArtworkDownloadDisplayName returns a user-facing label for an artwork
+// download setting
+func ArtworkDownloadDisplayName(setting string) string {
+	switch setting {
+	case ArtworkDownloadFront:
+		return "Front cover"
+	case ArtworkDownloadCovers:
+		return "Covers"
+	default:
+		return "All artwork"
+	}
 }
 
 // Library represents the game library stored in library.json
@@ -316,6 +342,7 @@ func DefaultConfig() *Config {
 			ViewMode:        "icon",
 			SortBy:          "title",
 			FavoritesFilter: false,
+			ArtworkDownload: ArtworkDownloadAll,
 		},
 		Shaders: ShaderConfig{
 			UIShaders:   []string{},

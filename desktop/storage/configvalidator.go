@@ -6,6 +6,7 @@ package storage
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 )
 
 // detectPresentKeys unmarshals JSON bytes to determine which config keys
@@ -61,6 +62,9 @@ func detectPresentKeys(jsonBytes []byte) map[string]bool {
 			}
 			if _, ok := library["sortBy"]; ok {
 				present["library.sortBy"] = true
+			}
+			if _, ok := library["artworkDownload"]; ok {
+				present["library.artworkDownload"] = true
 			}
 		}
 	}
@@ -122,6 +126,9 @@ func ApplyMissingDefaults(config *Config, presentKeys map[string]bool) {
 	}
 	if !presentKeys["library.sortBy"] {
 		config.Library.SortBy = defaults.Library.SortBy
+	}
+	if !presentKeys["library.artworkDownload"] {
+		config.Library.ArtworkDownload = defaults.Library.ArtworkDownload
 	}
 	if !presentKeys["rewind.bufferSizeMB"] {
 		config.Rewind.BufferSizeMB = defaults.Rewind.BufferSizeMB
@@ -189,6 +196,11 @@ func ValidateConfig(config *Config, validThemes []string) []string {
 	// library.sortBy
 	if config.Library.SortBy != "title" && config.Library.SortBy != "lastPlayed" && config.Library.SortBy != "playTime" {
 		errors = append(errors, fmt.Sprintf("library.sortBy: %q (valid: \"title\", \"lastPlayed\", \"playTime\")", config.Library.SortBy))
+	}
+
+	// library.artworkDownload
+	if !slices.Contains(ValidArtworkDownloads, config.Library.ArtworkDownload) {
+		errors = append(errors, fmt.Sprintf("library.artworkDownload: %q (valid: %v)", config.Library.ArtworkDownload, ValidArtworkDownloads))
 	}
 
 	// rewind.bufferSizeMB
@@ -390,6 +402,11 @@ func CorrectConfig(config *Config, validThemes []string) *Config {
 	// library.sortBy
 	if config.Library.SortBy != "title" && config.Library.SortBy != "lastPlayed" && config.Library.SortBy != "playTime" {
 		config.Library.SortBy = defaults.Library.SortBy
+	}
+
+	// library.artworkDownload
+	if !slices.Contains(ValidArtworkDownloads, config.Library.ArtworkDownload) {
+		config.Library.ArtworkDownload = defaults.Library.ArtworkDownload
 	}
 
 	// rewind.bufferSizeMB

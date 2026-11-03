@@ -44,7 +44,7 @@ type SettingsScreen struct {
 func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config *storage.Config, achievementMgr *achievements.Manager, serializeSize int, systemInfo coreif.SystemInfo, appName, appVersion string, appIcon []byte, updates types.Updates) *SettingsScreen {
 	s := &SettingsScreen{
 		callback:   callback,
-		library:    settings.NewLibrarySection(callback, library),
+		library:    settings.NewLibrarySection(callback, library, config),
 		appearance: settings.NewAppearanceSection(callback, config),
 		audio:      settings.NewAudioSection(callback, config, systemInfo),
 		rewind:     settings.NewRewindSection(callback, config, serializeSize),
@@ -114,6 +114,7 @@ func (s *SettingsScreen) SetLibrary(library *storage.Library) {
 
 // SetConfig updates the config reference in all config-dependent sections
 func (s *SettingsScreen) SetConfig(config *storage.Config) {
+	s.library.SetConfig(config)
 	s.appearance.SetConfig(config)
 	s.video.SetConfig(config)
 	s.audio.SetConfig(config)
@@ -245,6 +246,7 @@ func (s *SettingsScreen) setupLibraryNav() {
 	s.SetNavTransition(sidebarZone, types.DirRight, "lib-folders", types.NavIndexFirst)
 	s.SetNavTransition("lib-folders", types.DirLeft, sidebarZone, types.NavIndexFirst)
 	s.SetNavTransition("lib-buttons", types.DirLeft, sidebarZone, types.NavIndexFirst)
+	s.SetNavTransition("lib-artwork", types.DirLeft, sidebarZone, types.NavIndexFirst)
 }
 
 func (s *SettingsScreen) setupAppearanceNav() {
