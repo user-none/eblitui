@@ -117,7 +117,6 @@ func (sm *ScanManager) Update() {
 	case progress := <-sm.activeScanner.Progress():
 		// Convert scanner.ScanProgress to screens.ScanProgress
 		sm.scanScreen.UpdateProgress(screens.ScanProgress{
-			Phase:            int(progress.Phase),
 			Progress:         progress.Progress,
 			CountText:        "Found: " + gameCount(progress.GamesFound),
 			DownloadTotal:    progress.DownloadTotal,

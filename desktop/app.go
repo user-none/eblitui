@@ -21,6 +21,7 @@ import (
 	"github.com/user-none/eblitui/desktop/content"
 	"github.com/user-none/eblitui/desktop/display"
 	"github.com/user-none/eblitui/desktop/metadata"
+	"github.com/user-none/eblitui/desktop/netutil"
 	"github.com/user-none/eblitui/desktop/scanner"
 	"github.com/user-none/eblitui/desktop/screens"
 	"github.com/user-none/eblitui/desktop/shader"
@@ -68,8 +69,7 @@ type App struct {
 	// State to return to when the file picker closes
 	pickerReturnState AppState
 
-	// Game metadata from the core, and the download repos for artwork,
-	// rumble, and cheats
+	// Game metadata from the emulator's metadata source
 	metadata *metadata.MetadataManager
 
 	// Gameplay (emulation, input, save states, pause menu)
@@ -239,6 +239,10 @@ func newApp(factory coreif.CoreFactory, info coreif.SystemInfo, emu Emulator) (*
 		hasMemory:       memory,
 		padMappingTried: make(map[string]bool),
 	}
+
+	// Artwork and update downloads identify the app as the RetroAchievements
+	// requests do: AppName/Version
+	netutil.SetUserAgent(fmt.Sprintf("%s/%s", emu.Name, Version))
 
 	if err := app.initStorage(); err != nil {
 		return nil, err

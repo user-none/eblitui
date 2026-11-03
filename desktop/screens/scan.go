@@ -14,10 +14,9 @@ import (
 
 // ScanProgress represents progress updates from a library scan or clean
 type ScanProgress struct {
-	Phase            int
 	Progress         float64
 	CountText        string // Games counted so far, such as "Found: 3 games"
-	DownloadTotal    int
+	DownloadTotal    int    // files to download; 0 outside the artwork download phase
 	DownloadComplete int
 	StatusText       string
 }
@@ -33,7 +32,6 @@ type Scanner interface {
 // button's press and release.
 type ScanProgressScreen struct {
 	scanner          Scanner
-	phase            int
 	progress         float64
 	countText        string
 	downloadTotal    int
@@ -67,7 +65,6 @@ func (s *ScanProgressScreen) SetScanner(scanner Scanner) {
 // UpdateProgress updates the screen with new progress information, in
 // place when the screen is built
 func (s *ScanProgressScreen) UpdateProgress(p ScanProgress) {
-	s.phase = p.Phase
 	s.progress = p.Progress
 	s.countText = p.CountText
 	s.downloadTotal = p.DownloadTotal
@@ -142,7 +139,7 @@ func (s *ScanProgressScreen) Build() *widget.Container {
 	)
 	centerContent.AddChild(countLabel)
 
-	// Download status (shown during the artwork and rumble download phases)
+	// Download status (shown during the artwork download phase)
 	downloadLabel := widget.NewText(
 		widget.TextOpts.Text("", style.FontFace(), style.Text),
 		widget.TextOpts.Position(widget.TextPositionCenter, widget.TextPositionCenter),
@@ -191,7 +188,7 @@ func (s *ScanProgressScreen) refresh() {
 	s.percentLabel.Label = fmt.Sprintf("%.0f%%", s.progress*100)
 	s.countLabel.Label = s.countText
 
-	if s.phase >= 2 && s.downloadTotal > 0 {
+	if s.downloadTotal > 0 {
 		s.downloadLabel.Label = fmt.Sprintf("Checking: %d/%d", s.downloadComplete, s.downloadTotal)
 		s.downloadLabel.GetWidget().SetVisibility(widget.Visibility_Show)
 	} else {

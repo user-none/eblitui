@@ -24,7 +24,7 @@ func TestScanProgressUpdatesInPlace(t *testing.T) {
 	s.Build()
 	status, count, download := s.statusLabel, s.countLabel, s.downloadLabel
 
-	s.UpdateProgress(ScanProgress{Phase: 2, Progress: 0.5, CountText: "Found: 3 games", DownloadTotal: 10, DownloadComplete: 4, StatusText: "Downloading artwork..."})
+	s.UpdateProgress(ScanProgress{Progress: 0.5, CountText: "Found: 3 games", DownloadTotal: 10, DownloadComplete: 4, StatusText: "Downloading artwork..."})
 	if s.statusLabel != status || s.countLabel != count || s.downloadLabel != download {
 		t.Fatal("progress update replaced the widgets")
 	}
@@ -35,9 +35,9 @@ func TestScanProgressUpdatesInPlace(t *testing.T) {
 		t.Errorf("download label %q visible %v", download.Label, visible(download))
 	}
 
-	s.UpdateProgress(ScanProgress{Phase: 1, Progress: 0.1, StatusText: "Scanning for games..."})
+	s.UpdateProgress(ScanProgress{Progress: 0.1, StatusText: "Scanning for games..."})
 	if visible(download) {
-		t.Error("download label shown outside the download phases")
+		t.Error("download label shown with nothing to download")
 	}
 }
 
@@ -61,7 +61,7 @@ func TestScanProgressCancelOnce(t *testing.T) {
 	}
 
 	// A progress update after cancelling keeps Canceling... shown
-	s.UpdateProgress(ScanProgress{Phase: 2, Progress: 0.9})
+	s.UpdateProgress(ScanProgress{Progress: 0.9})
 	if visible(s.cancelButton) {
 		t.Error("progress update brought the button back")
 	}

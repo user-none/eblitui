@@ -7,17 +7,34 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync/atomic"
 	"time"
 )
 
 // HTTPTimeout is the default timeout for HTTP requests.
 const HTTPTimeout = 10 * time.Second
 
+// userAgent is the User-Agent header Download sends; see SetUserAgent
+var userAgent atomic.Value
+
+// SetUserAgent sets the User-Agent header Download sends, such as
+// "erings/0.4.6". Empty sends Go's default.
+func SetUserAgent(ua string) {
+	userAgent.Store(ua)
+}
+
 // Download performs a GET request with client and returns the response
-// body. A status other than 200 or a body larger than limit bytes returns an
-// error.
+// body, sending the User-Agent set by SetUserAgent. A status other than 200
+// or a body larger than limit bytes returns an error.
 func Download(client *http.Client, url string, limit int64) ([]byte, error) {
-	resp, err := client.Get(url)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	if ua, _ := userAgent.Load().(string); ua != "" {
+		req.Header.Set("User-Agent", ua)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

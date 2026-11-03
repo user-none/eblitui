@@ -3,6 +3,7 @@ package netutil
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -29,6 +30,33 @@ func TestDownloadClientAndLimit(t *testing.T) {
 	}
 	if _, err := Download(client, server.URL, 4); err == nil {
 		t.Error("expected an error for a body over the limit")
+	}
+}
+
+func TestDownloadUserAgent(t *testing.T) {
+	var got string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("User-Agent")
+		w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+	t.Cleanup(func() { SetUserAgent("") })
+
+	SetUserAgent("erings/1.2.3")
+	if _, err := Download(server.Client(), server.URL, 16); err != nil {
+		t.Fatal(err)
+	}
+	if got != "erings/1.2.3" {
+		t.Errorf("User-Agent = %q, want erings/1.2.3", got)
+	}
+
+	// Without one set, Go's default is sent
+	SetUserAgent("")
+	if _, err := Download(server.Client(), server.URL, 16); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(got, "Go-http-client/") {
+		t.Errorf("User-Agent = %q, want Go's default", got)
 	}
 }
 
