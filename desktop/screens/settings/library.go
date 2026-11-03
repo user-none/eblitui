@@ -77,25 +77,46 @@ func (l *LibrarySection) Build(focus types.FocusManager) *widget.Container {
 	// Track folder count for navigation setup
 	folderCount := len(l.library.ScanDirectories)
 
-	// Button row: Add Folder | Remove Folder | Scan Library | Clean Library (centered)
+	// Button row across the full width: the actions that add to the library
+	// (Scan Library, Add Folder) on the left, the ones that take away from
+	// it (Remove Folder, Clean Library) on the right, with the space between
+	// them stretching
 	buttonRow := widget.NewContainer(
+		widget.ContainerOpts.Layout(widget.NewGridLayout(
+			widget.GridLayoutOpts.Columns(3),
+			widget.GridLayoutOpts.Stretch([]bool{false, true, false}, []bool{false}),
+			widget.GridLayoutOpts.Spacing(style.ButtonPaddingMedium, 0),
+		)),
+	)
+	addButtons := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewRowLayout(
 			widget.RowLayoutOpts.Direction(widget.DirectionHorizontal),
 			widget.RowLayoutOpts.Spacing(style.ButtonPaddingMedium),
 		)),
-		widget.ContainerOpts.WidgetOpts(
-			widget.WidgetOpts.LayoutData(widget.GridLayoutData{
-				HorizontalPosition: widget.GridLayoutPositionCenter,
-			}),
-		),
 	)
+	removeButtons := widget.NewContainer(
+		widget.ContainerOpts.Layout(widget.NewRowLayout(
+			widget.RowLayoutOpts.Direction(widget.DirectionHorizontal),
+			widget.RowLayoutOpts.Spacing(style.ButtonPaddingMedium),
+		)),
+	)
+	buttonRow.AddChild(addButtons)
+	buttonRow.AddChild(widget.NewContainer())
+	buttonRow.AddChild(removeButtons)
+
+	// Scan Library button
+	scanBtn := widgets.PrimaryTextButton("Scan Library", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
+		l.callback.SwitchToScanProgress()
+	})
+	focus.RegisterFocusButton("lib-scan", scanBtn)
+	addButtons.AddChild(scanBtn)
 
 	// Add Folder button
 	addDirBtn := widgets.TextButton("Add Folder...", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
 		l.onAddDirectoryClick(focus)
 	})
 	focus.RegisterFocusButton("lib-add", addDirBtn)
-	buttonRow.AddChild(addDirBtn)
+	addButtons.AddChild(addDirBtn)
 
 	// Remove Folder button - disabled when nothing selected, removes all selected folders
 	removeBtn := widgets.EnabledTextButton("Remove Folder", style.ButtonPaddingMedium, len(l.selectedDirs) > 0, func(args *widget.ButtonClickedEventArgs) {
@@ -111,21 +132,14 @@ func (l *LibrarySection) Build(focus types.FocusManager) *widget.Container {
 		l.callback.RequestRebuild()
 	})
 	focus.RegisterFocusButton("lib-remove", removeBtn)
-	buttonRow.AddChild(removeBtn)
-
-	// Scan Library button
-	scanBtn := widgets.PrimaryTextButton("Scan Library", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
-		l.callback.SwitchToScanProgress()
-	})
-	focus.RegisterFocusButton("lib-scan", scanBtn)
-	buttonRow.AddChild(scanBtn)
+	removeButtons.AddChild(removeBtn)
 
 	// Clean Library button - removes missing discs and games
 	cleanBtn := widgets.TextButton("Clean Library", style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
 		l.callback.SwitchToCleanProgress()
 	})
 	focus.RegisterFocusButton("lib-clean", cleanBtn)
-	buttonRow.AddChild(cleanBtn)
+	removeButtons.AddChild(cleanBtn)
 
 	section.AddChild(buttonRow)
 
@@ -199,8 +213,8 @@ func (l *LibrarySection) setupNavigation(focus types.FocusManager, folderCount i
 		focus.RegisterNavZone("lib-folders", types.NavZoneVertical, folderKeys, 0)
 	}
 
-	// Button row zone (horizontal)
-	buttonKeys := []string{"lib-add", "lib-remove", "lib-scan", "lib-clean"}
+	// Button row zone (horizontal), in screen order left to right
+	buttonKeys := []string{"lib-scan", "lib-add", "lib-remove", "lib-clean"}
 	focus.RegisterNavZone("lib-buttons", types.NavZoneHorizontal, buttonKeys, 0)
 
 	// Artwork download row
