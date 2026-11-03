@@ -4,6 +4,7 @@
 package achievements
 
 import (
+	"bytes"
 	"fmt"
 	"image"
 	_ "image/png" // PNG decoder for badge images
@@ -404,15 +405,47 @@ func (m *Manager) fetchImage(url string) *ebiten.Image {
 		return nil
 	}
 
-	// Limit read to 1MB
-	limitedReader := io.LimitReader(resp.Body, 1024*1024)
-	img, _, err := image.Decode(limitedReader)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBadgeBytes+1))
+	if err != nil {
+		log.Printf("[RetroAchievements] Failed to read image: %v", err)
+		return nil
+	}
+	if len(data) > maxBadgeBytes {
+		log.Printf("[RetroAchievements] Image is larger than %d bytes", maxBadgeBytes)
+		return nil
+	}
+	img, err := decodeBadge(data)
 	if err != nil {
 		log.Printf("[RetroAchievements] Failed to decode image: %v", err)
 		return nil
 	}
 
 	return ebiten.NewImageFromImage(img)
+}
+
+const (
+	// maxBadgeBytes is the most bytes read for one badge or game image.
+	maxBadgeBytes = 1024 * 1024
+	// maxBadgeDimension is the largest width or height of a badge or game
+	// image that is decoded. These images are small icons. The size is read
+	// from the header and checked before decoding, so a small file cannot
+	// claim a size that exhausts memory when decoded or exceeds the GPU
+	// texture limit when uploaded.
+	maxBadgeDimension = 512
+)
+
+// decodeBadge decodes a badge or game image, refusing one whose header
+// claims more than maxBadgeDimension on either side.
+func decodeBadge(data []byte) (image.Image, error) {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > maxBadgeDimension || cfg.Height > maxBadgeDimension {
+		return nil, fmt.Errorf("image is %dx%d, larger than %dx%d", cfg.Width, cfg.Height, maxBadgeDimension, maxBadgeDimension)
+	}
+	img, _, err := image.Decode(bytes.NewReader(data))
+	return img, err
 }
 
 // DoFrame processes achievements for the current frame
