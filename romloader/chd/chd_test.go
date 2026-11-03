@@ -619,6 +619,49 @@ func TestOpenSelfReferences(t *testing.T) {
 		}
 	})
 
+	// The stored bytes of a referenced hunk are shared, but each hunk is
+	// returned converted for its own track: audio samples swapped to
+	// little-endian, data byte-exact.
+	for _, tc := range []struct {
+		name      string
+		refType   string
+		selfType  string
+		refFirst  byte // first byte read from the referenced hunk
+		selfFirst byte // first byte read from the self reference
+	}{
+		{"audio hunk referenced from data", "AUDIO", "MODE1_RAW", 0x22, 0x11},
+		{"data hunk referenced from audio", "MODE1_RAW", "AUDIO", 0x11, 0x22},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stored := bytes.Repeat([]byte{0x11, 0x22}, testFramesPerHunk*cdFrameSize/2)
+			c := mapTestCHD(testHunk{comp: compNone, data: stored}, testHunk{comp: compSelf, offset: 0})
+			c.tracks = []string{
+				"TRACK:1 TYPE:" + tc.refType + " SUBTYPE:NONE FRAMES:8",
+				"TRACK:2 TYPE:" + tc.selfType + " SUBTYPE:NONE FRAMES:8",
+			}
+			rd, err := openTestCHD(t, c)
+			if err != nil {
+				t.Fatalf("Open: %v", err)
+			}
+			defer rd.Close()
+
+			ref, err := rd.ReadSector(0)
+			if err != nil {
+				t.Fatalf("ReadSector(0): %v", err)
+			}
+			if ref[0] != tc.refFirst {
+				t.Fatalf("referenced hunk byte 0 = %#x, want %#x", ref[0], tc.refFirst)
+			}
+			self, err := rd.ReadSector(testFramesPerHunk)
+			if err != nil {
+				t.Fatalf("ReadSector(%d): %v", testFramesPerHunk, err)
+			}
+			if self[0] != tc.selfFirst {
+				t.Fatalf("self reference byte 0 = %#x, want %#x", self[0], tc.selfFirst)
+			}
+		})
+	}
+
 	t.Run("refers to itself", func(t *testing.T) {
 		if _, err := openTestCHD(t, mapTestCHD(testHunk{comp: compSelf, offset: 0})); err == nil {
 			t.Fatal("expected an error")

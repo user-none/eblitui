@@ -225,6 +225,11 @@ func (rd *Reader) getHunk(idx int) ([]byte, error) {
 		// Copy so we don't share the cache slice
 		cp := make([]byte, len(data))
 		copy(cp, data)
+		// The referenced hunk was converted for its own position, where
+		// audio frames differ from stored form by a sample swap. Undo that,
+		// then convert for this hunk's position, whose tracks may differ.
+		rd.swapFrames(refIdx, cp, true)
+		rd.swapFrames(idx, cp, true)
 		data = cp
 	case compNone:
 		// Uncompressed: read directly from file.
