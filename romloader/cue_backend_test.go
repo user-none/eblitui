@@ -3,7 +3,6 @@ package romloader
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -147,24 +146,95 @@ func TestOpenBinCue_UnusedFileNotOpened(t *testing.T) {
 	}
 }
 
-// TestOpenBinCue_TooManyFiles tests that a cue sheet using more distinct
-// bin files than a CD can hold tracks is rejected.
-func TestOpenBinCue_TooManyFiles(t *testing.T) {
-	dir := t.TempDir()
-	var cue strings.Builder
-	for i := range maxCueFiles + 1 {
-		name := fmt.Sprintf("t%03d.bin", i)
-		writeTestBin(t, filepath.Join(dir, name), 0x11)
-		fmt.Fprintf(&cue, "FILE %q BINARY\nTRACK %02d MODE1/2352\nINDEX 01 00:00:00\n", name, i+1)
+// TestOpenBinCue_TrackTable tests the limits on TRACK and INDEX numbers,
+// index positions and total disc length.
+func TestOpenBinCue_TrackTable(t *testing.T) {
+	cases := []struct {
+		name    string
+		cue     string
+		wantErr string // empty when the sheet must open
+	}{
+		{
+			"single digit track",
+			"FILE \"a.bin\" BINARY\nTRACK 1 MODE1/2352\nINDEX 01 00:00:00\n",
+			"bad TRACK number",
+		},
+		{
+			"track zero",
+			"FILE \"a.bin\" BINARY\nTRACK 00 MODE1/2352\nINDEX 01 00:00:00\n",
+			"bad TRACK number",
+		},
+		{
+			"repeated track",
+			"FILE \"a.bin\" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\n" +
+				"FILE \"b.bin\" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\n",
+			"does not follow",
+		},
+		{
+			"decreasing track",
+			"FILE \"a.bin\" BINARY\nTRACK 02 MODE1/2352\nINDEX 01 00:00:00\n" +
+				"FILE \"b.bin\" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\n",
+			"does not follow",
+		},
+		{
+			"single digit index",
+			"FILE \"a.bin\" BINARY\nTRACK 01 MODE1/2352\nINDEX 1 00:00:00\n",
+			"bad INDEX number",
+		},
+		{
+			"index out of order",
+			"FILE \"a.bin\" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:01\nINDEX 00 00:00:00\n",
+			"does not follow",
+		},
+		{
+			"repeated index",
+			"FILE \"a.bin\" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\nINDEX 01 00:00:01\n",
+			"does not follow",
+		},
+		{
+			"index position decreases",
+			"FILE \"a.bin\" BINARY\nTRACK 01 MODE1/2352\nINDEX 00 00:00:02\nINDEX 01 00:00:01\n",
+			"before INDEX",
+		},
+		{
+			"equal index positions",
+			"FILE \"a.bin\" BINARY\nTRACK 01 MODE1/2352\nINDEX 00 00:00:00\nINDEX 01 00:00:00\n",
+			"",
+		},
+		{
+			"index beyond track data",
+			"FILE \"a.bin\" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\nINDEX 02 00:00:05\n",
+			"beyond the track's data",
+		},
+		{
+			"disc too long",
+			"FILE \"a.bin\" BINARY\nTRACK 01 MODE1/2352\nPREGAP 99:00:00\nINDEX 01 00:00:00\n" +
+				"FILE \"b.bin\" BINARY\nTRACK 02 MODE1/2352\nPREGAP 99:00:00\nINDEX 01 00:00:00\n",
+			"longer than",
+		},
 	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeTestBin(t, filepath.Join(dir, "a.bin"), 0x11)
+			writeTestBin(t, filepath.Join(dir, "b.bin"), 0x22)
 
-	bc, err := openTestCue(t, dir, cue.String())
-	if err == nil {
-		bc.Close()
-		t.Fatalf("expected an error for %d bin files", maxCueFiles+1)
-	}
-	if !strings.Contains(err.Error(), "track files") {
-		t.Fatalf("expected the track file limit error, got %v", err)
+			bc, err := openTestCue(t, dir, tc.cue)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("openBinCue: %v", err)
+				}
+				bc.Close()
+				return
+			}
+			if err == nil {
+				bc.Close()
+				t.Fatalf("expected an error containing %q", tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected an error containing %q, got %v", tc.wantErr, err)
+			}
+		})
 	}
 }
 

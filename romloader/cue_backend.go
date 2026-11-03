@@ -10,8 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -70,9 +68,9 @@ type buildTrack struct {
 // and the whole sheet is held in memory while it is parsed.
 const maxCueSize = 1024 * 1024
 
-// maxCueFiles is the most distinct bin files a cue sheet may open. A CD
-// holds at most 99 tracks, so no valid sheet needs more.
-const maxCueFiles = 99
+// maxCueFrames is the most frames a cue sheet's disc may span: a CD's time
+// code ends at 99:59:74.
+const maxCueFrames = 100 * 60 * 75
 
 // openBinCue parses a cue sheet and builds the backend, opening each bin file
 // a track uses once and computing the disc layout. On any failure every
@@ -152,22 +150,24 @@ func openBinCue(path string) (discBackend, error) {
 				closeAll()
 				return nil, fmt.Errorf("cue: malformed TRACK directive (line %d)", lineNo)
 			}
-			num, err := strconv.Atoi(fields[0])
-			if err != nil {
+			num, ok := parseCueNumber(fields[0], 1)
+			if !ok {
 				closeAll()
-				return nil, fmt.Errorf("cue: bad TRACK number %q (line %d)", fields[0], lineNo)
+				return nil, fmt.Errorf("cue: bad TRACK number %q, want 01-99 (line %d)", fields[0], lineNo)
+			}
+			if len(built) > 0 && num <= built[len(built)-1].number {
+				closeAll()
+				return nil, fmt.Errorf("cue: TRACK %02d does not follow TRACK %02d (line %d)", num, built[len(built)-1].number, lineNo)
 			}
 			typ, control, err := normalizeTrackType(fields[1])
 			if err != nil {
 				closeAll()
 				return nil, fmt.Errorf("cue: %w (line %d)", err, lineNo)
 			}
+			// Track numbers are two digits and increasing, so at most 99
+			// tracks, and so at most 99 bin files, can be opened.
 			fd, ok := bc.fds[curFile]
 			if !ok {
-				if len(bc.fds) >= maxCueFiles {
-					closeAll()
-					return nil, fmt.Errorf("cue: more than %d track files (line %d)", maxCueFiles, lineNo)
-				}
 				fd, err = root.Open(curFile)
 				if err != nil {
 					closeAll()
@@ -187,10 +187,10 @@ func openBinCue(path string) (discBackend, error) {
 				closeAll()
 				return nil, fmt.Errorf("cue: malformed INDEX directive (line %d)", lineNo)
 			}
-			num, err := strconv.Atoi(fields[0])
-			if err != nil {
+			num, ok := parseCueNumber(fields[0], 0)
+			if !ok {
 				closeAll()
-				return nil, fmt.Errorf("cue: bad INDEX number %q (line %d)", fields[0], lineNo)
+				return nil, fmt.Errorf("cue: bad INDEX number %q, want 00-99 (line %d)", fields[0], lineNo)
 			}
 			frame, err := parseMSF(fields[1])
 			if err != nil {
@@ -198,6 +198,17 @@ func openBinCue(path string) (discBackend, error) {
 				return nil, fmt.Errorf("cue: %w (line %d)", err, lineNo)
 			}
 			bt := &built[len(built)-1]
+			if n := len(bt.indexes); n > 0 {
+				prev := bt.indexes[n-1]
+				if num <= prev.number {
+					closeAll()
+					return nil, fmt.Errorf("cue: INDEX %02d does not follow INDEX %02d (line %d)", num, prev.number, lineNo)
+				}
+				if frame < prev.frame {
+					closeAll()
+					return nil, fmt.Errorf("cue: INDEX %02d is positioned before INDEX %02d (line %d)", num, prev.number, lineNo)
+				}
+			}
 			bt.indexes = append(bt.indexes, cueIndex{number: num, frame: frame})
 
 		case "PREGAP", "POSTGAP":
@@ -241,8 +252,10 @@ func openBinCue(path string) (discBackend, error) {
 // in-file length runs to the next track in the same file, or to end-of-file.
 func layoutTracks(built []buildTrack) ([]track, error) {
 	// Validate up front that every track has at least one INDEX, so the
-	// same-file look-ahead below (minIndexFrame on the next track) and the
-	// firstFrame access are always safe.
+	// same-file look-ahead below (the next track's first index) and the
+	// firstFrame access are always safe. Parsing already guarantees each
+	// track's indexes are in increasing number order with positions that
+	// never decrease.
 	for i := range built {
 		if len(built[i].indexes) == 0 {
 			return nil, fmt.Errorf("cue: track %d has no INDEX", built[i].number)
@@ -253,7 +266,6 @@ func layoutTracks(built []buildTrack) ([]track, error) {
 	runningLBA := 0
 	for i := range built {
 		bt := &built[i]
-		sort.Slice(bt.indexes, func(a, b int) bool { return bt.indexes[a].number < bt.indexes[b].number })
 		firstFrame := bt.indexes[0].frame
 
 		fi, err := bt.fd.Stat()
@@ -270,12 +282,15 @@ func layoutTracks(built []buildTrack) ([]track, error) {
 
 		var fileFrames int
 		if i+1 < len(built) && built[i+1].fd == bt.fd {
-			fileFrames = minIndexFrame(built[i+1].indexes) - firstFrame
+			fileFrames = built[i+1].indexes[0].frame - firstFrame
 		} else {
 			fileFrames = fileSectors - firstFrame
 		}
 		if fileFrames <= 0 {
 			return nil, fmt.Errorf("cue: track %d has no data (check INDEX positions and file size)", bt.number)
+		}
+		if last := bt.indexes[len(bt.indexes)-1]; last.frame-firstFrame >= fileFrames {
+			return nil, fmt.Errorf("cue: track %02d INDEX %02d is beyond the track's data", bt.number, last.number)
 		}
 
 		inFilePregap := 0
@@ -313,6 +328,9 @@ func layoutTracks(built []buildTrack) ([]track, error) {
 
 		tracks[i] = t
 		runningLBA += t.frames
+		if runningLBA > maxCueFrames {
+			return nil, fmt.Errorf("cue: disc is longer than 99:59:74 at track %02d", bt.number)
+		}
 	}
 	return tracks, nil
 }
@@ -329,19 +347,6 @@ func resolveTrackPath(filename string) (string, error) {
 		return "", fmt.Errorf("cue: empty FILE name")
 	}
 	return filepath.Clean(filepath.FromSlash(strings.ReplaceAll(filename, "\\", "/"))), nil
-}
-
-// minIndexFrame returns the lowest-numbered index's file-relative frame.
-func minIndexFrame(idx []cueIndex) int {
-	min := idx[0].frame
-	minNum := idx[0].number
-	for _, e := range idx {
-		if e.number < minNum {
-			minNum = e.number
-			min = e.frame
-		}
-	}
-	return min
 }
 
 // indexFrame returns the file-relative frame of the index with the given number.

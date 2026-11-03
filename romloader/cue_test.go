@@ -12,6 +12,7 @@ func TestParseMSF(t *testing.T) {
 		"00:01:74": 149,
 		"01:00:00": 4500,
 		"10:00:00": 45000,
+		"99:59:74": 449999,
 	}
 	for s, want := range cases {
 		got, err := parseMSF(s)
@@ -23,9 +24,45 @@ func TestParseMSF(t *testing.T) {
 			t.Errorf("parseMSF(%q) = %d, want %d", s, got, want)
 		}
 	}
-	for _, bad := range []string{"1:2", "aa:bb:cc", "00:60:00", "00:00:75"} {
+	for _, bad := range []string{"1:2", "aa:bb:cc", "00:60:00", "00:00:75", "100:00:00", "9223372036854775807:00:00"} {
 		if _, err := parseMSF(bad); err == nil {
 			t.Errorf("parseMSF(%q): expected error", bad)
+		}
+	}
+}
+
+func TestParseCueNumber(t *testing.T) {
+	good := []struct {
+		s    string
+		min  int
+		want int
+	}{
+		{"01", 1, 1},
+		{"99", 1, 99},
+		{"00", 0, 0},
+		{"10", 0, 10},
+	}
+	for _, tc := range good {
+		got, ok := parseCueNumber(tc.s, tc.min)
+		if !ok || got != tc.want {
+			t.Errorf("parseCueNumber(%q, %d) = %d, %v, want %d", tc.s, tc.min, got, ok, tc.want)
+		}
+	}
+	bad := []struct {
+		s   string
+		min int
+	}{
+		{"1", 0},
+		{"001", 0},
+		{"00", 1},
+		{"-1", 0},
+		{"+1", 0},
+		{"1a", 0},
+		{"", 0},
+	}
+	for _, tc := range bad {
+		if _, ok := parseCueNumber(tc.s, tc.min); ok {
+			t.Errorf("parseCueNumber(%q, %d): expected rejection", tc.s, tc.min)
 		}
 	}
 }

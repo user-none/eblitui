@@ -85,8 +85,19 @@ func parseMSF(s string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("bad MSF frames %q", s)
 	}
-	if m < 0 || sec < 0 || sec >= 60 || f < 0 || f >= 75 {
+	if m < 0 || m > 99 || sec < 0 || sec >= 60 || f < 0 || f >= 75 {
 		return 0, fmt.Errorf("MSF out of range %q", s)
 	}
 	return (m*60+sec)*75 + f, nil
+}
+
+// parseCueNumber parses a TRACK or INDEX number, which a cue sheet writes as
+// exactly two decimal digits. It reports false when s is not two digits or
+// the value is below min.
+func parseCueNumber(s string, min int) (int, bool) {
+	if len(s) != 2 || s[0] < '0' || s[0] > '9' || s[1] < '0' || s[1] > '9' {
+		return 0, false
+	}
+	n := int(s[0]-'0')*10 + int(s[1]-'0')
+	return n, n >= min
 }
