@@ -1,10 +1,80 @@
 package romloader
 
 import (
+	"encoding/binary"
+	"errors"
+	"hash/crc32"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/nwaples/rardecode/v2"
 )
+
+// rar5Block builds a RAR5 block: the CRC32 of the size field and body,
+// the body size as a vint, then the body.
+func rar5Block(body []byte) []byte {
+	sized := binary.AppendUvarint(nil, uint64(len(body)))
+	sized = append(sized, body...)
+	out := binary.LittleEndian.AppendUint32(nil, crc32.ChecksumIEEE(sized))
+	return append(out, sized...)
+}
+
+// createTestRAR5File writes a RAR5 archive whose only block is a
+// compressed file header for game.sms with the given unpacked size and
+// dictionary size code (128 KiB << dictCode). The archive carries no file
+// data, so it is only useful for checks made when the header is read.
+func createTestRAR5File(t *testing.T, unpackedSize uint64, dictCode uint64) string {
+	t.Helper()
+
+	arc := rar5Block([]byte{1, 0, 0})
+
+	name := "game.sms"
+	var file []byte
+	file = binary.AppendUvarint(file, 2)
+	file = binary.AppendUvarint(file, 0)
+	file = binary.AppendUvarint(file, 0)
+	file = binary.AppendUvarint(file, unpackedSize)
+	file = binary.AppendUvarint(file, 0)
+	file = binary.AppendUvarint(file, 1<<7|dictCode<<10)
+	file = binary.AppendUvarint(file, 1)
+	file = binary.AppendUvarint(file, uint64(len(name)))
+	file = append(file, name...)
+
+	data := []byte("Rar!\x1a\x07\x01\x00")
+	data = append(data, arc...)
+	data = append(data, rar5Block(file)...)
+
+	path := filepath.Join(t.TempDir(), "test.rar")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	return path
+}
+
+// TestExtractFromRAR_DictionaryTooLarge tests that a header requesting a
+// decode window larger than the ROM use case allows is rejected before the
+// window is allocated.
+func TestExtractFromRAR_DictionaryTooLarge(t *testing.T) {
+	// 1 GiB unpacked with a 1 GiB dictionary.
+	path := createTestRAR5File(t, 1<<30, 13)
+
+	_, _, err := extractFromRAR(path, testExtensions)
+	if !errors.Is(err, rardecode.ErrDictionaryTooLarge) {
+		t.Fatalf("expected ErrDictionaryTooLarge, got %v", err)
+	}
+}
+
+// TestExtractFromRAR_DictionaryWithinLimit tests that a header with a
+// small decode window is not rejected for its dictionary size.
+func TestExtractFromRAR_DictionaryWithinLimit(t *testing.T) {
+	path := createTestRAR5File(t, 4096, 0)
+
+	_, _, err := extractFromRAR(path, testExtensions)
+	if errors.Is(err, rardecode.ErrDictionaryTooLarge) {
+		t.Fatalf("small dictionary rejected: %v", err)
+	}
+}
 
 // TestExtractFromRAR_FileNotFound tests error handling for missing files
 func TestExtractFromRAR_FileNotFound(t *testing.T) {

@@ -36,6 +36,10 @@ var ErrUnsupportedFormat = errors.New("unsupported file format")
 // ErrFileTooLarge is returned when extracted content exceeds size limit
 var ErrFileTooLarge = errors.New("file exceeds maximum size limit")
 
+// ErrArchiveTooLarge is returned when an archive decompresses to more than
+// the total size limit while searching for a ROM
+var ErrArchiveTooLarge = errors.New("archive exceeds maximum decompressed size")
+
 // formatType represents the detected file format
 type formatType int
 
