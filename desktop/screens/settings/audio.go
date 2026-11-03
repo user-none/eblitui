@@ -97,7 +97,7 @@ func (a *AudioSection) setupNavigation(focus types.FocusManager) {
 
 	if len(coreOptKeys) > 0 {
 		focus.SetNavTransition("audio-core-opts", types.DirDown, "audio-mute", types.NavIndexFirst)
-		focus.SetNavTransition("audio-mute", types.DirUp, "audio-core-opts", types.NavIndexFirst)
+		focus.SetNavTransition("audio-mute", types.DirUp, "audio-core-opts", types.NavIndexLast)
 	}
 	focus.SetNavTransition("audio-mute", types.DirDown, "audio-volume", types.NavIndexFirst)
 	focus.SetNavTransition("audio-volume", types.DirUp, "audio-mute", types.NavIndexFirst)

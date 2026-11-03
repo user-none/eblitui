@@ -216,6 +216,7 @@ func (s *SettingsScreen) setupVideoNav() {
 	}
 	s.SetNavTransition(sidebarZone, types.DirRight, firstVideoZone, types.NavIndexFirst)
 	s.SetNavTransition("video-core-opts", types.DirLeft, sidebarZone, types.NavIndexFirst)
+	s.SetNavTransition("video-aspect", types.DirLeft, sidebarZone, types.NavIndexFirst)
 	s.SetNavTransition("video-preprocess", types.DirLeft, sidebarZone, types.NavIndexFirst)
 	s.SetNavTransition("video-shaders", types.DirLeft, sidebarZone, types.NavIndexFirst)
 }
@@ -257,6 +258,7 @@ func (s *SettingsScreen) setupAppearanceNav() {
 func (s *SettingsScreen) setupRewindNav() {
 	s.SetNavTransition(sidebarZone, types.DirRight, "rewind-enable", types.NavIndexFirst)
 	s.SetNavTransition("rewind-enable", types.DirLeft, sidebarZone, types.NavIndexFirst)
+	s.SetNavTransition("rewind-values", types.DirLeft, sidebarZone, types.NavIndexFirst)
 }
 
 func (s *SettingsScreen) setupAchievementsNav() {

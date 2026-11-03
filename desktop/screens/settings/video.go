@@ -99,7 +99,7 @@ func (v *VideoSection) setupNavigation(focus types.FocusManager) {
 
 	if len(coreOptKeys) > 0 {
 		focus.SetNavTransition("video-core-opts", types.DirDown, "video-aspect", types.NavIndexFirst)
-		focus.SetNavTransition("video-aspect", types.DirUp, "video-core-opts", types.NavIndexFirst)
+		focus.SetNavTransition("video-aspect", types.DirUp, "video-core-opts", types.NavIndexLast)
 	}
 
 	if len(shaderKeys) > 0 || len(preprocessKeys) > 0 {

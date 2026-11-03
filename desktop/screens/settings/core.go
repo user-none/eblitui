@@ -308,7 +308,7 @@ func (c *CoreSection) setupNavigation(focus types.FocusManager) {
 	// Transitions between zones
 	if len(coreOptKeys) > 0 && len(biosKeys) > 0 {
 		focus.SetNavTransition("core-core-opts", types.DirDown, "core-bios", types.NavIndexFirst)
-		focus.SetNavTransition("core-bios", types.DirUp, "core-core-opts", types.NavIndexFirst)
+		focus.SetNavTransition("core-bios", types.DirUp, "core-core-opts", types.NavIndexLast)
 	}
 }
 
