@@ -250,26 +250,6 @@ func lzmaDictSize(hunkBytes uint32) uint32 {
 	return dictSize
 }
 
-func decompressFLAC(data []byte) ([]byte, error) {
-	if len(data) < 1 {
-		return nil, fmt.Errorf("flac: empty data")
-	}
-	endian := data[0]
-	if endian != 'L' && endian != 'B' {
-		return nil, fmt.Errorf("flac: invalid endian byte 0x%02X", endian)
-	}
-	out, _, err := decodeFLAC(data[1:], 2, 16, 0)
-	if err != nil {
-		return nil, err
-	}
-	if endian == 'B' {
-		for i := 0; i+1 < len(out); i += 2 {
-			out[i], out[i+1] = out[i+1], out[i]
-		}
-	}
-	return out, nil
-}
-
 func decompressZstd(data []byte, dec *zstd.Decoder) ([]byte, error) {
 	return dec.DecodeAll(data, nil)
 }
