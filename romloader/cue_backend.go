@@ -45,7 +45,7 @@ type track struct {
 }
 
 // binCueBackend is a disc backend over a cue sheet's raw bin files. fds owns every
-// open handle (one per distinct bin filename); it is the single source of truth
+// open handle (one per distinct cleaned bin filename); it is the single source of truth
 // for closing. Each track borrows an fd pointer from it.
 type binCueBackend struct {
 	filename string // the .cue path
@@ -70,9 +70,13 @@ type buildTrack struct {
 // and the whole sheet is held in memory while it is parsed.
 const maxCueSize = 1024 * 1024
 
-// openBinCue parses a cue sheet and builds the backend, opening each referenced
-// bin file once and computing the disc layout. On any failure every opened
-// handle is closed before returning.
+// maxCueFiles is the most distinct bin files a cue sheet may open. A CD
+// holds at most 99 tracks, so no valid sheet needs more.
+const maxCueFiles = 99
+
+// openBinCue parses a cue sheet and builds the backend, opening each bin file
+// a track uses once and computing the disc layout. On any failure every
+// opened handle is closed before returning.
 func openBinCue(path string) (discBackend, error) {
 	bc := &binCueBackend{filename: path, fds: make(map[string]*os.File)}
 	closeAll := func() {
@@ -97,8 +101,18 @@ func openBinCue(path string) (discBackend, error) {
 		return nil, fmt.Errorf("cue: sheet is larger than %d bytes: %w", maxCueSize, ErrFileTooLarge)
 	}
 
-	cueDir := filepath.Dir(path)
-	var curFd *os.File
+	// Bin files are opened through a root on the cue's directory so a FILE
+	// directive can only reach files inside it.
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return nil, fmt.Errorf("cue: opening sheet directory: %w", err)
+	}
+	defer root.Close()
+
+	// curFile is the name from the latest FILE directive. Its bin file is
+	// opened by the first TRACK that uses it, so a FILE line no track refers
+	// to never opens anything.
+	var curFile string
 	var built []buildTrack
 
 	sc := bufio.NewScanner(bytes.NewReader(sheet))
@@ -121,24 +135,15 @@ func openBinCue(path string) (discBackend, error) {
 				closeAll()
 				return nil, fmt.Errorf("cue: unsupported FILE type %q (line %d)", ftype, lineNo)
 			}
-			fd, ok := bc.fds[filename]
-			if !ok {
-				resolved, err := resolveTrackPath(cueDir, filename)
-				if err != nil {
-					closeAll()
-					return nil, err
-				}
-				fd, err = os.Open(resolved)
-				if err != nil {
-					closeAll()
-					return nil, fmt.Errorf("cue: opening track file %q: %w", filename, err)
-				}
-				bc.fds[filename] = fd
+			resolved, err := resolveTrackPath(filename)
+			if err != nil {
+				closeAll()
+				return nil, err
 			}
-			curFd = fd
+			curFile = resolved
 
 		case "TRACK":
-			if curFd == nil {
+			if curFile == "" {
 				closeAll()
 				return nil, fmt.Errorf("cue: TRACK before any FILE (line %d)", lineNo)
 			}
@@ -157,7 +162,20 @@ func openBinCue(path string) (discBackend, error) {
 				closeAll()
 				return nil, fmt.Errorf("cue: %w (line %d)", err, lineNo)
 			}
-			built = append(built, buildTrack{number: num, typ: typ, control: control, fd: curFd})
+			fd, ok := bc.fds[curFile]
+			if !ok {
+				if len(bc.fds) >= maxCueFiles {
+					closeAll()
+					return nil, fmt.Errorf("cue: more than %d track files (line %d)", maxCueFiles, lineNo)
+				}
+				fd, err = root.Open(curFile)
+				if err != nil {
+					closeAll()
+					return nil, fmt.Errorf("cue: opening track file %q: %w", curFile, err)
+				}
+				bc.fds[curFile] = fd
+			}
+			built = append(built, buildTrack{number: num, typ: typ, control: control, fd: fd})
 
 		case "INDEX":
 			if len(built) == 0 {
@@ -300,24 +318,17 @@ func layoutTracks(built []buildTrack) ([]track, error) {
 }
 
 // resolveTrackPath turns a track's bin filename (from a FILE directive) into a
-// full path under the cue's directory. The bin filename must be relative:
-// absolute paths and parent-directory traversal are rejected so a cue can only
-// reference files within its own directory tree.
-func resolveTrackPath(cueDir, filename string) (string, error) {
-	// Cue sheets may use backslashes; treat them as separators.
+// name to open within the cue's directory root. Cue sheets may use
+// backslashes, so they are treated as separators. The name is cleaned so
+// different spellings of the same file share one name. Keeping the file inside
+// the directory is left to the root, which rejects absolute names, parent
+// traversal, symlinks that lead outside, and Windows device names when the
+// file is opened.
+func resolveTrackPath(filename string) (string, error) {
 	if filename == "" {
 		return "", fmt.Errorf("cue: empty FILE name")
 	}
-	norm := strings.ReplaceAll(filename, "\\", "/")
-	if filepath.IsAbs(norm) || strings.HasPrefix(norm, "/") {
-		return "", fmt.Errorf("cue: FILE %q must be a relative path", filename)
-	}
-	for _, seg := range strings.Split(norm, "/") {
-		if seg == ".." {
-			return "", fmt.Errorf("cue: FILE %q must not traverse parent directories", filename)
-		}
-	}
-	return filepath.Join(cueDir, filepath.FromSlash(norm)), nil
+	return filepath.Clean(filepath.FromSlash(strings.ReplaceAll(filename, "\\", "/"))), nil
 }
 
 // minIndexFrame returns the lowest-numbered index's file-relative frame.
@@ -386,7 +397,7 @@ func (b *binCueBackend) TrackIndex(i, n int) (indexNumber int, lba int) {
 	return e.number, e.lba
 }
 
-// Close closes every open bin file. fds holds one handle per distinct filename,
+// Close closes every open bin file. fds holds one handle per distinct cleaned filename,
 // so iterating it closes each exactly once.
 func (b *binCueBackend) Close() error {
 	var first error

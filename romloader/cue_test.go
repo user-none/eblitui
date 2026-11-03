@@ -1,6 +1,9 @@
 package romloader
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func TestParseMSF(t *testing.T) {
 	cases := map[string]int{
@@ -39,21 +42,21 @@ func TestParseFileLine(t *testing.T) {
 }
 
 func TestResolveTrackPath(t *testing.T) {
-	if _, err := resolveTrackPath("/discs", "/etc/passwd"); err == nil {
-		t.Error("absolute path should be rejected")
+	if _, err := resolveTrackPath(""); err == nil {
+		t.Error("empty name should be rejected")
 	}
-	if _, err := resolveTrackPath("/discs", "../escape.bin"); err == nil {
-		t.Error("parent traversal should be rejected")
-	}
-	if _, err := resolveTrackPath("/discs", "sub/../../escape.bin"); err == nil {
-		t.Error("embedded parent traversal should be rejected")
-	}
-	got, err := resolveTrackPath("/discs", "Track 1.bin")
-	if err != nil || got != "/discs/Track 1.bin" {
+	got, err := resolveTrackPath("Track 1.bin")
+	if err != nil || got != "Track 1.bin" {
 		t.Errorf("relative = %q, %v", got, err)
 	}
-	got, err = resolveTrackPath("/discs", `sub\Track 1.bin`)
-	if err != nil || got != "/discs/sub/Track 1.bin" {
+	got, err = resolveTrackPath(`sub\Track 1.bin`)
+	if err != nil || got != filepath.FromSlash("sub/Track 1.bin") {
 		t.Errorf("backslash = %q, %v", got, err)
+	}
+	for _, alias := range []string{"./a.bin", ".//a.bin", "sub/../a.bin", `.\a.bin`} {
+		got, err = resolveTrackPath(alias)
+		if err != nil || got != "a.bin" {
+			t.Errorf("alias %q = %q, %v", alias, got, err)
+		}
 	}
 }
