@@ -394,6 +394,55 @@ func TestOpenMetadataChain(t *testing.T) {
 	})
 }
 
+// TestOpenHeaderSizes tests the limits on the hunk size, unit size and
+// logical size. The images hold no hunks, so only the header is checked.
+func TestOpenHeaderSizes(t *testing.T) {
+	cases := []struct {
+		name         string
+		hunkBytes    uint32
+		unitBytes    uint32
+		logicalBytes uint64
+		wantOK       bool
+	}{
+		{"one frame per hunk", cdFrameSize, cdFrameSize, 0, true},
+		{"largest hunk", maxHunkBytes / cdFrameSize * cdFrameSize, cdFrameSize, 0, true},
+		{"zero hunk size", 0, cdFrameSize, 0, false},
+		{"hunk smaller than a frame", 1, cdFrameSize, 0, false},
+		{"hunk one byte short of a frame", cdFrameSize - 1, cdFrameSize, 0, false},
+		{"hunk not whole frames", cdFrameSize + 1, cdFrameSize, 0, false},
+		{"hunk over 1 MiB", (maxHunkBytes/cdFrameSize + 1) * cdFrameSize, cdFrameSize, 0, false},
+		{"zero unit size", cdFrameSize, 0, 0, false},
+		{"unit size not a frame", 2 * cdFrameSize, 2 * cdFrameSize, 0, false},
+		{"logical size not whole frames", cdFrameSize, cdFrameSize, cdFrameSize + 1, false},
+		{"logical size too large", cdFrameSize, cdFrameSize, (maxImageFrames + 1) * cdFrameSize, false},
+		{"logical size wraps the hunk count", cdFrameSize, cdFrameSize, 0xFFFFFFFF00000000, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rd, err := openTestCHD(t, testCHD{
+				codecs:       [4]uint32{codecCDZS},
+				hunkBytes:    tc.hunkBytes,
+				unitBytes:    tc.unitBytes,
+				logicalBytes: tc.logicalBytes,
+				lengthBits:   24,
+				selfBits:     24,
+				parentBits:   24,
+			})
+			if !tc.wantOK {
+				if err == nil {
+					rd.Close()
+					t.Fatal("expected an error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Open: %v", err)
+			}
+			rd.Close()
+		})
+	}
+}
+
 // TestOpenHeaderLength tests that a v5 header must declare the v5 header
 // length.
 func TestOpenHeaderLength(t *testing.T) {

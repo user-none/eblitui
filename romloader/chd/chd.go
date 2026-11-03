@@ -20,6 +20,12 @@ const (
 	cdSubcodeSize = 96
 	cdFrameSize   = 2448 // sector + subcode
 
+	// maxHunkBytes is the largest hunk size images are created with.
+	maxHunkBytes = 1024 * 1024
+	// maxImageFrames bounds the logical size in frames. It is more than
+	// twice the 450,000 frames of a disc running to 99:59:74.
+	maxImageFrames = 1 << 20
+
 	cacheSlots = 8
 )
 
@@ -97,8 +103,19 @@ func Open(r io.ReaderAt, size int64) (*Reader, error) {
 	rd.hunkBytes = binary.BigEndian.Uint32(hdr[56:60])
 	rd.unitBytes = binary.BigEndian.Uint32(hdr[60:64])
 
-	if rd.hunkBytes == 0 {
-		return nil, errors.New("chd: hunkBytes is zero")
+	// A CD image stores 2448-byte frames (a 2352-byte sector plus 96 bytes
+	// of subcode) and uses the frame as its unit. Hunks hold whole frames,
+	// up to the 1 MiB largest hunk size images are created with. The logical
+	// size is a whole number of frames, bounded so the hunk map built from
+	// it stays small.
+	if rd.unitBytes != cdFrameSize {
+		return nil, fmt.Errorf("chd: unit size %d, want the %d-byte CD frame", rd.unitBytes, cdFrameSize)
+	}
+	if rd.hunkBytes == 0 || rd.hunkBytes%cdFrameSize != 0 || rd.hunkBytes > maxHunkBytes {
+		return nil, fmt.Errorf("chd: hunk size %d is not a whole number of %d-byte frames up to %d bytes", rd.hunkBytes, cdFrameSize, maxHunkBytes)
+	}
+	if rd.logicalBytes%cdFrameSize != 0 || rd.logicalBytes/cdFrameSize > maxImageFrames {
+		return nil, fmt.Errorf("chd: logical size %d is not a whole number of frames up to %d frames", rd.logicalBytes, maxImageFrames)
 	}
 	rd.totalHunks = uint32((rd.logicalBytes + uint64(rd.hunkBytes) - 1) / uint64(rd.hunkBytes))
 	rd.framesPerHunk = int(rd.hunkBytes) / cdFrameSize
