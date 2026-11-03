@@ -41,7 +41,8 @@ func TestParseMetadataCHGD(t *testing.T) {
 		"TRACK:3 TYPE:MODE1_RAW SUBTYPE:NONE FRAMES:2000 PAD:0 PREGAP:0 PGTYPE:MODE1 PGSUB:NONE POSTGAP:0",
 	}
 	blob := buildMetaBlob(16, payloads)
-	rd := &Reader{r: bytes.NewReader(blob)}
+	// 413 hunks of 8 frames hold the 3300 track frames.
+	rd := &Reader{r: bytes.NewReader(blob), totalHunks: 413, framesPerHunk: 8}
 	if err := rd.parseMetadata(16); err != nil {
 		t.Fatal(err)
 	}

@@ -81,20 +81,31 @@ func (rd *Reader) parseMetadata(metaOffset uint64) error {
 	sort.Slice(rawTracks, func(i, j int) bool {
 		return rawTracks[i].Number < rawTracks[j].Number
 	})
+	for i := 1; i < len(rawTracks); i++ {
+		if rawTracks[i].Number == rawTracks[i-1].Number {
+			return fmt.Errorf("duplicate track %d", rawTracks[i].Number)
+		}
+	}
 
 	// Compute layout offsets. CHDMAN pads each track in the CHD file
 	// to a multiple of 4 frames; the padding lives only in the CHD
 	// layout, not the logical LBA layout. CHTR/CHT2 Frames already
-	// includes the pregap frames at the start of the track.
+	// includes the pregap frames at the start of the track. Every track
+	// must fit the frames the image's hunks hold; checking the running
+	// total against that also keeps it from overflowing.
 	const trackPadding = 4
+	imageFrames := uint64(rd.totalHunks) * uint64(rd.framesPerHunk)
 	chdOffset := 0
 	lbaOffset := 0
 	for i := range rawTracks {
 		t := &rawTracks[i]
+		padded := (uint64(t.Frames) + trackPadding - 1) / trackPadding * trackPadding
+		if padded > imageFrames-uint64(chdOffset) {
+			return fmt.Errorf("track %d extends past the %d frames the image holds", t.Number, imageFrames)
+		}
 		t.chdStart = chdOffset
 		t.startLBA = lbaOffset
-		extra := ((t.Frames+trackPadding-1)/trackPadding)*trackPadding - t.Frames
-		chdOffset += t.Frames + extra
+		chdOffset += int(padded)
 		lbaOffset += t.Frames
 	}
 
@@ -137,8 +148,15 @@ func parseTrackLine(data []byte) (Track, error) {
 		}
 	}
 
-	if t.Number == 0 {
-		return t, fmt.Errorf("missing TRACK number in %q", line)
+	if t.Number < 1 || t.Number > maxTracks {
+		return t, fmt.Errorf("TRACK number missing or outside 1-%d in %q", maxTracks, line)
+	}
+	if t.Frames < 0 {
+		return t, fmt.Errorf("negative FRAMES in %q", line)
+	}
+	// Frames includes the pregap, so the pregap cannot exceed it.
+	if t.Pregap < 0 || t.Pregap > t.Frames {
+		return t, fmt.Errorf("PREGAP outside 0-FRAMES in %q", line)
 	}
 
 	if t.Type == "AUDIO" {

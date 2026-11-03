@@ -258,13 +258,80 @@ func openImage(img []byte) (*Reader, error) {
 	return Open(bytes.NewReader(img), int64(len(img)))
 }
 
-// trackLines returns n CHT2 track lines numbered from 1.
+// trackLines returns n empty CHT2 track lines numbered from 1. They hold no
+// frames, so any number of them fits the one-hunk test image.
 func trackLines(n int) []string {
 	lines := make([]string, n)
 	for i := range lines {
-		lines[i] = fmt.Sprintf("TRACK:%d TYPE:MODE1_RAW SUBTYPE:NONE FRAMES:4", i+1)
+		lines[i] = fmt.Sprintf("TRACK:%d TYPE:MODE1_RAW SUBTYPE:NONE FRAMES:0", i+1)
 	}
 	return lines
+}
+
+// TestOpenTrackValues tests the limits on track numbers, frame counts and
+// pregaps, and that tracks must fit the frames the image holds. The test
+// image holds one hunk of testFramesPerHunk frames.
+func TestOpenTrackValues(t *testing.T) {
+	line := func(num, frames, pregap string) string {
+		return "TRACK:" + num + " TYPE:MODE1_RAW SUBTYPE:NONE FRAMES:" + frames + " PREGAP:" + pregap
+	}
+	cases := []struct {
+		name   string
+		tracks []string
+		wantOK bool
+	}{
+		{"two tracks", []string{line("1", "4", "0"), line("2", "4", "2")}, true},
+		{"chain out of order", []string{line("2", "4", "0"), line("1", "4", "0")}, true},
+		{"zero frames", []string{line("1", "0", "0"), line("2", "8", "0")}, true},
+		{"pregap equals frames", []string{line("1", "4", "4")}, true},
+		{"padded to the image size", []string{line("1", "5", "0")}, true},
+		{"track zero", []string{line("0", "4", "0")}, false},
+		{"negative track", []string{line("-1", "4", "0")}, false},
+		{"track 100", []string{line("100", "4", "0")}, false},
+		{"duplicate track", []string{line("1", "4", "0"), line("1", "4", "0")}, false},
+		{"negative frames", []string{line("1", "-100", "0"), line("2", "4", "0")}, false},
+		{"negative pregap", []string{line("1", "4", "-1")}, false},
+		{"pregap past frames", []string{line("1", "4", "5")}, false},
+		{"tracks exceed image", []string{line("1", "4", "0"), line("2", "5", "0")}, false},
+		{"huge frames", []string{line("1", "9223372036854775807", "0")}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rd, err := openTestCHD(t, metaTestCHD(0, tc.tracks...))
+			if !tc.wantOK {
+				if err == nil {
+					rd.Close()
+					t.Fatal("expected an error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Open: %v", err)
+			}
+			rd.Close()
+		})
+	}
+}
+
+// TestOpenTrackLayout tests the start LBA and pregap of a valid two-track
+// image.
+func TestOpenTrackLayout(t *testing.T) {
+	rd, err := openTestCHD(t, metaTestCHD(0,
+		"TRACK:1 TYPE:MODE1_RAW SUBTYPE:NONE FRAMES:3 PREGAP:0",
+		"TRACK:2 TYPE:AUDIO SUBTYPE:NONE FRAMES:4 PREGAP:2"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer rd.Close()
+
+	tracks := rd.Tracks()
+	if len(tracks) != 2 {
+		t.Fatalf("tracks = %d, want 2", len(tracks))
+	}
+	if tracks[1].StartLBA() != 3 || tracks[1].Pregap != 2 || tracks[1].chdStart != 4 {
+		t.Fatalf("track 2 start LBA %d, pregap %d, image frame %d, want 3, 2, 4",
+			tracks[1].StartLBA(), tracks[1].Pregap, tracks[1].chdStart)
+	}
 }
 
 // TestOpenMetadataChain tests the limits on the metadata chain walk.
