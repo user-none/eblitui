@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/flate"
 	"encoding/binary"
+	"errors"
 	"testing"
 )
 
@@ -215,6 +216,61 @@ func TestDecompressCDZLStraddleSwapsAudioOnly(t *testing.T) {
 		t.Fatalf("output len = %d, want %d", len(out), rd.framesPerHunk*cdFrameSize)
 	}
 	checkFrames(t, rd, out, []bool{false, false, false, false, true, true, true, true})
+}
+
+// TestDecompressDeflateLimit tests that inflating stops with an error once
+// the output passes the limit, and output exactly at the limit is kept.
+func TestDecompressDeflateLimit(t *testing.T) {
+	data := bytes.Repeat([]byte{0xA5}, 1000)
+	comp := deflateRaw(t, data)
+
+	out, err := decompressDeflate(comp, len(data))
+	if err != nil {
+		t.Fatalf("at limit: %v", err)
+	}
+	if !bytes.Equal(out, data) {
+		t.Fatal("at limit: output does not match input")
+	}
+
+	if _, err := decompressDeflate(comp, len(data)-1); !errors.Is(err, errDecompressedTooLarge) {
+		t.Fatalf("over limit: expected errDecompressedTooLarge, got %v", err)
+	}
+}
+
+// buildCDZLHunkFrom assembles a cdzl hunk with no ECC flags from the given
+// uncompressed base and subcode.
+func buildCDZLHunkFrom(t *testing.T, rd *Reader, base, sub []byte) []byte {
+	t.Helper()
+	compBase := deflateRaw(t, base)
+	hunk := make([]byte, (rd.framesPerHunk+7)/8)
+	hunk = binary.BigEndian.AppendUint16(hunk, uint16(len(compBase)))
+	hunk = append(hunk, compBase...)
+	return append(hunk, deflateRaw(t, sub)...)
+}
+
+// TestDecompressCDZLStreamTooLarge tests that a cdzl base or subcode stream
+// inflating to more than the hunk's frames hold is rejected.
+func TestDecompressCDZLStreamTooLarge(t *testing.T) {
+	rd := twoTrackReader(8, 0, 8)
+	rd.hunkBytes = uint32(rd.framesPerHunk * cdFrameSize)
+	baseSize := rd.framesPerHunk * cdSectorSize
+	subSize := rd.framesPerHunk * cdSubcodeSize
+
+	cases := []struct {
+		name      string
+		base, sub []byte
+	}{
+		{"base", make([]byte, baseSize+1), make([]byte, subSize)},
+		{"subcode", make([]byte, baseSize), make([]byte, subSize+1)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := rd.decompress(0, codecCDZL, buildCDZLHunkFrom(t, rd, tc.base, tc.sub))
+			if !errors.Is(err, errDecompressedTooLarge) {
+				t.Fatalf("expected errDecompressedTooLarge, got %v", err)
+			}
+		})
+	}
 }
 
 // TestSwapFramesPaddingUntouched confirms inter-track padding frames are never

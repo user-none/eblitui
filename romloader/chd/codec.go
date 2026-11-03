@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"compress/flate"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 
@@ -69,7 +70,7 @@ func decompressCD(codec uint32, compressed []byte, framesPerHunk int, hunkBytes 
 	var decompBase, decompSubcode decompFunc
 
 	deflateFunc := func(data []byte, expectedSize int) ([]byte, error) {
-		return decompressDeflate(data)
+		return decompressDeflate(data, expectedSize)
 	}
 	zstdFunc := func(data []byte, expectedSize int) ([]byte, error) {
 		return decompressZstd(data, zstdDec)
@@ -97,7 +98,7 @@ func decompressCD(codec uint32, compressed []byte, framesPerHunk int, hunkBytes 
 		return nil, fmt.Errorf("decompressing base: %w", err)
 	}
 
-	subcode, err := decompSubcode(compSubcode, 0)
+	subcode, err := decompSubcode(compSubcode, framesPerHunk*cdSubcodeSize)
 	if err != nil {
 		return nil, fmt.Errorf("decompressing subcode: %w", err)
 	}
@@ -155,7 +156,7 @@ func decompressCDFL(compressed []byte, framesPerHunk int) ([]byte, error) {
 	// Remaining compressed data is deflate-compressed subcode
 	var subcode []byte
 	if consumed < len(compressed) {
-		subcode, err = decompressDeflate(compressed[consumed:])
+		subcode, err = decompressDeflate(compressed[consumed:], framesPerHunk*cdSubcodeSize)
 		if err != nil {
 			return nil, fmt.Errorf("decompressing CDFL subcode: %w", err)
 		}
@@ -223,10 +224,25 @@ func (rd *Reader) swapFrames(idx int, hunk []byte, audio bool) {
 	}
 }
 
-func decompressDeflate(data []byte) ([]byte, error) {
+// errDecompressedTooLarge is returned when a hunk stream inflates to more
+// than the frames it belongs to can hold.
+var errDecompressedTooLarge = errors.New("decompressed data larger than the hunk holds")
+
+// decompressDeflate inflates data, failing with errDecompressedTooLarge if it
+// holds more than limit bytes. A hunk stream's size is known from its frame
+// count, and deflate can expand about 1000 times, so an unbounded read would
+// let a small stream allocate far more than any hunk needs.
+func decompressDeflate(data []byte, limit int) ([]byte, error) {
 	fr := flate.NewReader(bytes.NewReader(data))
 	defer fr.Close()
-	return io.ReadAll(fr)
+	out, err := io.ReadAll(io.LimitReader(fr, int64(limit)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(out) > limit {
+		return nil, errDecompressedTooLarge
+	}
+	return out, nil
 }
 
 func decompressLZMA(data []byte, expectedSize int, dictSize uint32) ([]byte, error) {
