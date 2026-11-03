@@ -109,7 +109,10 @@ func Open(r io.ReaderAt, size int64) (*Reader, error) {
 		return nil, fmt.Errorf("chd: parsing metadata: %w", err)
 	}
 
-	dec, err := zstd.NewReader(nil, zstd.WithDecoderConcurrency(1))
+	// A hunk never decodes to more than hunkBytes, so cap each zstd stream
+	// there. Without it a frame header can declare up to 64 GiB of content,
+	// which the decoder allocates before decoding.
+	dec, err := zstd.NewReader(nil, zstd.WithDecoderConcurrency(1), zstd.WithDecoderMaxMemory(uint64(rd.hunkBytes)))
 	if err != nil {
 		return nil, fmt.Errorf("chd: creating zstd decoder: %w", err)
 	}
