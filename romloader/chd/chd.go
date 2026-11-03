@@ -32,6 +32,7 @@ const (
 // Reader reads sectors from a CHD V5 disc image.
 type Reader struct {
 	r             io.ReaderAt
+	size          int64 // total file size, bounding every offset read from the file
 	codecs        [4]uint32
 	logicalBytes  uint64
 	hunkBytes     uint32
@@ -92,7 +93,7 @@ func Open(r io.ReaderAt, size int64) (*Reader, error) {
 		return nil, fmt.Errorf("chd: header length %d, want %d for version 5", headerLen, v5HeaderSize)
 	}
 
-	rd := &Reader{r: r}
+	rd := &Reader{r: r, size: size}
 	rd.codecs[0] = binary.BigEndian.Uint32(hdr[16:20])
 	rd.codecs[1] = binary.BigEndian.Uint32(hdr[20:24])
 	rd.codecs[2] = binary.BigEndian.Uint32(hdr[24:28])
@@ -231,6 +232,9 @@ func (rd *Reader) getHunk(idx int) ([]byte, error) {
 		if _, err := rd.r.ReadAt(data, int64(entry.offset)); err != nil {
 			return nil, fmt.Errorf("reading uncompressed hunk %d: %w", idx, err)
 		}
+		if got := crc16(data); got != entry.crc16 {
+			return nil, fmt.Errorf("hunk %d CRC %#04x does not match %#04x", idx, got, entry.crc16)
+		}
 		rd.swapFrames(idx, data, true)
 	case compParent:
 		return nil, fmt.Errorf("parent compression not supported (hunk %d)", idx)
@@ -244,10 +248,18 @@ func (rd *Reader) getHunk(idx int) ([]byte, error) {
 			return nil, fmt.Errorf("reading compressed data: %w", err)
 		}
 		codec := rd.codecs[entry.compression]
-		data, err = rd.decompress(idx, codec, compressed)
+		data, err = rd.decompress(codec, compressed)
 		if err != nil {
 			return nil, fmt.Errorf("decompressing hunk %d (codec %08x): %w", idx, codec, err)
 		}
+		if got := rd.storedCRC(data, codec); got != entry.crc16 {
+			return nil, fmt.Errorf("hunk %d CRC %#04x does not match %#04x", idx, got, entry.crc16)
+		}
+		// CDFL decodes native little-endian (audio already canonical, data must
+		// be swapped to its true order); the base codecs reconstruct big-endian
+		// frames (data already byte-exact, audio must be swapped). Data hunks can
+		// reach either path - codec is by ratio.
+		rd.swapFrames(idx, data, codec != codecCDFL)
 	}
 
 	// Store in cache, evict oldest
@@ -269,20 +281,36 @@ func (rd *Reader) getHunk(idx int) ([]byte, error) {
 	return data, nil
 }
 
-func (rd *Reader) decompress(idx int, codec uint32, compressed []byte) ([]byte, error) {
+// decompress decodes a compressed hunk with the given codec. The result is
+// the codec's output before any byte order conversion; getHunk checks its
+// CRC and then converts it.
+func (rd *Reader) decompress(codec uint32, compressed []byte) ([]byte, error) {
 	switch codec {
 	case codecCDZL, codecCDLZ, codecCDFL, codecCDZS:
-		data, err := decompressCD(codec, compressed, rd.framesPerHunk, rd.hunkBytes, rd.zstdDec)
-		if err != nil {
-			return nil, err
-		}
-		// CDFL decodes native little-endian (audio already canonical, data must
-		// be swapped to its true order); the base codecs reconstruct big-endian
-		// frames (data already byte-exact, audio must be swapped). Data hunks can
-		// reach either path - codec is by ratio.
-		rd.swapFrames(idx, data, codec != codecCDFL)
-		return data, nil
+		return decompressCD(codec, compressed, rd.framesPerHunk, rd.hunkBytes, rd.zstdDec)
 	default:
 		return nil, fmt.Errorf("unsupported codec %08x", codec)
 	}
+}
+
+// storedCRC returns the CRC-16 of a decoded hunk in the byte order images
+// store it in, which is what the map entry's CRC covers. The FLAC codec
+// decodes CD sector data as little-endian samples while images store it as
+// big-endian samples, so for that codec each sector's 16-bit pairs are
+// swapped back; the subcode is stored as is.
+func (rd *Reader) storedCRC(data []byte, codec uint32) uint16 {
+	if codec != codecCDFL {
+		return crc16(data)
+	}
+	crc := crc16(nil)
+	var pair [2]byte
+	for f := 0; f < rd.framesPerHunk; f++ {
+		off := f * cdFrameSize
+		for j := off; j < off+cdSectorSize; j += 2 {
+			pair[0], pair[1] = data[j+1], data[j]
+			crc = crc16Update(crc, pair[:])
+		}
+		crc = crc16Update(crc, data[off+cdSectorSize:off+cdFrameSize])
+	}
+	return crc
 }

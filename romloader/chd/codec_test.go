@@ -173,8 +173,9 @@ func deflateRaw(t *testing.T, data []byte) []byte {
 
 // buildCDZLHunk assembles a cdzl (Deflate) CD hunk: ECC flags (none set), a
 // 2-byte base length, then deflate(base) and deflate(subcode). base is the
-// per-frame sector pattern from fillFrames; subcode is 0x5A.
-func buildCDZLHunk(t *testing.T, rd *Reader) []byte {
+// per-frame sector pattern from fillFrames; subcode is 0x5A. It also returns
+// the decoded hunk as stored, which the hunk's CRC covers.
+func buildCDZLHunk(t *testing.T, rd *Reader) (hunk, decoded []byte) {
 	t.Helper()
 	base := make([]byte, rd.framesPerHunk*cdSectorSize)
 	for f := 0; f < rd.framesPerHunk; f++ {
@@ -192,23 +193,33 @@ func buildCDZLHunk(t *testing.T, rd *Reader) []byte {
 	compBase := deflateRaw(t, base)
 	compSub := deflateRaw(t, sub)
 
-	hunk := make([]byte, (rd.framesPerHunk+7)/8) // ECC flag bytes, all zero
+	hunk = make([]byte, (rd.framesPerHunk+7)/8) // ECC flag bytes, all zero
 	var lenHdr [2]byte
 	binary.BigEndian.PutUint16(lenHdr[:], uint16(len(compBase)))
 	hunk = append(hunk, lenHdr[:]...)
 	hunk = append(hunk, compBase...)
 	hunk = append(hunk, compSub...)
-	return hunk
+	return hunk, cdFrames(base, sub)
 }
 
-// TestDecompressCDZLStraddleSwapsAudioOnly decompresses a cdzl hunk straddling a
+// TestDecompressCDZLStraddleSwapsAudioOnly reads a cdzl hunk straddling a
 // data/audio boundary and checks only the audio frames are swapped to
 // little-endian while the data frames stay byte-exact.
 func TestDecompressCDZLStraddleSwapsAudioOnly(t *testing.T) {
 	rd := twoTrackReader(4, 4, 4) // frames 0-3 data, 4-7 audio
 	rd.hunkBytes = uint32(rd.framesPerHunk * cdFrameSize)
 
-	out, err := rd.decompress(0, codecCDZL, buildCDZLHunk(t, rd))
+	hunk, decoded := buildCDZLHunk(t, rd)
+	rd.r = bytes.NewReader(hunk)
+	rd.size = int64(len(hunk))
+	rd.codecs[0] = codecCDZL
+	rd.totalHunks = 1
+	rd.entries = []mapEntry{{compression: compCodec0, length: uint32(len(hunk)), crc16: crc16(decoded)}}
+	for i := range rd.cache {
+		rd.cache[i].hunkIdx = -1
+	}
+
+	out, err := rd.getHunk(0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +276,7 @@ func TestDecompressCDZLStreamTooLarge(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := rd.decompress(0, codecCDZL, buildCDZLHunkFrom(t, rd, tc.base, tc.sub))
+			_, err := rd.decompress(codecCDZL, buildCDZLHunkFrom(t, rd, tc.base, tc.sub))
 			if !errors.Is(err, errDecompressedTooLarge) {
 				t.Fatalf("expected errDecompressedTooLarge, got %v", err)
 			}

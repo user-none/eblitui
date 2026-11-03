@@ -13,9 +13,22 @@ import (
 
 // testHunk is one hunk map entry for testCHD.
 type testHunk struct {
-	comp   uint8  // map compression type (compCodec0-3, compNone, compSelf)
-	data   []byte // stored bytes for codec and none types
-	offset uint64 // referenced hunk for compSelf
+	comp    uint8  // map compression type (compCodec0-3, compNone, compSelf)
+	data    []byte // stored bytes for codec and none types
+	offset  uint64 // referenced hunk for compSelf
+	decoded []byte // codec types: the decoded hunk the entry's CRC covers
+}
+
+// crc returns the CRC the map stores for the hunk: of the decoded hunk for
+// codec types, of the stored bytes for compNone, and 0 for references.
+func (h testHunk) crc() uint16 {
+	switch h.comp {
+	case compCodec0, compCodec1, compCodec2, compCodec3:
+		return crc16(h.decoded)
+	case compNone:
+		return crc16(h.data)
+	}
+	return 0
 }
 
 // testCHD describes a CHD v5 image built in memory by build. Hunk data is
@@ -73,21 +86,35 @@ func (c testCHD) build() []byte {
 	for _, h := range c.hunks {
 		bw.write(uint64(h.comp), 4)
 	}
+	// The map CRC covers each decoded entry as 12 bytes: type, 24-bit
+	// length, 48-bit offset and 16-bit hunk CRC.
+	var rawMap []byte
+	dataOffset := firstOffs
 	for _, h := range c.hunks {
+		var length uint32
+		offset := dataOffset
 		switch h.comp {
 		case compCodec0, compCodec1, compCodec2, compCodec3:
-			bw.write(uint64(len(h.data)), int(c.lengthBits))
-			bw.write(0, 16)
+			length = uint32(len(h.data))
+			bw.write(uint64(length), int(c.lengthBits))
+			bw.write(uint64(h.crc()), 16)
 		case compNone:
-			bw.write(0, 16)
+			length = c.hunkBytes
+			bw.write(uint64(h.crc()), 16)
 		case compSelf:
+			offset = h.offset
 			bw.write(h.offset, int(c.selfBits))
 		}
+		dataOffset += uint64(len(h.data))
+		rawMap = append(rawMap, h.comp, byte(length>>16), byte(length>>8), byte(length))
+		rawMap = append(rawMap, byte(offset>>40), byte(offset>>32), byte(offset>>24), byte(offset>>16), byte(offset>>8), byte(offset))
+		rawMap = binary.BigEndian.AppendUint16(rawMap, h.crc())
 	}
 
 	mapOffset := uint64(len(out))
 	var mapHdr [16]byte
 	binary.BigEndian.PutUint32(mapHdr[0:4], uint32(len(bw.buf)))
+	binary.BigEndian.PutUint16(mapHdr[10:12], crc16(rawMap))
 	mapHdr[4] = byte(firstOffs >> 40)
 	mapHdr[5] = byte(firstOffs >> 32)
 	mapHdr[6] = byte(firstOffs >> 24)
@@ -160,6 +187,18 @@ func openTestCHD(t *testing.T, c testCHD) (*Reader, error) {
 // of 2448 bytes, small enough that the base length is a 2-byte field.
 const testFramesPerHunk = 8
 
+// cdFrames interleaves sector data and subcode into 2448-byte frames, the
+// decoded form of a CD hunk.
+func cdFrames(sectors, subcode []byte) []byte {
+	n := len(sectors) / cdSectorSize
+	out := make([]byte, 0, n*cdFrameSize)
+	for f := range n {
+		out = append(out, sectors[f*cdSectorSize:(f+1)*cdSectorSize]...)
+		out = append(out, subcode[f*cdSubcodeSize:(f+1)*cdSubcodeSize]...)
+	}
+	return out
+}
+
 // cdzsHunk builds a cdzs hunk payload: one ECC flag byte (no flags set),
 // the 2-byte compressed base length, the base stream and the subcode
 // stream.
@@ -190,7 +229,7 @@ func TestReadSectorCDZS(t *testing.T) {
 		lengthBits: 24,
 		selfBits:   24,
 		parentBits: 24,
-		hunks:      []testHunk{{comp: compCodec0, data: hunk}},
+		hunks:      []testHunk{{comp: compCodec0, data: hunk, decoded: cdFrames(base, subcode)}},
 		tracks:     []string{"TRACK:1 TYPE:MODE1_RAW SUBTYPE:NONE FRAMES:8"},
 	})
 	if err != nil {
@@ -440,6 +479,224 @@ func TestOpenHeaderSizes(t *testing.T) {
 			}
 			rd.Close()
 		})
+	}
+}
+
+// mapTestCHD is an image of the given hunks with 8-frame hunks, 24-bit map
+// fields and one track covering every hunk.
+func mapTestCHD(hunks ...testHunk) testCHD {
+	return testCHD{
+		codecs:     [4]uint32{codecCDZS},
+		hunkBytes:  testFramesPerHunk * cdFrameSize,
+		unitBytes:  cdFrameSize,
+		lengthBits: 24,
+		selfBits:   24,
+		parentBits: 24,
+		hunks:      hunks,
+		tracks:     []string{fmt.Sprintf("TRACK:1 TYPE:MODE1_RAW SUBTYPE:NONE FRAMES:%d", len(hunks)*testFramesPerHunk)},
+	}
+}
+
+// rawHunk is an uncompressed hunk filled with fill.
+func rawHunk(fill byte) testHunk {
+	return testHunk{comp: compNone, data: bytes.Repeat([]byte{fill}, testFramesPerHunk*cdFrameSize)}
+}
+
+// TestOpenMapFields tests the limits on the map's bit widths, its size and
+// the hunk data ranges it describes.
+func TestOpenMapFields(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		rd, err := openTestCHD(t, mapTestCHD(rawHunk(1), rawHunk(2)))
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		rd.Close()
+	})
+
+	for _, field := range []string{"length", "self", "parent"} {
+		t.Run(field+" bits over 24", func(t *testing.T) {
+			c := mapTestCHD(rawHunk(1))
+			switch field {
+			case "length":
+				c.lengthBits = 25
+			case "self":
+				c.selfBits = 25
+			case "parent":
+				c.parentBits = 25
+			}
+			if _, err := openTestCHD(t, c); err == nil {
+				t.Fatal("expected an error")
+			}
+		})
+	}
+
+	t.Run("map offset past the file", func(t *testing.T) {
+		img := mapTestCHD(rawHunk(1)).build()
+		binary.BigEndian.PutUint64(img[40:48], uint64(len(img)))
+		if _, err := openImage(img); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
+
+	t.Run("map length past the file", func(t *testing.T) {
+		img := mapTestCHD(rawHunk(1)).build()
+		mapOffset := binary.BigEndian.Uint64(img[40:48])
+		binary.BigEndian.PutUint32(img[mapOffset:mapOffset+4], 0xFFFFFFFF)
+		if _, err := openImage(img); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
+
+	t.Run("hunk data past the file", func(t *testing.T) {
+		img := mapTestCHD(rawHunk(1)).build()
+		mapOffset := binary.BigEndian.Uint64(img[40:48])
+		// Move the first hunk's data offset to the end of the file.
+		first := uint64(len(img))
+		for i := range 6 {
+			img[mapOffset+4+uint64(i)] = byte(first >> uint(40-8*i))
+		}
+		if _, err := openImage(img); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
+
+	t.Run("compressed length past the file", func(t *testing.T) {
+		c := mapTestCHD(testHunk{comp: compCodec0, data: []byte{0}})
+		img := c.build()
+		// Grow the hunk's 24-bit length field, which follows the 64-bit
+		// Huffman tree and the 4-bit type, to its maximum.
+		mapOffset := binary.BigEndian.Uint64(img[40:48])
+		bits := img[mapOffset+16:]
+		var bw bitWriter
+		for range 16 {
+			bw.write(4, 4)
+		}
+		bw.write(compCodec0, 4)
+		bw.write(0xFFFFFF, 24)
+		bw.write(0, 16)
+		copy(bits, bw.buf)
+		if _, err := openImage(img); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
+}
+
+// TestOpenSelfReferences tests that a hunk may only refer to an earlier
+// hunk, and that such a reference reads the earlier hunk's data.
+func TestOpenSelfReferences(t *testing.T) {
+	t.Run("refers to an earlier hunk", func(t *testing.T) {
+		rd, err := openTestCHD(t, mapTestCHD(rawHunk(0x33), testHunk{comp: compSelf, offset: 0}))
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		defer rd.Close()
+		sector, err := rd.ReadSector(testFramesPerHunk)
+		if err != nil {
+			t.Fatalf("ReadSector: %v", err)
+		}
+		if sector[0] != 0x33 {
+			t.Fatalf("sector[0] = %#x, want 0x33", sector[0])
+		}
+	})
+
+	t.Run("chain resolves to the stored hunk", func(t *testing.T) {
+		rd, err := openTestCHD(t, mapTestCHD(rawHunk(0x44),
+			testHunk{comp: compSelf, offset: 0},
+			testHunk{comp: compSelf, offset: 1}))
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		defer rd.Close()
+		if rd.entries[2].offset != 0 {
+			t.Fatalf("hunk 2 refers to hunk %d, want 0", rd.entries[2].offset)
+		}
+		sector, err := rd.ReadSector(2 * testFramesPerHunk)
+		if err != nil {
+			t.Fatalf("ReadSector: %v", err)
+		}
+		if sector[0] != 0x44 {
+			t.Fatalf("sector[0] = %#x, want 0x44", sector[0])
+		}
+	})
+
+	t.Run("refers to itself", func(t *testing.T) {
+		if _, err := openTestCHD(t, mapTestCHD(testHunk{comp: compSelf, offset: 0})); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
+
+	t.Run("refers to a later hunk", func(t *testing.T) {
+		if _, err := openTestCHD(t, mapTestCHD(testHunk{comp: compSelf, offset: 1}, rawHunk(1))); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
+
+	t.Run("cycle", func(t *testing.T) {
+		if _, err := openTestCHD(t, mapTestCHD(testHunk{comp: compSelf, offset: 1}, testHunk{comp: compSelf, offset: 0})); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
+}
+
+// TestOpenMapCRC tests that a map whose decoded entries do not match its
+// CRC is rejected.
+func TestOpenMapCRC(t *testing.T) {
+	img := mapTestCHD(rawHunk(1), rawHunk(2)).build()
+	mapOffset := binary.BigEndian.Uint64(img[40:48])
+	img[mapOffset+10] ^= 0xFF
+	if _, err := openImage(img); err == nil {
+		t.Fatal("expected an error for a wrong map CRC")
+	}
+}
+
+// TestReadSectorHunkCRC tests that a hunk whose data does not match the
+// CRC in its map entry is not returned.
+func TestReadSectorHunkCRC(t *testing.T) {
+	img := mapTestCHD(rawHunk(1)).build()
+	// Change the stored hunk data, which starts right after the header.
+	img[v5HeaderSize] ^= 0xFF
+	rd, err := openImage(img)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer rd.Close()
+	if _, err := rd.ReadSector(0); err == nil {
+		t.Fatal("expected an error for a hunk not matching its CRC")
+	}
+}
+
+// TestReadSectorCDFLCRC tests that a cdfl hunk's CRC is checked over the
+// sector data as stored, with big-endian samples, and that the audio is then
+// returned with little-endian samples.
+func TestReadSectorCDFLCRC(t *testing.T) {
+	samples := testFramesPerHunk * cdSectorSize / 4
+	audio := flacStereoConstant(samples, 0x1234, -2)
+	subcode := make([]byte, testFramesPerHunk*cdSubcodeSize)
+	hunk := append(append([]byte{}, audio...), deflateRaw(t, subcode)...)
+
+	stored := bytes.Repeat([]byte{0x12, 0x34, 0xFF, 0xFE}, samples)
+
+	rd, err := openTestCHD(t, testCHD{
+		codecs:     [4]uint32{codecCDFL},
+		hunkBytes:  testFramesPerHunk * cdFrameSize,
+		unitBytes:  cdFrameSize,
+		lengthBits: 24,
+		selfBits:   24,
+		parentBits: 24,
+		hunks:      []testHunk{{comp: compCodec0, data: hunk, decoded: cdFrames(stored, subcode)}},
+		tracks:     []string{"TRACK:1 TYPE:AUDIO SUBTYPE:NONE FRAMES:8"},
+	})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer rd.Close()
+
+	sector, err := rd.ReadSector(0)
+	if err != nil {
+		t.Fatalf("ReadSector: %v", err)
+	}
+	if !bytes.Equal(sector[:4], []byte{0x34, 0x12, 0xFE, 0xFF}) {
+		t.Fatalf("first sample pair = % X, want 34 12 FE FF", sector[:4])
 	}
 }
 

@@ -33,7 +33,17 @@ type mapEntry struct {
 	crc16       uint16
 }
 
+// maxMapFieldBits is the widest map field accepted. Lengths are stored in
+// 24 bits, and hunk and unit numbers fit in 21 bits given the logical size
+// limit. The bitstream always holds at least 25 buffered bits, so reads of
+// up to 24 bits are exact.
+const maxMapFieldBits = 24
+
 func (rd *Reader) parseMap(mapOffset uint64) error {
+	size := uint64(rd.size)
+	if mapOffset > size || size-mapOffset < 16 {
+		return fmt.Errorf("map header at %d is past the end of the file", mapOffset)
+	}
 	var hdr [16]byte
 	if _, err := rd.r.ReadAt(hdr[:], int64(mapOffset)); err != nil {
 		return fmt.Errorf("reading map header: %w", err)
@@ -41,10 +51,17 @@ func (rd *Reader) parseMap(mapOffset uint64) error {
 
 	compressedLen := binary.BigEndian.Uint32(hdr[0:4])
 	firstOffs := getBE48(hdr[4:10])
-	// mapCRC at hdr[10:12] - verified after decode
+	// The map CRC at hdr[10:12] is verified after the entries are decoded.
 	lengthBits := int(hdr[12])
 	selfBits := int(hdr[13])
 	parentBits := int(hdr[14])
+
+	if lengthBits > maxMapFieldBits || selfBits > maxMapFieldBits || parentBits > maxMapFieldBits {
+		return fmt.Errorf("map field widths %d/%d/%d exceed %d bits", lengthBits, selfBits, parentBits, maxMapFieldBits)
+	}
+	if uint64(compressedLen) > size-mapOffset-16 {
+		return fmt.Errorf("map of %d bytes extends past the end of the file", compressedLen)
+	}
 
 	// Read compressed map data
 	compData := make([]byte, compressedLen)
@@ -96,6 +113,7 @@ func (rd *Reader) parseMap(mapOffset uint64) error {
 	curOffset := firstOffs
 	var lastSelf uint64
 	var lastParent uint64
+	mapCRC := crc16(nil)
 	for i := uint32(0); i < rd.totalHunks; i++ {
 		e := &rd.entries[i]
 		offset := curOffset
@@ -139,11 +157,45 @@ func (rd *Reader) parseMap(mapOffset uint64) error {
 			offset = lastParent
 		}
 
+		// The map CRC covers each entry as decoded, before references are
+		// resolved below: type, 24-bit length, 48-bit offset and hunk CRC.
+		raw := [12]byte{
+			e.compression,
+			byte(length >> 16), byte(length >> 8), byte(length),
+			byte(offset >> 40), byte(offset >> 32), byte(offset >> 24),
+			byte(offset >> 16), byte(offset >> 8), byte(offset),
+			byte(crc >> 8), byte(crc),
+		}
+		mapCRC = crc16Update(mapCRC, raw[:])
+
+		// Stored data must lie inside the file, and a hunk may only refer
+		// to an earlier hunk, as images are written. That keeps self
+		// references acyclic, so reading one always ends at stored data.
+		switch e.compression {
+		case compCodec0, compCodec1, compCodec2, compCodec3, compNone:
+			if offset > size || uint64(length) > size-offset {
+				return fmt.Errorf("hunk %d data at %d+%d extends past the end of the file", i, offset, length)
+			}
+		case compSelf:
+			if offset >= uint64(i) {
+				return fmt.Errorf("hunk %d refers to hunk %d, which is not earlier", i, offset)
+			}
+			// Point straight at the stored hunk. The earlier entry is
+			// already resolved, so a chain of references never needs more
+			// than one step to read.
+			if ref := &rd.entries[offset]; ref.compression == compSelf {
+				offset = ref.offset
+			}
+		}
+
 		e.offset = offset
 		e.length = length
 		e.crc16 = crc
 	}
 
+	if want := binary.BigEndian.Uint16(hdr[10:12]); mapCRC != want {
+		return fmt.Errorf("map CRC %#04x does not match %#04x", mapCRC, want)
+	}
 	return nil
 }
 

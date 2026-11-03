@@ -2,65 +2,37 @@ package chd
 
 import "testing"
 
-// makeMode1Sector builds a Mode 1 sector with sync, a header, and a
-// deterministic user-data pattern. EDC/ECC regions are left zero.
-func makeMode1Sector(seed byte) []byte {
+// makeSector builds a sector with sync, a header for the given mode, a
+// deterministic user-data pattern and a stand-in EDC. The P/Q parity region
+// is left zero, as CHD compression stores a flagged sector.
+func makeSector(seed, mode byte) []byte {
 	s := make([]byte, sectorBytes)
 	s[0] = 0x00
 	for i := 1; i <= 10; i++ {
 		s[i] = 0xFF
 	}
 	s[11] = 0x00
-	s[12], s[13], s[14], s[15] = 0x00, 0x02, 0x00, 0x01 // MSF 00:02:00, mode 1
-	for i := 16; i < 2064; i++ {
+	s[12], s[13], s[14], s[15] = 0x00, 0x02, 0x00, mode // MSF 00:02:00
+	for i := 16; i < 2076; i++ {
 		s[i] = byte(i*31 + int(seed))
 	}
 	return s
 }
 
-// edcBitwise is an independent bit-at-a-time reference for the table-driven
-// edcCompute, used to validate the LUT construction.
-func edcBitwise(data []byte) uint32 {
-	var c uint32
-	for _, b := range data {
-		c ^= uint32(b)
-		for i := 0; i < 8; i++ {
-			if c&1 != 0 {
-				c = (c >> 1) ^ edcPoly
-			} else {
-				c >>= 1
-			}
-		}
-	}
-	return c
-}
-
-func TestEDCTableMatchesBitwise(t *testing.T) {
-	data := makeMode1Sector(5)[0:2064]
-	if got, want := edcCompute(data), edcBitwise(data); got != want {
-		t.Errorf("edcCompute = %08x, bitwise reference = %08x", got, want)
-	}
-}
-
-// TestMode1ECCSpec verifies a regenerated Mode 1 sector against the ECMA-130
-// definitions directly: the EDC divisibility property (a correct codeword over
-// bytes 0..2067 hashes to zero) and the P/Q parity-check equations
-// HP*VP = 0 / HQ*VQ = 0. These checks use the spec's matrices and indexing
-// independently of the encoder, so they catch arithmetic and indexing errors
-// without needing an external vector.
-func TestMode1ECCSpec(t *testing.T) {
-	s := makeMode1Sector(9)
-	eccGenerate(s)
-
-	if got := edcCompute(s[0:2068]); got != 0 {
-		t.Errorf("EDC divisibility: edc over bytes 0..2067 = %08x, want 0", got)
-	}
-
+// checkParity verifies the P/Q parity-check equations HP*VP = 0 and
+// HQ*VQ = 0 from ECMA-130 over both byte planes, using the spec's matrices
+// and indexing independently of the encoder. When zeroHeader is set the four
+// header bytes count as zero, as they do for Mode 2.
+func checkParity(t *testing.T, s []byte, zeroHeader bool) {
+	t.Helper()
 	// Reassemble both byte planes (word n -> bytes 2n+12 LSB, 2n+13 MSB).
 	var planes [2][rspcWords]byte
 	for n := 0; n < rspcWords; n++ {
 		planes[0][n] = s[2*n+12]
 		planes[1][n] = s[2*n+13]
+	}
+	if zeroHeader {
+		planes[0][0], planes[1][0], planes[0][1], planes[1][1] = 0, 0, 0, 0
 	}
 
 	for pi := range planes {
@@ -102,16 +74,41 @@ func TestMode1ECCSpec(t *testing.T) {
 	}
 }
 
-func TestNonMode1Untouched(t *testing.T) {
-	s := makeMode1Sector(3)
-	s[15] = 0x02 // Mode 2: no EDC/ECC, must be left as-is
-	before := make([]byte, len(s))
-	copy(before, s)
-	eccGenerate(s)
-	for i := range s {
-		if s[i] != before[i] {
-			t.Fatalf("Mode 2 sector modified at byte %d", i)
+// checkOnlyParityChanged fails if eccGenerate changed any byte outside the
+// P/Q parity region (sector bytes 2076-2351).
+func checkOnlyParityChanged(t *testing.T, before, after []byte) {
+	t.Helper()
+	for i := 0; i < 2076; i++ {
+		if before[i] != after[i] {
+			t.Fatalf("byte %d changed from %02x to %02x", i, before[i], after[i])
 		}
+	}
+}
+
+// TestECCParity verifies regenerated parity against the ECMA-130 parity-check
+// equations for Mode 1, where the header is covered, and Mode 2, where it
+// counts as zero, and that nothing but the parity changes: the header and
+// EDC are stored and must be kept as they are.
+func TestECCParity(t *testing.T) {
+	for _, mode := range []byte{1, 2} {
+		s := makeSector(9, mode)
+		before := append([]byte(nil), s...)
+		eccGenerate(s)
+		checkParity(t, s, mode == 2)
+		checkOnlyParityChanged(t, before, s)
+	}
+}
+
+// TestECCMode2IgnoresHeader tests that a Mode 2 sector's parity does not
+// depend on its header bytes.
+func TestECCMode2IgnoresHeader(t *testing.T) {
+	a := makeSector(4, 2)
+	b := makeSector(4, 2)
+	b[12], b[13], b[14] = 0x12, 0x34, 0x56
+	eccGenerate(a)
+	eccGenerate(b)
+	if string(a[2076:]) != string(b[2076:]) {
+		t.Fatal("Mode 2 parity changed with the header address")
 	}
 }
 
@@ -120,15 +117,12 @@ func TestShortBufferIgnored(t *testing.T) {
 	eccGenerate(s) // must not panic
 }
 
-// TestMode1ECCSnapshot checks eccGenerate produces the expected EDC and P/Q
-// parity bytes for a fixed synthetic Mode 1 sector.
+// TestMode1ECCSnapshot checks eccGenerate produces the expected P/Q parity
+// bytes for a fixed synthetic Mode 1 sector.
 func TestMode1ECCSnapshot(t *testing.T) {
-	s := makeMode1Sector(9)
+	s := makeSector(9, 1)
 	eccGenerate(s)
 
-	if got := edcCompute(s[0:2064]); got != 0x41ff16ab {
-		t.Errorf("EDC = %08x, want 41ff16ab", got)
-	}
 	wantP := []byte{0xa2, 0x61, 0xc8, 0x4b, 0xc4, 0xcf, 0x7f, 0xdd}
 	if got := s[2076:2084]; string(got) != string(wantP) {
 		t.Errorf("P-parity head = % x, want % x", got, wantP)

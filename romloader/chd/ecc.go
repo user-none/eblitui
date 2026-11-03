@@ -3,24 +3,22 @@
 
 package chd
 
-// CD-ROM Mode 1 EDC/ECC regeneration. CHD CD compression strips the
-// regenerable sync, EDC, and ECC from data sectors and flags them; this
-// reconstructs the EDC and the P/Q parity so a decoded sector is byte-faithful
-// to the original image. Only Mode 1 is handled: the bare Mode 2 sector carries
-// no EDC/ECC, and CD-ROM XA (Mode 2 Form 1/2) is out of scope here.
+// CD-ROM ECC regeneration. CHD CD compression strips the sync and the P/Q
+// parity from data sectors whose parity checks out and flags them; this
+// reconstructs the P/Q parity so a decoded sector is byte-faithful to the
+// original image. Mode 1 and Mode 2 Form 1 sectors are handled; for Mode 2 the
+// header bytes count as zero in the parity.
 
 const (
 	sectorBytes   = 2352
-	edcPoly       = 0xD8018001 // reflected form of the CD EDC polynomial
-	gfPrimitive   = 0x11D      // x^8 + x^4 + x^3 + x^2 + 1
-	rspcDataWords = 1032       // words 0..1031 cover sector bytes 12..2075
-	rspcWords     = 1170       // words 0..1169 (data + P/Q parity)
+	gfPrimitive   = 0x11D // x^8 + x^4 + x^3 + x^2 + 1
+	rspcDataWords = 1032  // words 0..1031 cover sector bytes 12..2075
+	rspcWords     = 1170  // words 0..1169 (data + P/Q parity)
 )
 
 var (
 	gfExp  [256]byte
 	gfLog  [256]byte
-	edcLUT [256]uint32
 	gfInv3 byte
 )
 
@@ -35,18 +33,6 @@ func init() {
 		}
 	}
 	gfInv3 = gfExp[(255-int(gfLog[3]))%255]
-
-	for i := 0; i < 256; i++ {
-		c := uint32(i)
-		for j := 0; j < 8; j++ {
-			if c&1 != 0 {
-				c = (c >> 1) ^ edcPoly
-			} else {
-				c >>= 1
-			}
-		}
-		edcLUT[i] = c
-	}
 }
 
 func gfMul(a, b byte) byte {
@@ -56,30 +42,15 @@ func gfMul(a, b byte) byte {
 	return gfExp[(int(gfLog[a])+int(gfLog[b]))%255]
 }
 
-// edcCompute returns the 32-bit CD EDC over data, least-significant bit first.
-func edcCompute(data []byte) uint32 {
-	var c uint32
-	for _, b := range data {
-		c = edcLUT[byte(c)^b] ^ (c >> 8)
-	}
-	return c
-}
-
-// eccGenerate fills the EDC and P/Q parity of a Mode 1 sector in place. Sectors
-// that are not Mode 1 (or buffers shorter than a full sector) are left
-// unmodified.
+// eccGenerate fills the P/Q parity of a sector in place from the bytes as
+// stored. CHD compression strips only the sync and the P/Q parity from a
+// flagged sector; the header, EDC and the rest are stored, so only the parity
+// is rebuilt. For a Mode 2 sector the four header bytes count as zero in the
+// parity, as the Mode 2 Form 1 layout requires. Buffers shorter than a full
+// sector are left unmodified.
 func eccGenerate(sector []byte) {
-	if len(sector) < sectorBytes || sector[15] != 1 {
+	if len(sector) < sectorBytes {
 		return
-	}
-
-	edc := edcCompute(sector[0:2064])
-	sector[2064] = byte(edc)
-	sector[2065] = byte(edc >> 8)
-	sector[2066] = byte(edc >> 16)
-	sector[2067] = byte(edc >> 24)
-	for i := 2068; i < 2076; i++ {
-		sector[i] = 0
 	}
 
 	// The RSPC runs independently on the two byte planes of the 16-bit words:
@@ -88,6 +59,9 @@ func eccGenerate(sector []byte) {
 	for n := 0; n < rspcDataWords; n++ {
 		lsb[n] = sector[2*n+12]
 		msb[n] = sector[2*n+13]
+	}
+	if sector[15] == 2 {
+		lsb[0], msb[0], lsb[1], msb[1] = 0, 0, 0, 0
 	}
 	eccPlane(&lsb)
 	eccPlane(&msb)
