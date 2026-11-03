@@ -82,7 +82,9 @@ func Open(r io.ReaderAt, size int64) (*Reader, error) {
 	if version != 5 {
 		return nil, fmt.Errorf("chd: unsupported version %d", version)
 	}
-	_ = headerLen
+	if headerLen != v5HeaderSize {
+		return nil, fmt.Errorf("chd: header length %d, want %d for version 5", headerLen, v5HeaderSize)
+	}
 
 	rd := &Reader{r: r}
 	rd.codecs[0] = binary.BigEndian.Uint32(hdr[16:20])

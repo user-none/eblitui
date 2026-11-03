@@ -19,6 +19,7 @@ type testHunk struct {
 // testCHD describes a CHD v5 image built in memory by build. Hunk data is
 // stored after the header, followed by the map and then the metadata chain.
 type testCHD struct {
+	headerLen    uint32 // 0 means v5HeaderSize
 	codecs       [4]uint32
 	hunkBytes    uint32
 	unitBytes    uint32
@@ -112,8 +113,12 @@ func (c testCHD) build() []byte {
 	if logical == 0 {
 		logical = uint64(len(c.hunks)) * uint64(c.hunkBytes)
 	}
+	headerLen := c.headerLen
+	if headerLen == 0 {
+		headerLen = v5HeaderSize
+	}
 	copy(out[0:8], magic)
-	binary.BigEndian.PutUint32(out[8:12], v5HeaderSize)
+	binary.BigEndian.PutUint32(out[8:12], headerLen)
 	binary.BigEndian.PutUint32(out[12:16], 5)
 	for i, codec := range c.codecs {
 		binary.BigEndian.PutUint32(out[16+4*i:20+4*i], codec)
@@ -211,5 +216,26 @@ func TestReadSectorCDZSDeclaredSizeTooLarge(t *testing.T) {
 	_, err = rd.ReadSector(0)
 	if !errors.Is(err, zstd.ErrDecoderSizeExceeded) {
 		t.Fatalf("expected zstd.ErrDecoderSizeExceeded, got %v", err)
+	}
+}
+
+// TestOpenHeaderLength tests that a v5 header must declare the v5 header
+// length.
+func TestOpenHeaderLength(t *testing.T) {
+	for _, headerLen := range []uint32{1, v5HeaderSize - 1, v5HeaderSize + 1, 0xFFFFFFFF} {
+		_, err := openTestCHD(t, testCHD{
+			headerLen:  headerLen,
+			codecs:     [4]uint32{codecCDZS},
+			hunkBytes:  testFramesPerHunk * cdFrameSize,
+			unitBytes:  cdFrameSize,
+			lengthBits: 24,
+			selfBits:   24,
+			parentBits: 24,
+			hunks:      []testHunk{{comp: compNone, data: make([]byte, testFramesPerHunk*cdFrameSize)}},
+			tracks:     []string{"TRACK:1 TYPE:MODE1_RAW SUBTYPE:NONE FRAMES:8"},
+		})
+		if err == nil {
+			t.Errorf("header length %d: expected an error", headerLen)
+		}
 	}
 }
