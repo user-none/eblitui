@@ -1,6 +1,7 @@
 package chd
 
 import (
+	"errors"
 	"testing"
 )
 
@@ -472,5 +473,182 @@ func TestDecodeFLACEmpty(t *testing.T) {
 	}
 	if len(out) != 0 {
 		t.Errorf("expected empty output, got %d bytes", len(out))
+	}
+}
+
+// flacFrameHeader writes a frame header for a block of blockSize samples
+// (1-65536, written as an explicit 16-bit size) with the given channel
+// assignment, taking the sample rate and size from the stream.
+func flacFrameHeader(w *bitWriter, blockSize int, channelAssign uint32) {
+	w.write(0x3FFE, 14) // sync
+	w.write(0, 1)       // reserved
+	w.write(0, 1)       // fixed blocking
+	w.write(7, 4)       // 16-bit block size follows
+	w.write(0, 4)       // sample rate from the stream
+	w.write(uint64(channelAssign), 4)
+	w.write(0, 3) // sample size from the stream
+	w.write(0, 1) // reserved
+	w.write(0, 8) // frame number 0
+	w.write(uint64(blockSize-1), 16)
+	w.write(0, 8) // CRC-8, not checked by the decoder
+}
+
+// flacFrameFooter pads to a byte boundary and writes the CRC-16, which the
+// decoder does not check.
+func flacFrameFooter(w *bitWriter) {
+	for w.nbits%8 != 0 {
+		w.write(0, 1)
+	}
+	w.write(0, 16)
+}
+
+// flacSubframeHeader writes a subframe header of the given type with no
+// wasted bits.
+func flacSubframeHeader(w *bitWriter, sfType int) {
+	w.write(0, 1) // padding
+	w.write(uint64(sfType), 6)
+	w.write(0, 1) // no wasted bits
+}
+
+// flacConstant writes a CONSTANT subframe holding v in bps bits.
+func flacConstant(w *bitWriter, bps int, v int32) {
+	flacSubframeHeader(w, 0)
+	w.write(uint64(uint32(v))&(1<<bps-1), bps)
+}
+
+// flacStereoConstant returns one independent-stereo frame of blockSize
+// samples whose left and right channels hold constant 16-bit values.
+func flacStereoConstant(blockSize int, left, right int32) []byte {
+	var w bitWriter
+	flacFrameHeader(&w, blockSize, 1)
+	flacConstant(&w, 16, left)
+	flacConstant(&w, 16, right)
+	flacFrameFooter(&w)
+	return w.buf
+}
+
+// TestDecodeFLACStereoConstant tests that a valid stereo frame decodes to
+// interleaved little-endian samples.
+func TestDecodeFLACStereoConstant(t *testing.T) {
+	out, _, err := decodeFLAC(flacStereoConstant(588, 0x1234, -2), 2, 16, 588)
+	if err != nil {
+		t.Fatalf("decodeFLAC: %v", err)
+	}
+	if len(out) != 588*4 {
+		t.Fatalf("output %d bytes, want %d", len(out), 588*4)
+	}
+	if out[0] != 0x34 || out[1] != 0x12 || out[2] != 0xFE || out[3] != 0xFF {
+		t.Fatalf("first sample pair = % X, want 34 12 FE FF", out[:4])
+	}
+}
+
+// TestDecodeFLACRejectsMalformed tests frames that previously indexed out of
+// range or shifted by a negative amount.
+func TestDecodeFLACRejectsMalformed(t *testing.T) {
+	cases := []struct {
+		name  string
+		frame func(w *bitWriter)
+	}{
+		{"mono frame for a stereo stream", func(w *bitWriter) {
+			flacFrameHeader(w, 16, 0)
+			flacConstant(w, 16, 1)
+		}},
+		{"reserved channel assignment", func(w *bitWriter) {
+			flacFrameHeader(w, 16, 11)
+			flacConstant(w, 16, 1)
+			flacConstant(w, 16, 1)
+		}},
+		{"fixed order larger than the block", func(w *bitWriter) {
+			flacFrameHeader(w, 1, 1)
+			flacSubframeHeader(w, 8+4)
+			for range 4 {
+				w.write(0, 16)
+			}
+		}},
+		{"lpc order larger than the block", func(w *bitWriter) {
+			flacFrameHeader(w, 16, 1)
+			flacSubframeHeader(w, 31+32)
+			for range 32 {
+				w.write(0, 16)
+			}
+		}},
+		{"first partition smaller than the order", func(w *bitWriter) {
+			flacFrameHeader(w, 16, 1)
+			flacSubframeHeader(w, 8+4)
+			for range 4 {
+				w.write(0, 16)
+			}
+			w.write(0, 2) // rice coding
+			w.write(3, 4) // 8 partitions of 2 samples
+		}},
+		{"first partition equal to the order", func(w *bitWriter) {
+			flacFrameHeader(w, 16, 1)
+			flacSubframeHeader(w, 8+4)
+			for range 4 {
+				w.write(0, 16)
+			}
+			w.write(0, 2) // rice coding
+			w.write(2, 4) // 4 partitions of 4 samples
+		}},
+		{"block size 65536", func(w *bitWriter) {
+			flacFrameHeader(w, 65536, 1)
+			flacConstant(w, 16, 1)
+			flacConstant(w, 16, 1)
+		}},
+		{"block not divisible by the partitions", func(w *bitWriter) {
+			flacFrameHeader(w, 15, 1)
+			flacSubframeHeader(w, 8+1)
+			w.write(0, 16)
+			w.write(0, 2) // rice coding
+			w.write(1, 4) // 2 partitions
+		}},
+		{"wasted bits not below the sample size", func(w *bitWriter) {
+			flacFrameHeader(w, 16, 1)
+			w.write(0, 1) // padding
+			w.write(0, 6) // CONSTANT
+			w.write(1, 1) // wasted bits follow
+			w.write(0, 16)
+			w.write(1, 1) // 17 wasted bits for a 16-bit channel
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var w bitWriter
+			tc.frame(&w)
+			// Trailing zero bytes so a missing check fails on bounds rather
+			// than on running out of input.
+			data := append(w.buf, make([]byte, 64)...)
+			if _, _, err := decodeFLAC(data, 2, 16, 0); err == nil {
+				t.Fatal("expected an error")
+			}
+		})
+	}
+}
+
+// TestFlacBitReaderWidthRange tests that bit widths outside 0-32 are
+// rejected rather than shifting by an invalid amount.
+func TestFlacBitReaderWidthRange(t *testing.T) {
+	for _, n := range []int{-1, 33} {
+		r := newFlacBitReader(make([]byte, 16))
+		if _, err := r.readBits(n); err == nil {
+			t.Errorf("readBits(%d): expected an error", n)
+		}
+	}
+}
+
+// TestDecompressCDFLSubcodeLimit tests the cdfl subcode stream is held to
+// the hunk's subcode size.
+func TestDecompressCDFLSubcodeLimit(t *testing.T) {
+	const framesPerHunk = 1
+	audio := flacStereoConstant(framesPerHunk*cdSectorSize/4, 0, 0)
+
+	exact := append(append([]byte{}, audio...), deflateRaw(t, make([]byte, framesPerHunk*cdSubcodeSize))...)
+	if _, err := decompressCDFL(exact, framesPerHunk); err != nil {
+		t.Fatalf("exact subcode: %v", err)
+	}
+
+	over := append(append([]byte{}, audio...), deflateRaw(t, make([]byte, framesPerHunk*cdSubcodeSize+1))...)
+	if _, err := decompressCDFL(over, framesPerHunk); !errors.Is(err, errDecompressedTooLarge) {
+		t.Fatalf("oversized subcode: expected errDecompressedTooLarge, got %v", err)
 	}
 }

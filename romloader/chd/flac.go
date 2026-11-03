@@ -92,6 +92,9 @@ func (r *flacBitReader) readBits(n int) (uint32, error) {
 	if n == 0 {
 		return 0, nil
 	}
+	if n < 0 || n > 32 {
+		return 0, fmt.Errorf("flac: invalid bit width %d", n)
+	}
 	r.refill()
 	if r.nBits < n {
 		return 0, errors.New("flac: unexpected end of data")
@@ -269,10 +272,21 @@ func (d *flacDecoder) decodeFrame() (int, error) {
 		}
 	}
 
-	// Determine channel count and decode subframes
-	numChannels := d.channels
-	if channelAssign <= 7 {
+	// Determine channel count and decode subframes. Assignments 11-15 are
+	// reserved (RFC 9639 section 9.1.3). The caller reads d.channels
+	// channels from every frame, so a frame carrying a different count
+	// would leave channels undecoded.
+	var numChannels int
+	switch {
+	case channelAssign <= 7:
 		numChannels = int(channelAssign) + 1
+	case channelAssign <= 10:
+		numChannels = 2
+	default:
+		return 0, fmt.Errorf("flac: reserved channel assignment %d", channelAssign)
+	}
+	if numChannels != d.channels {
+		return 0, fmt.Errorf("flac: frame has %d channels, stream has %d", numChannels, d.channels)
 	}
 
 	for ch := 0; ch < numChannels; ch++ {
@@ -326,6 +340,10 @@ func decodeBlockSize(br *flacBitReader, code uint32) (int, error) {
 		v, err := br.readBits(16)
 		if err != nil {
 			return 0, err
+		}
+		// RFC 9639 section 9.1.6: a block size of 65536 is forbidden.
+		if v == 0xFFFF {
+			return 0, errors.New("flac: forbidden block size 65536")
 		}
 		return int(v) + 1, nil
 	default: // 8-15
@@ -395,6 +413,11 @@ func (d *flacDecoder) decodeSubframe(ch int, blockSize int, bps int) error {
 		if err != nil {
 			return err
 		}
+		// RFC 9639 section 9.2.2: the bits per sample left after the wasted
+		// bits must be larger than zero.
+		if int(wb) >= bps-1 {
+			return fmt.Errorf("flac: %d wasted bits for a %d-bit subframe", int(wb)+1, bps)
+		}
 		wastedBits = int(wb) + 1
 		bps -= wastedBits
 	}
@@ -429,6 +452,9 @@ func (d *flacDecoder) decodeSubframe(ch int, blockSize int, bps int) error {
 	case sfType >= 8 && sfType <= 12:
 		// FIXED prediction, order 0-4
 		order := int(sfType - 8)
+		if order > blockSize {
+			return fmt.Errorf("flac: predictor order %d exceeds block size %d", order, blockSize)
+		}
 		for i := 0; i < order; i++ {
 			val, err := d.br.readSignedBits(bps)
 			if err != nil {
@@ -443,6 +469,9 @@ func (d *flacDecoder) decodeSubframe(ch int, blockSize int, bps int) error {
 	case sfType >= 32 && sfType <= 63:
 		// LPC prediction, order 1-32
 		order := int(sfType - 31)
+		if order > blockSize {
+			return fmt.Errorf("flac: predictor order %d exceeds block size %d", order, blockSize)
+		}
 		for i := 0; i < order; i++ {
 			val, err := d.br.readSignedBits(bps)
 			if err != nil {
@@ -521,6 +550,12 @@ func (d *flacDecoder) decodeResidual(blockSize int, predictorOrder int, samples 
 	}
 	numPartitions := 1 << partOrder
 	samplesPerPartition := blockSize >> partOrder
+	// RFC 9639 section 9.2.7: the partitions must split the block evenly,
+	// and each partition must be larger than the predictor order. Otherwise
+	// the residuals would be written past the block.
+	if blockSize%numPartitions != 0 || samplesPerPartition <= predictorOrder {
+		return fmt.Errorf("flac: partition order %d does not fit block size %d with predictor order %d", partOrder, blockSize, predictorOrder)
+	}
 
 	sampleIdx := predictorOrder
 	for p := 0; p < numPartitions; p++ {
