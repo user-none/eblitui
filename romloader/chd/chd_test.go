@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/klauspost/compress/zstd"
@@ -28,8 +30,12 @@ type testCHD struct {
 	selfBits     uint8
 	parentBits   uint8
 	hunks        []testHunk
+	extraMeta    int      // non-track metadata entries placed before the tracks
 	tracks       []string // one CHT2 metadata payload per track
 }
+
+// testMetaTag is a metadata tag the reader does not interpret.
+const testMetaTag = 0x54455354 // "TEST"
 
 // bitWriter writes values MSB first, the order the map bitstream reads.
 type bitWriter struct {
@@ -94,19 +100,31 @@ func (c testCHD) build() []byte {
 	out = append(out, mapHdr[:]...)
 	out = append(out, bw.buf...)
 
+	type metaNode struct {
+		tag     uint32
+		payload string
+	}
+	var nodes []metaNode
+	for range c.extraMeta {
+		nodes = append(nodes, metaNode{testMetaTag, "x"})
+	}
+	for _, tr := range c.tracks {
+		nodes = append(nodes, metaNode{metaTagCHT2, tr})
+	}
+
 	var metaOffset uint64
-	if len(c.tracks) > 0 {
+	if len(nodes) > 0 {
 		metaOffset = uint64(len(out))
 	}
-	for i, tr := range c.tracks {
+	for i, n := range nodes {
 		var node [16]byte
-		binary.BigEndian.PutUint32(node[0:4], metaTagCHT2)
-		binary.BigEndian.PutUint32(node[4:8], uint32(len(tr)))
-		if i+1 < len(c.tracks) {
-			binary.BigEndian.PutUint64(node[8:16], uint64(len(out)+16+len(tr)))
+		binary.BigEndian.PutUint32(node[0:4], n.tag)
+		binary.BigEndian.PutUint32(node[4:8], uint32(len(n.payload)))
+		if i+1 < len(nodes) {
+			binary.BigEndian.PutUint64(node[8:16], uint64(len(out)+16+len(n.payload)))
 		}
 		out = append(out, node[:]...)
-		out = append(out, tr...)
+		out = append(out, n.payload...)
 	}
 
 	logical := c.logicalBytes
@@ -217,6 +235,96 @@ func TestReadSectorCDZSDeclaredSizeTooLarge(t *testing.T) {
 	if !errors.Is(err, zstd.ErrDecoderSizeExceeded) {
 		t.Fatalf("expected zstd.ErrDecoderSizeExceeded, got %v", err)
 	}
+}
+
+// metaTestCHD is a one-hunk image carrying the given track lines and extra
+// metadata entries.
+func metaTestCHD(extraMeta int, tracks ...string) testCHD {
+	return testCHD{
+		codecs:     [4]uint32{codecCDZS},
+		hunkBytes:  testFramesPerHunk * cdFrameSize,
+		unitBytes:  cdFrameSize,
+		lengthBits: 24,
+		selfBits:   24,
+		parentBits: 24,
+		hunks:      []testHunk{{comp: compNone, data: make([]byte, testFramesPerHunk*cdFrameSize)}},
+		extraMeta:  extraMeta,
+		tracks:     tracks,
+	}
+}
+
+// openImage opens a built image from memory.
+func openImage(img []byte) (*Reader, error) {
+	return Open(bytes.NewReader(img), int64(len(img)))
+}
+
+// trackLines returns n CHT2 track lines numbered from 1.
+func trackLines(n int) []string {
+	lines := make([]string, n)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("TRACK:%d TYPE:MODE1_RAW SUBTYPE:NONE FRAMES:4", i+1)
+	}
+	return lines
+}
+
+// TestOpenMetadataChain tests the limits on the metadata chain walk.
+func TestOpenMetadataChain(t *testing.T) {
+	t.Run("forward chain", func(t *testing.T) {
+		rd, err := openTestCHD(t, metaTestCHD(3, trackLines(3)...))
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		defer rd.Close()
+		if n := len(rd.Tracks()); n != 3 {
+			t.Fatalf("tracks = %d, want 3", n)
+		}
+	})
+
+	t.Run("99 tracks", func(t *testing.T) {
+		rd, err := openTestCHD(t, metaTestCHD(0, trackLines(99)...))
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		rd.Close()
+	})
+
+	t.Run("link to itself", func(t *testing.T) {
+		img := metaTestCHD(0, trackLines(1)...).build()
+		meta := binary.BigEndian.Uint64(img[48:56])
+		binary.BigEndian.PutUint64(img[meta+8:meta+16], meta)
+		if _, err := openImage(img); err == nil {
+			t.Fatal("expected an error for a metadata entry linking to itself")
+		}
+	})
+
+	t.Run("link backward", func(t *testing.T) {
+		img := metaTestCHD(0, trackLines(2)...).build()
+		first := binary.BigEndian.Uint64(img[48:56])
+		second := binary.BigEndian.Uint64(img[first+8 : first+16])
+		binary.BigEndian.PutUint64(img[second+8:second+16], first)
+		if _, err := openImage(img); err == nil {
+			t.Fatal("expected an error for a metadata entry linking backward")
+		}
+	})
+
+	t.Run("too many tracks", func(t *testing.T) {
+		if _, err := openTestCHD(t, metaTestCHD(0, trackLines(100)...)); err == nil {
+			t.Fatal("expected an error for 100 track entries")
+		}
+	})
+
+	t.Run("too many entries", func(t *testing.T) {
+		if _, err := openTestCHD(t, metaTestCHD(maxMetaEntries, trackLines(1)...)); err == nil {
+			t.Fatalf("expected an error for %d metadata entries", maxMetaEntries+1)
+		}
+	})
+
+	t.Run("track entry too long", func(t *testing.T) {
+		line := trackLines(1)[0] + strings.Repeat(" ", maxTrackMetaLen)
+		if _, err := openTestCHD(t, metaTestCHD(0, line)); err == nil {
+			t.Fatal("expected an error for an oversized track entry")
+		}
+	})
 }
 
 // TestOpenHeaderLength tests that a v5 header must declare the v5 header

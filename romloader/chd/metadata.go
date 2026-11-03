@@ -17,6 +17,21 @@ const (
 	metaTagCHGD = 0x43484744 // "CHGD" - GD-ROM track info (same text format + PAD)
 )
 
+const (
+	// maxMetaEntries bounds the metadata chain walk. A CD image holds one
+	// entry per track plus a few others.
+	maxMetaEntries = 256
+	// maxTracks is the most tracks a CD can hold.
+	maxTracks = 99
+	// maxTrackMetaLen bounds a track entry's text. Real entries are a single
+	// line of a few fields, well under 200 bytes.
+	maxTrackMetaLen = 1024
+)
+
+// parseMetadata walks the metadata chain and collects the track entries.
+// Each entry is appended after the existing ones when an image is written,
+// so every link points further into the file; a link that does not is
+// rejected, which also rules out loops.
 func (rd *Reader) parseMetadata(metaOffset uint64) error {
 	if metaOffset == 0 {
 		return nil
@@ -25,7 +40,10 @@ func (rd *Reader) parseMetadata(metaOffset uint64) error {
 	var rawTracks []Track
 	offset := metaOffset
 
-	for offset != 0 {
+	for entries := 0; offset != 0; entries++ {
+		if entries == maxMetaEntries {
+			return fmt.Errorf("more than %d metadata entries", maxMetaEntries)
+		}
 		var node [16]byte
 		if _, err := rd.r.ReadAt(node[:], int64(offset)); err != nil {
 			return fmt.Errorf("reading metadata node at %d: %w", offset, err)
@@ -37,6 +55,12 @@ func (rd *Reader) parseMetadata(metaOffset uint64) error {
 		nextOffset := binary.BigEndian.Uint64(node[8:16])
 
 		if (tag == metaTagCHTR || tag == metaTagCHT2 || tag == metaTagCHGD) && payloadLen > 0 {
+			if payloadLen > maxTrackMetaLen {
+				return fmt.Errorf("track metadata at %d is %d bytes, more than %d", offset, payloadLen, maxTrackMetaLen)
+			}
+			if len(rawTracks) == maxTracks {
+				return fmt.Errorf("more than %d track metadata entries", maxTracks)
+			}
 			payload := make([]byte, payloadLen)
 			if _, err := rd.r.ReadAt(payload, int64(offset)+16); err != nil {
 				return fmt.Errorf("reading track metadata payload: %w", err)
@@ -48,6 +72,9 @@ func (rd *Reader) parseMetadata(metaOffset uint64) error {
 			rawTracks = append(rawTracks, t)
 		}
 
+		if nextOffset != 0 && nextOffset <= offset {
+			return fmt.Errorf("metadata entry at %d links back to %d", offset, nextOffset)
+		}
 		offset = nextOffset
 	}
 
