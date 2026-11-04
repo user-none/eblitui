@@ -5,6 +5,7 @@ package detail
 
 import (
 	"errors"
+	goimage "image"
 	"os"
 	"path/filepath"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ebitenui/ebitenui/event"
+	"github.com/ebitenui/ebitenui/widget"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/types"
@@ -62,7 +64,7 @@ func newTestScreenshotsSection(t *testing.T, names ...string) (*ScreenshotsSecti
 	decoded := make(chan string, 16)
 	s := NewScreenshotsSection(cb, func() int { return 800 })
 	s.gameDir = func(string) (string, error) { return dir, nil }
-	s.decode = func(path string) (*ebiten.Image, error) {
+	s.decode = func(path string, _ goimage.Point) (*ebiten.Image, error) {
 		decoded <- path
 		return nil, errTestDecode
 	}
@@ -407,5 +409,71 @@ func TestScreenshotsSetGameNilClears(t *testing.T) {
 	s.Build(focus)
 	if len(s.NavZones()) != 0 {
 		t.Errorf("zones = %v after clearing", s.NavZones())
+	}
+}
+
+func TestPreviewLimitFor(t *testing.T) {
+	tests := []struct {
+		name       string
+		box        goimage.Point
+		maxTexture int
+		want       goimage.Point
+	}{
+		{"laid out", goimage.Pt(640, 360), 16384, goimage.Pt(640, 360)},
+		{"area over GPU limit", goimage.Pt(9000, 300), 8192, goimage.Pt(8192, 300)},
+		{"not laid out", goimage.Point{}, 4096, goimage.Pt(4096, 4096)},
+		{"GPU limit unknown", goimage.Pt(640, 360), 0, goimage.Pt(640, 360)},
+		{"neither known", goimage.Point{}, 0, goimage.Pt(maxScreenshotDim, maxScreenshotDim)},
+	}
+	for _, tt := range tests {
+		if got := previewLimitFor(tt.box, tt.maxTexture); got != tt.want {
+			t.Errorf("%s: previewLimitFor(%v, %d) = %v, want %v", tt.name, tt.box, tt.maxTexture, got, tt.want)
+		}
+	}
+}
+
+func TestPreviewNeedsDecode(t *testing.T) {
+	big := goimage.Pt(8192, 8192)
+	tests := []struct {
+		name              string
+		used, size, limit goimage.Point
+		want              bool
+	}{
+		{"decoded for this limit", goimage.Pt(640, 360), goimage.Pt(640, 300), goimage.Pt(640, 360), false},
+		{"larger than the area", big, goimage.Pt(4000, 2000), goimage.Pt(640, 360), true},
+		{"native size fits the area", big, goimage.Pt(320, 224), goimage.Pt(640, 360), false},
+		{"scaled down, area grew", goimage.Pt(640, 360), goimage.Pt(640, 320), goimage.Pt(1280, 720), true},
+		{"native size, area grew", goimage.Pt(640, 360), goimage.Pt(320, 224), goimage.Pt(1280, 720), false},
+		{"scaled down, area shrank", goimage.Pt(1280, 720), goimage.Pt(1280, 640), goimage.Pt(640, 360), true},
+	}
+	for _, tt := range tests {
+		if got := previewNeedsDecode(tt.used, tt.size, tt.limit); got != tt.want {
+			t.Errorf("%s: previewNeedsDecode(%v, %v, %v) = %v, want %v", tt.name, tt.used, tt.size, tt.limit, got, tt.want)
+		}
+	}
+}
+
+// TestScreenshotsDecodeLimit tests that a preview is decoded to fit the
+// preview area once it is laid out, and to fit the largest screenshot
+// before then, as no GPU limit is known in tests.
+func TestScreenshotsDecodeLimit(t *testing.T) {
+	s, _, decoded, _ := newTestScreenshotsSection(t, "1760540000100.png")
+	waitDecode(t, decoded)
+
+	limits := make(chan goimage.Point, 4)
+	s.decode = func(_ string, limit goimage.Point) (*ebiten.Image, error) {
+		limits <- limit
+		return nil, errTestDecode
+	}
+	s.startPreview()
+	if got := <-limits; got != goimage.Pt(maxScreenshotDim, maxScreenshotDim) {
+		t.Errorf("limit before layout = %v", got)
+	}
+
+	s.previewBox = widget.NewContainer()
+	s.previewBox.GetWidget().Rect = goimage.Rect(10, 20, 650, 380)
+	s.startPreview()
+	if got := <-limits; got != goimage.Pt(640, 360) {
+		t.Errorf("limit after layout = %v, want 640x360", got)
 	}
 }

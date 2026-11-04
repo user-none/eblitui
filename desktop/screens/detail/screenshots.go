@@ -6,6 +6,7 @@ package detail
 import (
 	"errors"
 	"fmt"
+	goimage "image"
 	"image/color"
 	"image/png"
 	"io"
@@ -40,8 +41,9 @@ const (
 	screenshotTimeFormat = "2006-01-02 15:04:05"
 	// maxScreenshotDim is the widest or tallest screenshot the preview
 	// decodes, and maxScreenshotPixels the most pixels, bounding the memory
-	// one file can take to about 128 MB. A full window on a 6K display
-	// fits.
+	// one file can take while it is decoded: about 128 MB for 8-bit color,
+	// as this app saves, and about 256 MB for a 16-bit PNG. A full window
+	// on a 6K display fits.
 	maxScreenshotDim    = 8192
 	maxScreenshotPixels = 32_000_000
 )
@@ -60,6 +62,11 @@ type ScreenshotsSection struct {
 	confirmDelete widgets.ConfirmDelete // the two-press Delete of the selected screenshot
 	zones         []string
 	graphic       *widgets.FitGraphic // shows the preview in the last Build, or nil
+	// previewBox is the area the preview is shown in, from the last Build.
+	// Once laid out, its size is the most a preview is decoded at.
+	previewBox *widget.Container
+	// previewLimit is the size the current preview was decoded to fit
+	previewLimit goimage.Point
 
 	// Preview loading state. loadGen counts preview starts; a decode
 	// started for an earlier selection carries an older generation and its
@@ -73,8 +80,9 @@ type ScreenshotsSection struct {
 	// gameDir returns a game's screenshot directory:
 	// storage.GetGameScreenshotDir
 	gameDir func(gameID string) (string, error)
-	// decode reads a screenshot into a texture: decodeScreenshot
-	decode func(path string) (*ebiten.Image, error)
+	// decode reads a screenshot into a texture no larger than limit:
+	// decodeScreenshot
+	decode func(path string, limit goimage.Point) (*ebiten.Image, error)
 	// showInFileManager shows a screenshot in the file manager:
 	// launch.ShowInFileManager
 	showInFileManager func(path string) error
@@ -153,6 +161,7 @@ func (s *ScreenshotsSection) HandleBack() bool {
 // selected screenshot on the right, or a notice when there is nothing to
 // show
 func (s *ScreenshotsSection) Build(focus types.FocusManager) *widget.Container {
+	s.refreshPreviewSize()
 	s.zones = s.zones[:0]
 	page := widgets.FillContainer()
 
@@ -307,6 +316,7 @@ func (s *ScreenshotsSection) buildPreview(focus types.FocusManager, width int) *
 	box := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewAnchorLayout()),
 	)
+	s.previewBox = box
 	s.mu.Lock()
 	preview, loading, loadErr := s.preview, s.loading, s.loadErr
 	s.mu.Unlock()
@@ -405,6 +415,8 @@ func (s *ScreenshotsSection) startPreview() {
 		return
 	}
 	path := s.shots[s.selected].Path
+	limit := previewLimitFor(s.previewBoxSize(), ebiten.MaxImageSize())
+	s.previewLimit = limit
 
 	s.mu.Lock()
 	gen := s.loadGen
@@ -412,9 +424,72 @@ func (s *ScreenshotsSection) startPreview() {
 	s.mu.Unlock()
 
 	go func() {
-		img, err := s.decode(path)
+		img, err := s.decode(path, limit)
 		s.finishPreview(gen, img, err)
 	}()
+}
+
+// previewBoxSize returns the size of the preview area from the last
+// layout, or a zero size before it has been laid out
+func (s *ScreenshotsSection) previewBoxSize() goimage.Point {
+	if s.previewBox == nil {
+		return goimage.Point{}
+	}
+	return s.previewBox.GetWidget().Rect.Size()
+}
+
+// refreshPreviewSize decodes the preview again when the preview area no
+// longer suits it: the preview is larger than the area, or it was scaled
+// down and the area has grown. Nothing is done before the area is laid
+// out or while a preview is loading or failed.
+func (s *ScreenshotsSection) refreshPreviewSize() {
+	box := s.previewBoxSize()
+	if s.selected < 0 || box.X <= 0 || box.Y <= 0 {
+		return
+	}
+	s.mu.Lock()
+	preview := s.preview
+	s.mu.Unlock()
+	if preview == nil {
+		return
+	}
+	limit := previewLimitFor(box, ebiten.MaxImageSize())
+	if previewNeedsDecode(s.previewLimit, preview.Bounds().Size(), limit) {
+		s.startPreview()
+	}
+}
+
+// previewLimitFor returns the most a preview is decoded at: the preview
+// area box, never over maxTexture, the largest texture the GPU takes. The
+// area is part of the screen, which is itself within maxTexture. Before
+// the area is laid out, maxTexture is used alone; before the GPU limit is
+// known (maxTexture 0), the area alone, and with neither, the largest
+// screenshot decoded.
+func previewLimitFor(box goimage.Point, maxTexture int) goimage.Point {
+	if maxTexture <= 0 {
+		maxTexture = maxScreenshotDim
+	}
+	if box.X <= 0 || box.Y <= 0 {
+		return goimage.Pt(maxTexture, maxTexture)
+	}
+	return goimage.Pt(min(box.X, maxTexture), min(box.Y, maxTexture))
+}
+
+// previewNeedsDecode reports whether a preview of size, decoded to fit
+// used, should be decoded again to fit limit: when it is larger than limit,
+// or when it was scaled down (it reaches used on a side) and limit is
+// larger than used, so more detail fits. A preview already decoded for
+// limit never needs it again.
+func previewNeedsDecode(used, size, limit goimage.Point) bool {
+	if used == limit {
+		return false
+	}
+	if size.X > limit.X || size.Y > limit.Y {
+		return true
+	}
+	scaledDown := size.X >= used.X || size.Y >= used.Y
+	grown := limit.X > used.X || limit.Y > used.Y
+	return scaledDown && grown
 }
 
 // ReleasePreview frees the preview texture and retires any decode in
@@ -457,10 +532,11 @@ func (s *ScreenshotsSection) finishPreview(gen int, img *ebiten.Image, err error
 	s.callback.RequestRebuild()
 }
 
-// decodeScreenshot reads the PNG at path into a texture of its own. Files
-// over maxScreenshotDim on a side or maxScreenshotPixels in all are
-// refused before decoding.
-func decodeScreenshot(path string) (*ebiten.Image, error) {
+// decodeScreenshot reads the PNG at path into a texture of its own, scaled
+// down to fit limit when it is larger, so it is never over the size it is
+// shown at or the GPU texture limit. Files over maxScreenshotDim on a side
+// or maxScreenshotPixels in all are refused before decoding.
+func decodeScreenshot(path string, limit goimage.Point) (*ebiten.Image, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -480,6 +556,9 @@ func decodeScreenshot(path string) (*ebiten.Image, error) {
 	img, err := png.Decode(f)
 	if err != nil {
 		return nil, err
+	}
+	if cfg.Width > limit.X || cfg.Height > limit.Y {
+		return style.ScaleImageUnmanaged(img, limit.X, limit.Y), nil
 	}
 	return ebiten.NewImageFromImageWithOptions(img, &ebiten.NewImageFromImageOptions{Unmanaged: true}), nil
 }
