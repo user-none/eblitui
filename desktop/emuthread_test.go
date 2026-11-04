@@ -191,10 +191,7 @@ func TestEmuControl_Stop(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for ec.ShouldRun() {
-			if !ec.CheckPause() {
-				return
-			}
+		for ec.CheckPause() {
 			time.Sleep(time.Millisecond)
 		}
 	}()
@@ -259,6 +256,47 @@ func TestEmuControl_DoubleRequestPause(t *testing.T) {
 
 	if !ec.IsPaused() {
 		t.Fatal("expected still paused")
+	}
+
+	ec.Stop()
+	<-done
+}
+
+// TestEmuControl_PauseRightAfterResume tests that a pause requested right
+// after a resume, while the emulation goroutine is still waiting in its
+// pause loop, is acknowledged rather than waiting forever.
+func TestEmuControl_PauseRightAfterResume(t *testing.T) {
+	ec := NewEmuControl()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for ec.CheckPause() {
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	// pause fails the test if the pause is not acknowledged in time
+	pause := func(i int) {
+		acked := make(chan struct{})
+		go func() {
+			ec.RequestPause()
+			close(acked)
+		}()
+		select {
+		case <-acked:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("pause %d after a resume was never acknowledged", i)
+		}
+	}
+
+	pause(0)
+	for i := 1; i <= 50; i++ {
+		ec.RequestResume()
+		pause(i)
+		if !ec.IsPaused() {
+			t.Fatalf("pause %d: expected paused", i)
+		}
 	}
 
 	ec.Stop()

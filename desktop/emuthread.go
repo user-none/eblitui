@@ -3,10 +3,7 @@
 
 package desktop
 
-import (
-	"sync"
-	"time"
-)
+import "sync"
 
 const maxPlayers = 2
 
@@ -105,112 +102,74 @@ func (sf *SharedFramebuffer) Read() (pixels []byte, stride, activeHeight int, pa
 	return
 }
 
-// EmuControl manages pause/resume/stop coordination between
-// the Ebiten thread and the emulation goroutine.
+// EmuControl manages pause/resume/stop coordination between the Ebiten
+// thread and the emulation goroutine. Both sides share one lock and wait on
+// one condition, which is signaled whenever the state changes.
 type EmuControl struct {
 	mu       sync.Mutex
-	pauseReq bool
-	paused   bool
-	running  bool
-	stopReq  bool
-	ackCh    chan struct{}
+	cond     *sync.Cond
+	pauseReq bool // the Ebiten thread wants the goroutine paused
+	paused   bool // the goroutine is paused; set only by the goroutine
+	stopped  bool // the goroutine is to exit
 }
 
 // NewEmuControl creates a new emulation control.
 func NewEmuControl() *EmuControl {
-	return &EmuControl{
-		running: true,
-		ackCh:   make(chan struct{}, 1),
-	}
+	ec := &EmuControl{}
+	ec.cond = sync.NewCond(&ec.mu)
+	return ec
 }
 
-// RequestPause asks the emulation goroutine to pause and blocks
-// until it acknowledges the pause.
+// RequestPause asks the emulation goroutine to pause and blocks until it
+// is paused or stopped.
 func (ec *EmuControl) RequestPause() {
 	ec.mu.Lock()
-	if ec.paused || ec.pauseReq {
-		ec.mu.Unlock()
-		return
-	}
+	defer ec.mu.Unlock()
 	ec.pauseReq = true
-	ec.mu.Unlock()
-
-	// Wait for emu goroutine to acknowledge
-	<-ec.ackCh
+	for !ec.paused && !ec.stopped {
+		ec.cond.Wait()
+	}
 }
 
-// RequestResume tells the emulation goroutine to resume.
+// RequestResume lets the emulation goroutine continue. It does not wait for
+// the goroutine to leave its pause.
 func (ec *EmuControl) RequestResume() {
 	ec.mu.Lock()
 	ec.pauseReq = false
-	ec.paused = false
+	ec.cond.Broadcast()
 	ec.mu.Unlock()
 }
 
-// CheckPause is called by the emulation goroutine between frames.
-// If a pause has been requested, it sends an acknowledgment and
-// spins until resumed or stopped. Returns false if the goroutine
-// should exit.
+// CheckPause is called by the emulation goroutine between frames. While a
+// pause is requested it marks itself paused and waits. Returns false if the
+// goroutine should exit.
 func (ec *EmuControl) CheckPause() bool {
 	ec.mu.Lock()
-	if !ec.running || ec.stopReq {
-		ec.mu.Unlock()
-		return false
-	}
-	if !ec.pauseReq {
-		ec.mu.Unlock()
-		return true
-	}
-
-	// Acknowledge pause request
-	ec.paused = true
-	ec.mu.Unlock()
-
-	// Non-blocking send of ack (buffer size 1)
-	select {
-	case ec.ackCh <- struct{}{}:
-	default:
-	}
-
-	// Spin-wait until resumed or stopped
-	for {
-		ec.mu.Lock()
-		if !ec.running || ec.stopReq {
-			ec.mu.Unlock()
-			return false
+	defer ec.mu.Unlock()
+	for ec.pauseReq && !ec.stopped {
+		if !ec.paused {
+			ec.paused = true
+			ec.cond.Broadcast()
 		}
-		if !ec.pauseReq {
-			ec.paused = false
-			ec.mu.Unlock()
-			return true
-		}
-		ec.mu.Unlock()
-		time.Sleep(10 * time.Millisecond)
+		ec.cond.Wait()
 	}
+	ec.paused = false
+	return !ec.stopped
 }
 
-// Stop signals the emulation goroutine to exit.
+// Stop signals the emulation goroutine to exit and releases a pending
+// RequestPause.
 func (ec *EmuControl) Stop() {
 	ec.mu.Lock()
-	ec.running = false
-	ec.stopReq = true
-	// Also clear pause so CheckPause unblocks
+	ec.stopped = true
 	ec.pauseReq = false
+	ec.cond.Broadcast()
 	ec.mu.Unlock()
-}
-
-// ShouldRun returns true if the goroutine should continue running.
-func (ec *EmuControl) ShouldRun() bool {
-	ec.mu.Lock()
-	r := ec.running && !ec.stopReq
-	ec.mu.Unlock()
-	return r
 }
 
 // IsPaused returns true if the emulation goroutine is currently paused.
 func (ec *EmuControl) IsPaused() bool {
 	ec.mu.Lock()
-	p := ec.paused
-	ec.mu.Unlock()
-	return p
+	defer ec.mu.Unlock()
+	return ec.paused
 }
