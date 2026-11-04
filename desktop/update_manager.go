@@ -15,16 +15,15 @@ import (
 )
 
 // UpdateConfig describes where an application's releases are published and
-// how they are verified: its name and running version, and the update
-// signing public keys stamped into its release builds. Without usable keys,
-// or with a URL that is not HTTPS, the update system is off: no network
-// requests, no update bar, and no Updates area in About.
+// how they are verified: the update signing public keys stamped into its
+// release builds. The application's name and running version come from
+// Emulator. Without usable keys, or with a URL that is not HTTPS, the update
+// system is off: no network requests, no update bar, and no Updates area in
+// About.
 type UpdateConfig struct {
 	ManifestURL    string   // The latest release's manifest, an HTTPS URL
 	SignatureURL   string   // The latest release's manifest signature file, an HTTPS URL
 	ReleasePageURL string   // A release's page, an HTTPS URL; {version} is replaced by the version
-	AppName        string   // Application name bound into the signed manifest
-	Version        string   // Running version
 	Keys           []string // Update signing public keys, each algorithm:base64
 }
 
@@ -53,10 +52,12 @@ type UpdateManager struct {
 	dismissed bool // The update bar was dismissed this session
 }
 
-// NewUpdateManager returns the update manager for cfg, or nil when the update
-// system is off: cfg is nil or has no usable keys or URLs. It loads the
-// stored update state and manifest.
-func NewUpdateManager(cfg *UpdateConfig, config *storage.Config, onChange func()) *UpdateManager {
+// NewUpdateManager returns the update manager for cfg and the application
+// named appName running version, or nil when the update system is off: cfg
+// is nil or has no usable keys or URLs, or appName is empty. appName is
+// bound into the signed manifest. It loads the stored update state and
+// manifest.
+func NewUpdateManager(cfg *UpdateConfig, appName, version string, config *storage.Config, onChange func()) *UpdateManager {
 	if cfg == nil || len(cfg.Keys) == 0 {
 		return nil
 	}
@@ -68,7 +69,7 @@ func NewUpdateManager(cfg *UpdateConfig, config *storage.Config, onChange func()
 		log.Printf("Update check disabled: no usable update keys")
 		return nil
 	}
-	if cfg.AppName == "" {
+	if appName == "" {
 		log.Printf("Update check disabled: no application name")
 		return nil
 	}
@@ -81,8 +82,8 @@ func NewUpdateManager(cfg *UpdateConfig, config *storage.Config, onChange func()
 	m := &UpdateManager{
 		source: source,
 		target: update.Target{
-			App:      cfg.AppName,
-			Version:  update.RunningVersion(cfg.Version),
+			App:      appName,
+			Version:  update.RunningVersion(version),
 			Platform: update.Platform(),
 			Keys:     keys,
 		},

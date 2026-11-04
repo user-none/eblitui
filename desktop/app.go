@@ -240,9 +240,9 @@ func newApp(factory coreif.CoreFactory, info coreif.SystemInfo, emu Emulator) (*
 		padMappingTried: make(map[string]bool),
 	}
 
-	// Artwork and update downloads identify the app as the RetroAchievements
-	// requests do: AppName/Version
-	netutil.SetUserAgent(fmt.Sprintf("%s/%s", emu.Name, Version))
+	// Artwork and update downloads identify the application as the
+	// RetroAchievements requests do: AppName/Version
+	netutil.SetUserAgent(fmt.Sprintf("%s/%s", emu.Name, emu.Version))
 
 	if err := app.initStorage(); err != nil {
 		return nil, err
@@ -337,7 +337,7 @@ func (a *App) newAchievementManager() {
 	if a.achievementManager != nil {
 		a.achievementManager.Destroy()
 	}
-	a.achievementManager = achievements.NewManager(a.notification, a.config, a.emu.Name, Version, uint32(a.emu.RetroAchievementsConsoleID), a.systemInfo.BigEndianMemory, audioSampleRate)
+	a.achievementManager = achievements.NewManager(a.notification, a.config, a.emu.Name, a.emu.Version, uint32(a.emu.RetroAchievementsConsoleID), a.systemInfo.BigEndianMemory, audioSampleRate)
 }
 
 // loadLibrary loads and validates library.json. On failure it shows the
@@ -423,7 +423,7 @@ func (a *App) finishStartup() {
 
 	// A due automatic check starts before the library is first built, so the
 	// update bar is not shown from the stored manifest while it runs
-	a.updateManager = NewUpdateManager(a.emu.Update, a.config, a.RequestRebuild)
+	a.updateManager = NewUpdateManager(a.emu.Update, a.emu.Name, a.emu.Version, a.config, a.RequestRebuild)
 	if a.updateManager != nil {
 		a.updateManager.StartAutomaticCheck()
 	}

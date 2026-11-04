@@ -41,15 +41,19 @@ func signedManifest(t *testing.T, priv ed25519.PrivateKey, version string) (mani
 	return manifest, sig
 }
 
-// testUpdateConfig returns an update configuration for erings 0.4.0
-// trusting pub
+// testAppName and testAppVersion are the application the test update
+// managers are for.
+const (
+	testAppName    = "erings"
+	testAppVersion = "0.4.0"
+)
+
+// testUpdateConfig returns an update configuration trusting pub
 func testUpdateConfig(pub string) *UpdateConfig {
 	return &UpdateConfig{
 		ManifestURL:    "https://example.com/erings/latest/manifest.json",
 		SignatureURL:   "https://example.com/erings/latest/manifest.sig",
 		ReleasePageURL: "https://example.com/erings/releases/{version}",
-		AppName:        "erings",
-		Version:        "0.4.0",
 		Keys:           []string{pub},
 	}
 }
@@ -61,7 +65,7 @@ func newTestUpdateManager(t *testing.T, pub string) *UpdateManager {
 	if update.Platform() == "" {
 		t.Skip("no release platform for this build")
 	}
-	m := NewUpdateManager(testUpdateConfig(pub), storage.DefaultConfig(), nil)
+	m := NewUpdateManager(testUpdateConfig(pub), testAppName, testAppVersion, storage.DefaultConfig(), nil)
 	if m == nil {
 		t.Fatal("update manager is off")
 	}
@@ -83,7 +87,6 @@ func TestNewUpdateManagerOff(t *testing.T) {
 		"empty config":           {},
 		"no keys":                with(func(cfg *UpdateConfig) { cfg.Keys = nil }),
 		"only bad keys":          with(func(cfg *UpdateConfig) { cfg.Keys = []string{"ed25519:bad", "mldsa:AAAA"} }),
-		"no app name":            with(func(cfg *UpdateConfig) { cfg.AppName = "" }),
 		"no manifest URL":        with(func(cfg *UpdateConfig) { cfg.ManifestURL = "" }),
 		"HTTP manifest URL":      with(func(cfg *UpdateConfig) { cfg.ManifestURL = "http://example.com/manifest.json" }),
 		"HTTP signature URL":     with(func(cfg *UpdateConfig) { cfg.SignatureURL = "http://example.com/manifest.sig" }),
@@ -91,11 +94,14 @@ func TestNewUpdateManagerOff(t *testing.T) {
 		"relative signature URL": with(func(cfg *UpdateConfig) { cfg.SignatureURL = "manifest.sig" }),
 	}
 	for name, cfg := range off {
-		if m := NewUpdateManager(cfg, config, nil); m != nil {
+		if m := NewUpdateManager(cfg, testAppName, testAppVersion, config, nil); m != nil {
 			t.Errorf("%s: update manager is on", name)
 		}
 	}
-	if m := NewUpdateManager(testUpdateConfig(pub), config, nil); m == nil {
+	if m := NewUpdateManager(testUpdateConfig(pub), "", testAppVersion, config, nil); m != nil {
+		t.Error("no app name: update manager is on")
+	}
+	if m := NewUpdateManager(testUpdateConfig(pub), testAppName, testAppVersion, config, nil); m == nil {
 		t.Error("valid configuration: update manager is off")
 	}
 }

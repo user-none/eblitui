@@ -49,7 +49,7 @@ func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config
 		audio:      settings.NewAudioSection(callback, config, systemInfo),
 		rewind:     settings.NewRewindSection(callback, config, serializeSize),
 		input:      settings.NewInputSection(callback, config, systemInfo),
-		about:      settings.NewAboutSection(callback, config, updates, appName, appVersion, systemInfo.CoreName, systemInfo.CoreVersion, appIcon),
+		about:      settings.NewAboutSection(callback, config, updates, appName, appVersion, appIcon),
 	}
 	s.video = settings.NewVideoSection(callback, config, systemInfo, s.contentWidth)
 	s.retroAchievements = settings.NewRetroAchievementsSection(callback, config, achievementMgr, s.contentWidth)
