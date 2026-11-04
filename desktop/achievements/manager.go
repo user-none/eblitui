@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -44,9 +45,13 @@ type Manager struct {
 	consoleID    uint32
 	bigEndian    bool // core stores work RAM big-endian; RA memory is little-endian, so reads are byte-swapped
 
+	// memory is the emulator memory rcheevos reads, nil when none. rcheevos
+	// reads it from the emulation goroutine for every memory access, so it
+	// is an atomic pointer rather than a field under mu.
+	memory atomic.Pointer[memorySource]
+
 	// State
 	mu         sync.Mutex
-	emulator   EmulatorInterface
 	loggedIn   bool
 	username   string
 	gameLoaded bool
@@ -229,9 +234,14 @@ func (m *Manager) Logout() {
 	m.mu.Unlock()
 }
 
+// memorySource holds the emulator rcheevos reads memory from.
+type memorySource struct {
+	emu EmulatorInterface
+}
+
 // SetEmulator sets the emulator for memory access
 func (m *Manager) SetEmulator(emu EmulatorInterface) {
-	m.emulator = emu
+	m.memory.Store(&memorySource{emu: emu})
 }
 
 // loadWith applies client settings, runs start (which kicks off an async load
@@ -482,7 +492,7 @@ func (m *Manager) UnloadGame() {
 	m.mu.Lock()
 	wasLoaded := m.gameLoaded
 	m.gameLoaded = false
-	m.emulator = nil
+	m.memory.Store(nil)
 	m.cachedAchievements = nil
 	m.cachedGameTitle = ""
 	m.mu.Unlock()
@@ -509,16 +519,17 @@ func (m *Manager) Destroy() {
 // address^1, giving rcheevos the 16-bit byte-swapped (little-endian) view its
 // operators expect. Little-endian cores pass through unchanged.
 func (m *Manager) readMemory(address uint32, buffer []byte) uint32 {
-	if m.emulator == nil {
+	src := m.memory.Load()
+	if src == nil {
 		return 0
 	}
 	if !m.bigEndian {
-		return m.emulator.ReadMemoryFlat(address, buffer)
+		return src.emu.ReadMemoryFlat(address, buffer)
 	}
 	var one [1]byte
 	var n uint32
 	for i := range buffer {
-		if m.emulator.ReadMemoryFlat((address+uint32(i))^1, one[:]) != 1 {
+		if src.emu.ReadMemoryFlat((address+uint32(i))^1, one[:]) != 1 {
 			return n
 		}
 		buffer[i] = one[0]
@@ -748,12 +759,21 @@ func (m *Manager) cacheAchievements() {
 	m.mu.Unlock()
 }
 
-// GetCachedAchievements returns the cached achievement list for the current game.
-// Returns nil if no game is loaded. The slice is safe to read; do not modify.
+// GetCachedAchievements returns a copy of the cached achievement list for the
+// current game: a new slice of copied achievements, which unlocks reported
+// on the emulation goroutine never change. Returns nil if no game is loaded.
 func (m *Manager) GetCachedAchievements() []*rcheevos.Achievement {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.cachedAchievements
+	if m.cachedAchievements == nil {
+		return nil
+	}
+	list := make([]*rcheevos.Achievement, len(m.cachedAchievements))
+	for i, ach := range m.cachedAchievements {
+		c := *ach
+		list[i] = &c
+	}
+	return list
 }
 
 // GetCachedGameTitle returns the cached game title.
