@@ -5,6 +5,7 @@ package desktop
 
 import (
 	"image"
+	"unicode/utf8"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
@@ -69,12 +70,7 @@ func (s *SearchOverlay) HandleInput() bool {
 		return false // Let navigation proceed
 	}
 
-	// Backspace removes last character
-	if inpututil.IsKeyJustPressed(ebiten.KeyBackspace) && len(s.text) > 0 {
-		s.text = s.text[:len(s.text)-1]
-		if s.onChanged != nil {
-			s.onChanged(s.text)
-		}
+	if inpututil.IsKeyJustPressed(ebiten.KeyBackspace) && s.backspace() {
 		return true
 	}
 
@@ -94,6 +90,21 @@ func (s *SearchOverlay) HandleInput() bool {
 	}
 
 	return true // Active, consume input even if nothing typed
+}
+
+// backspace removes the last character of the search text: one whole rune,
+// so a multi-byte character never leaves a partial UTF-8 sequence behind.
+// It reports whether there was a character to remove.
+func (s *SearchOverlay) backspace() bool {
+	if s.text == "" {
+		return false
+	}
+	_, size := utf8.DecodeLastRuneInString(s.text)
+	s.text = s.text[:len(s.text)-size]
+	if s.onChanged != nil {
+		s.onChanged(s.text)
+	}
+	return true
 }
 
 // Draw renders the search overlay at bottom-left
