@@ -286,8 +286,9 @@ func (s *InputSection) validateProfileName(name, sdlID, controller, excludeID st
 	if len(name) > maxProfileNameLen {
 		return fmt.Sprintf("Name too long (max %d)", maxProfileNameLen)
 	}
-	for i := range s.config.Input.Profiles {
-		p := &s.config.Input.Profiles[i]
+	profs := s.config.Values().Input.Profiles
+	for i := range profs {
+		p := &profs[i]
 		if p.ID == excludeID {
 			continue
 		}
@@ -444,10 +445,11 @@ func resolvePadDisplay(buttonName, defaultPad string, overrides map[string]strin
 
 // resolveKeyDisplay returns the display string for a keyboard binding
 func (s *InputSection) resolveKeyDisplay(buttonName, defaultKey string) string {
+	overrides := s.config.Values().Input.P1Keyboard
 	if ResolveKeyFunc != nil {
-		return ResolveKeyFunc(buttonName, defaultKey, s.config.Input.P1Keyboard)
+		return ResolveKeyFunc(buttonName, defaultKey, overrides)
 	}
-	if override, ok := s.config.Input.P1Keyboard[buttonName]; ok {
+	if override, ok := overrides[buttonName]; ok {
 		return override
 	}
 	return defaultKey

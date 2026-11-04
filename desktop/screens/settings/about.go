@@ -113,7 +113,7 @@ func centeredText(text string, textColor color.Color) *widget.Text {
 // status, and the Download and Check Now buttons where they apply
 func (a *AboutSection) buildUpdates(section *widget.Container, focus types.FocusManager) {
 	status := a.updates.Status()
-	autoCheck := a.config.Updates.AutoCheck
+	autoCheck := a.config.Values().Updates.AutoCheck
 
 	section.AddChild(widgets.SectionHeader("Updates"))
 
@@ -123,8 +123,7 @@ func (a *AboutSection) buildUpdates(section *widget.Container, focus types.Focus
 		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
 	))
 	toggle := widgets.OnOffButton(autoCheck, func(args *widget.ButtonClickedEventArgs) {
-		a.config.Updates.AutoCheck = !a.config.Updates.AutoCheck
-		storage.SaveConfig(a.config)
+		a.config.ToggleAutoCheck()
 		focus.SetPendingFocus("about-auto-check")
 		a.callback.RequestRebuild()
 	})

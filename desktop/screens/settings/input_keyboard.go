@@ -6,7 +6,6 @@ package settings
 import (
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
-	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/desktop/types"
 	"github.com/user-none/eblitui/desktop/widgets"
@@ -26,8 +25,7 @@ func (s *InputSection) buildKeyboardView(focus types.FocusManager, section *widg
 
 	section.AddChild(s.buildActionRow(focus,
 		actionButton{label: "Reset Keyboard", focusKey: "input-reset-kb", handler: func() {
-			s.config.Input.P1Keyboard = nil
-			storage.SaveConfig(s.config)
+			s.config.ResetKeyboardBindings()
 			s.focus.SetPendingFocus("input-reset-kb")
 			s.callback.RequestRebuild()
 		}},
@@ -64,22 +62,14 @@ func (s *InputSection) updateKeyboardCapture() {
 
 // applyKeyboardBinding saves a keyboard binding and exits capture mode
 func (s *InputSection) applyKeyboardBinding(buttonName, keyName string) {
-	if s.config.Input.P1Keyboard == nil {
-		s.config.Input.P1Keyboard = make(map[string]string)
-	}
-
 	// Check if this is the default - if so, remove the override
 	defaultKey := s.defaultKeyForButton(buttonName)
 	if keyName == defaultKey {
-		delete(s.config.Input.P1Keyboard, buttonName)
-		if len(s.config.Input.P1Keyboard) == 0 {
-			s.config.Input.P1Keyboard = nil
-		}
+		s.config.SetKeyboardBinding(buttonName, "")
 	} else {
-		s.config.Input.P1Keyboard[buttonName] = keyName
+		s.config.SetKeyboardBinding(buttonName, keyName)
 	}
 
-	storage.SaveConfig(s.config)
 	s.capturing = false
 	s.focus.SetPendingFocus("input-kb-" + buttonName)
 	s.callback.RequestRebuild()
@@ -102,7 +92,7 @@ func (s *InputSection) buildKeyBindingRow(focus types.FocusManager, buttonName, 
 	}
 
 	btn := widget.NewButton(
-		widget.ButtonOpts.Image(s.bindingButtonImage(buttonName, defaultKey, s.config.Input.P1Keyboard)),
+		widget.ButtonOpts.Image(s.bindingButtonImage(buttonName, defaultKey, s.config.Values().Input.P1Keyboard)),
 		widget.ButtonOpts.Text(display, style.FontFace(), style.ButtonTextColor()),
 		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
 		widget.ButtonOpts.WidgetOpts(

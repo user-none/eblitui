@@ -20,7 +20,8 @@ import (
 // buildProfileView creates the profile editor view: name entry plus the
 // controller binding table for one profile.
 func (s *InputSection) buildProfileView(focus types.FocusManager, section *widget.Container) {
-	prof := s.config.Input.ProfileByID(s.profileID)
+	input := s.config.Values().Input
+	prof := input.ProfileByID(s.profileID)
 	if prof == nil {
 		// Profile disappeared; fall back to the main view content.
 		s.view = inputViewMain
@@ -55,12 +56,11 @@ func (s *InputSection) buildProfileView(focus types.FocusManager, section *widge
 
 	section.AddChild(s.buildActionRow(focus,
 		actionButton{label: "Reset to Defaults", focusKey: "input-reset-pad", handler: func() {
-			p := s.config.Input.ProfileByID(s.profileID)
-			if p == nil {
+			cur := s.config.Values().Input
+			if cur.ProfileByID(s.profileID) == nil {
 				return
 			}
-			p.Bindings = nil
-			storage.SaveConfig(s.config)
+			s.config.ResetProfileBindings(s.profileID)
 			s.focus.SetPendingFocus("input-reset-pad")
 			s.callback.RequestRebuild()
 		}},
@@ -102,7 +102,8 @@ func (s *InputSection) updateRumbleLabel(scale float64) {
 // adjustProfileRumble steps the edited profile's rumble scale by delta,
 // snapped to the step grid and clamped to the valid range, then saves.
 func (s *InputSection) adjustProfileRumble(delta float64) {
-	prof := s.config.Input.ProfileByID(s.profileID)
+	input := s.config.Values().Input
+	prof := input.ProfileByID(s.profileID)
 	if prof == nil {
 		return
 	}
@@ -113,8 +114,7 @@ func (s *InputSection) adjustProfileRumble(delta float64) {
 	if scale > rumbleScaleMax {
 		scale = rumbleScaleMax
 	}
-	prof.RumbleScale = scale
-	storage.SaveConfig(s.config)
+	s.config.SetProfileRumbleScale(s.profileID, scale)
 	s.updateRumbleLabel(scale)
 }
 
@@ -189,7 +189,8 @@ func (s *InputSection) buildProfileRumbleRow(focus types.FocusManager, prof *sto
 // updateProfileCapture reads the next button press from a controller
 // matching the edited profile and applies it to the captured button.
 func (s *InputSection) updateProfileCapture() {
-	prof := s.config.Input.ProfileByID(s.profileID)
+	input := s.config.Values().Input
+	prof := input.ProfileByID(s.profileID)
 	if prof == nil {
 		s.capturing = false
 		return
@@ -215,8 +216,8 @@ func (s *InputSection) updateProfileCapture() {
 // applyProfileBinding saves a controller binding on the edited profile and
 // exits capture mode
 func (s *InputSection) applyProfileBinding(buttonName, padName string) {
-	prof := s.config.Input.ProfileByID(s.profileID)
-	if prof == nil {
+	input := s.config.Values().Input
+	if input.ProfileByID(s.profileID) == nil {
 		s.capturing = false
 		return
 	}
@@ -224,18 +225,11 @@ func (s *InputSection) applyProfileBinding(buttonName, padName string) {
 	// Check if this is the default - if so, remove the override
 	defaultPad := s.defaultPadForButton(buttonName)
 	if padName == defaultPad {
-		delete(prof.Bindings, buttonName)
-		if len(prof.Bindings) == 0 {
-			prof.Bindings = nil
-		}
+		s.config.SetProfileBinding(s.profileID, buttonName, "")
 	} else {
-		if prof.Bindings == nil {
-			prof.Bindings = make(map[string]string)
-		}
-		prof.Bindings[buttonName] = padName
+		s.config.SetProfileBinding(s.profileID, buttonName, padName)
 	}
 
-	storage.SaveConfig(s.config)
 	s.capturing = false
 	s.focus.SetPendingFocus("input-pad-" + buttonName)
 	s.callback.RequestRebuild()
@@ -244,7 +238,8 @@ func (s *InputSection) applyProfileBinding(buttonName, padName string) {
 // commitProfileName validates and saves the edited name, then returns to
 // the main view. An invalid name blocks leaving the editor.
 func (s *InputSection) commitProfileName() {
-	prof := s.config.Input.ProfileByID(s.profileID)
+	input := s.config.Values().Input
+	prof := input.ProfileByID(s.profileID)
 	if prof == nil {
 		s.switchView(inputViewMain, "input-new-profile")
 		return
@@ -257,8 +252,7 @@ func (s *InputSection) commitProfileName() {
 			s.callback.RequestRebuild()
 			return
 		}
-		prof.Name = name
-		storage.SaveConfig(s.config)
+		s.config.SetProfileName(prof.ID, name)
 	}
 	s.switchView(inputViewMain, "input-profile-"+prof.ID+"-edit")
 }

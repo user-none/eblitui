@@ -184,14 +184,13 @@ func (l *LibrarySection) buildArtworkDownloadRow(focus types.FocusManager) *widg
 	row.AddChild(label)
 
 	options := storage.ValidArtworkDownloads
-	current := l.config.Library.ArtworkDownload
+	current := l.config.Values().Library.ArtworkDownload
 	minWidth := 0
 	for _, o := range options {
 		minWidth = max(minWidth, widgets.ButtonWidth(storage.ArtworkDownloadDisplayName(o)))
 	}
 	cycleBtn := widgets.CycleButton(storage.ArtworkDownloadDisplayName(current), slices.Index(options, current), len(options), minWidth, func(next int) {
-		l.config.Library.ArtworkDownload = options[next]
-		storage.SaveConfig(l.config)
+		l.config.SetArtworkDownload(options[next])
 		focus.SetPendingFocus("lib-artwork-download")
 		l.callback.RequestRebuild()
 	})

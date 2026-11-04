@@ -120,12 +120,12 @@ func (m *Manager) IsLoggedIn() bool {
 
 // IsEnabled returns whether achievements are enabled in config
 func (m *Manager) IsEnabled() bool {
-	return m.config.RetroAchievements.Enabled
+	return m.config.RetroAchievements().Enabled
 }
 
 // IsSpectatorMode returns whether spectator mode is enabled in config
 func (m *Manager) IsSpectatorMode() bool {
-	return m.config.RetroAchievements.SpectatorMode
+	return m.config.RetroAchievements().SpectatorMode
 }
 
 // SetScreenshotFunc sets the callback for taking screenshots on achievement unlock
@@ -250,8 +250,9 @@ func (m *Manager) loadWith(start func(rcheevos.LoadGameCallbackFunc)) error {
 	}
 
 	// Apply client settings from config before loading
-	m.client.SetEncoreModeEnabled(m.config.RetroAchievements.EncoreMode)
-	if m.config.RetroAchievements.SpectatorMode {
+	ra := m.config.RetroAchievements()
+	m.client.SetEncoreModeEnabled(ra.EncoreMode)
+	if ra.SpectatorMode {
 		m.client.SetSpectatorModeEnabled(true)
 	}
 
@@ -451,7 +452,7 @@ func decodeBadge(data []byte) (image.Image, error) {
 
 // DoFrame processes achievements for the current frame
 func (m *Manager) DoFrame() {
-	if !m.config.RetroAchievements.Enabled {
+	if !m.config.RetroAchievements().Enabled {
 		return
 	}
 
@@ -642,18 +643,20 @@ func (m *Manager) handleEvent(event *rcheevos.Event) {
 			m.mu.Unlock()
 		}
 
+		ra := m.config.RetroAchievements()
+
 		// Play unlock sound
-		if m.config.RetroAchievements.UnlockSound && len(m.unlockSoundData) > 0 {
+		if ra.UnlockSound && len(m.unlockSoundData) > 0 {
 			m.notification.PlaySound(m.unlockSoundData)
 		}
 
 		// Take screenshot
-		if m.config.RetroAchievements.AutoScreenshot && m.screenshotFunc != nil {
+		if ra.AutoScreenshot && m.screenshotFunc != nil {
 			m.screenshotFunc(title, achievementID)
 		}
 
 		// Show notification
-		if m.config.RetroAchievements.ShowNotification {
+		if ra.ShowNotification {
 			if cachedBadge != nil {
 				m.notification.ShowAchievementWithBadge(title, description, cachedBadge)
 			} else {
@@ -670,7 +673,7 @@ func (m *Manager) handleEvent(event *rcheevos.Event) {
 			}
 		}
 	case rcheevos.EventGameCompleted:
-		if m.notification != nil && m.config.RetroAchievements.ShowNotification {
+		if m.notification != nil && m.config.RetroAchievements().ShowNotification {
 			// Check cache first
 			game := m.client.GetGame()
 			var cachedImg *ebiten.Image

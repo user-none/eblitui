@@ -47,7 +47,11 @@ func TestGetCoreOptionValue(t *testing.T) {
 		{"no longer offered", map[string]string{"renderer": "GPU"}, "Vulkan"},
 	}
 	for _, tt := range tests {
-		if got := getCoreOptionValue(&storage.Config{CoreOptions: tt.config}, opt); got != tt.want {
+		config := storage.DefaultConfig()
+		for key, value := range tt.config {
+			config.SetCoreOption(key, value)
+		}
+		if got := getCoreOptionValue(config, opt); got != tt.want {
 			t.Errorf("%s: got %q, want %q", tt.name, got, tt.want)
 		}
 	}

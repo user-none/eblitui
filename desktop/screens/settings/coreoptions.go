@@ -124,19 +124,13 @@ func addCoreOptionRows(container *widget.Container, focus types.FocusManager, ca
 // config's value when it is one the option accepts, otherwise the
 // option's default.
 func getCoreOptionValue(config *storage.Config, opt coreif.CoreOption) string {
-	if config.CoreOptions != nil {
-		if v, ok := config.CoreOptions[opt.Key]; ok && storage.ValidCoreOption(opt, v) {
-			return v
-		}
+	if v, ok := config.Values().CoreOptions[opt.Key]; ok && storage.ValidCoreOption(opt, v) {
+		return v
 	}
 	return opt.Default
 }
 
 // setCoreOptionValue saves a core option value to config.
 func setCoreOptionValue(config *storage.Config, key, value string) {
-	if config.CoreOptions == nil {
-		config.CoreOptions = make(map[string]string)
-	}
-	config.CoreOptions[key] = value
-	storage.SaveConfig(config)
+	config.SetCoreOption(key, value)
 }

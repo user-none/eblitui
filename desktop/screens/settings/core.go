@@ -127,14 +127,12 @@ func (c *CoreSection) buildBIOSOption(section *widget.Container, focus types.Foc
 	))
 
 	activeBtn := widgets.CycleButton(activeLabel, currentIdx, len(cycleOptions), style.Px(60), func(next int) {
-		cfg := c.getBIOSConfig(opt.Key)
 		nextVal := cycleOptions[next]
 		if nextVal == "None" {
-			cfg.Active = ""
+			c.config.SetBIOSActive(opt.Key, "")
 		} else {
-			cfg.Active = nextVal
+			c.config.SetBIOSActive(opt.Key, nextVal)
 		}
-		c.setBIOSConfig(opt.Key, cfg)
 		focus.SetPendingFocus(activeKey)
 		c.callback.RequestRebuild()
 	})
@@ -181,15 +179,8 @@ func (c *CoreSection) buildBIOSVariantRow(section *widget.Container, focus types
 				widget.WidgetOpts.MinSize(style.Px(60), 0),
 			),
 			widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-				cfg := c.getBIOSConfig(opt.Key)
-				if cfg.Files != nil {
-					delete(cfg.Files, v.Label)
-				}
-				// Clear active if it pointed to this variant
-				if cfg.Active == v.Label {
-					cfg.Active = ""
-				}
-				c.setBIOSConfig(opt.Key, cfg)
+				// Clears active too if it pointed to this variant
+				c.config.RemoveBIOSFile(opt.Key, v.Label)
 				focus.SetPendingFocus("core-bios-browse-" + opt.Key + "-" + v.Label)
 				c.callback.RequestRebuild()
 			}),
@@ -250,12 +241,7 @@ func (c *CoreSection) loadBIOS(opt coreif.BIOSOption, v coreif.BIOSVariant, path
 			}
 		}
 
-		cfg := c.getBIOSConfig(opt.Key)
-		if cfg.Files == nil {
-			cfg.Files = make(map[string]string)
-		}
-		cfg.Files[v.Label] = path
-		c.setBIOSConfig(opt.Key, cfg)
+		c.config.SetBIOSFile(opt.Key, v.Label, path)
 		focus.SetPendingFocus(focusKey)
 		c.callback.RequestRebuild()
 	}()
@@ -263,21 +249,10 @@ func (c *CoreSection) loadBIOS(opt coreif.BIOSOption, v coreif.BIOSVariant, path
 
 // getBIOSConfig returns the BIOS config for a given key, with safe defaults.
 func (c *CoreSection) getBIOSConfig(key string) storage.BIOSConfig {
-	if c.config.BIOS != nil {
-		if bc, ok := c.config.BIOS[key]; ok {
-			return bc
-		}
+	if bc, ok := c.config.Values().BIOS[key]; ok {
+		return bc
 	}
 	return storage.BIOSConfig{}
-}
-
-// setBIOSConfig saves the BIOS config for a given key.
-func (c *CoreSection) setBIOSConfig(key string, bc storage.BIOSConfig) {
-	if c.config.BIOS == nil {
-		c.config.BIOS = make(map[string]storage.BIOSConfig)
-	}
-	c.config.BIOS[key] = bc
-	storage.SaveConfig(c.config)
 }
 
 // setupNavigation registers navigation zones for the core options section

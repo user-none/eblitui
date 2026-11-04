@@ -116,7 +116,7 @@ func (m *UpdateManager) load() {
 // StartAutomaticCheck starts a background check when automatic checks are
 // on and the last check is at least updateCheckInterval old.
 func (m *UpdateManager) StartAutomaticCheck() {
-	if !m.config.Updates.AutoCheck {
+	if !m.config.Values().Updates.AutoCheck {
 		return
 	}
 	m.mu.Lock()
@@ -235,7 +235,7 @@ func (m *UpdateManager) Status() types.UpdateStatus {
 // this session. It is not shown while a check runs, since the check may find
 // a newer version.
 func (m *UpdateManager) BarVersion() string {
-	if !m.config.Updates.AutoCheck {
+	if !m.config.Values().Updates.AutoCheck {
 		return ""
 	}
 	m.mu.Lock()

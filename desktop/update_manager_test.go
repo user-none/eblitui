@@ -302,7 +302,9 @@ func TestBarVersion(t *testing.T) {
 			}
 
 			m := newTestUpdateManager(t, pub)
-			m.config.Updates.AutoCheck = tc.autoCheck
+			if m.config.Values().Updates.AutoCheck != tc.autoCheck {
+				m.config.ToggleAutoCheck()
+			}
 			if tc.dismiss {
 				m.Dismiss()
 			}

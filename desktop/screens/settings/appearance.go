@@ -77,7 +77,7 @@ func (a *AppearanceSection) setupNavigation(focus types.FocusManager) {
 // buildThemeCard creates a theme selection card with button and color preview
 func (a *AppearanceSection) buildThemeCard(theme style.Theme, focus types.FocusManager) *widget.Container {
 	themeName := theme.Name
-	isActive := a.config.Theme == themeName
+	isActive := a.config.Values().Theme == themeName
 	focusKey := fmt.Sprintf("theme-%s", themeName)
 
 	// Use grid layout so preview can stretch
@@ -104,9 +104,8 @@ func (a *AppearanceSection) buildThemeCard(theme style.Theme, focus types.FocusM
 			}),
 		),
 		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			a.config.Theme = themeName
+			a.config.SetTheme(themeName)
 			style.ApplyThemeByName(themeName)
-			storage.SaveConfig(a.config)
 			focus.SetPendingFocus(fmt.Sprintf("theme-%s", themeName))
 			a.callback.RequestRebuild()
 		}),

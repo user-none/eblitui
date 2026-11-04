@@ -30,7 +30,7 @@ func TestScanSources(t *testing.T) {
 	if src := a.scanSources(); src.ArtworkDownload != storage.ArtworkDownloadAll {
 		t.Errorf("default artwork download = %q, want %q", src.ArtworkDownload, storage.ArtworkDownloadAll)
 	}
-	a.config.Library.ArtworkDownload = storage.ArtworkDownloadFront
+	a.config.SetArtworkDownload(storage.ArtworkDownloadFront)
 	if src := a.scanSources(); src.ArtworkDownload != storage.ArtworkDownloadFront {
 		t.Errorf("changed artwork download = %q, want %q", src.ArtworkDownload, storage.ArtworkDownloadFront)
 	}

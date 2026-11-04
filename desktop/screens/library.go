@@ -129,8 +129,10 @@ func (s *LibraryScreen) Build() *widget.Container {
 	// Clear button references for fresh build
 	s.ClearFocusButtons()
 
+	view := s.config.Values().Library
+
 	// Get sorted and filtered games
-	s.games = s.library.GamesSortedFiltered(s.config.Library.SortBy, s.config.Library.FavoritesFilter, s.searchText, s.callback.GameInfo)
+	s.games = s.library.GamesSortedFiltered(view.SortBy, view.FavoritesFilter, s.searchText, s.callback.GameInfo)
 
 	// Check if library is truly empty vs filtered empty
 	totalGames := s.library.GameCount()
@@ -175,7 +177,7 @@ func (s *LibraryScreen) Build() *widget.Container {
 		s.setupNavigation(1, barVersion != "") // Toolbar and update bar only
 	} else {
 		// Game list or grid (last row - stretches to fill)
-		if s.config.Library.ViewMode == "list" {
+		if view.ViewMode == "list" {
 			innerContainer.AddChild(s.buildListView())
 			gridColumns = 1
 		} else {
@@ -216,6 +218,8 @@ func (s *LibraryScreen) SetSearchText(text string) {
 
 // buildToolbar creates the library toolbar
 func (s *LibraryScreen) buildToolbar() *widget.Container {
+	view := s.config.Values().Library
+
 	// Use GridLayout with 3 columns: left (view toggles), center (sort/favorites), right (settings)
 	toolbar := widget.NewContainer(
 		widget.ContainerOpts.Layout(widget.NewGridLayout(
@@ -233,18 +237,16 @@ func (s *LibraryScreen) buildToolbar() *widget.Container {
 		)),
 	)
 
-	iconViewBtn := widgets.ToggleButton("Icon", s.config.Library.ViewMode == "icon", func(args *widget.ButtonClickedEventArgs) {
-		s.config.Library.ViewMode = "icon"
-		storage.SaveConfig(s.config)
+	iconViewBtn := widgets.ToggleButton("Icon", view.ViewMode == "icon", func(args *widget.ButtonClickedEventArgs) {
+		s.config.SetViewMode("icon")
 		s.SetPendingFocus("toolbar-icon")
 		s.callback.RequestRebuild()
 	})
 	s.RegisterFocusButton("toolbar-icon", iconViewBtn)
 	leftSection.AddChild(iconViewBtn)
 
-	listViewBtn := widgets.ToggleButton("List", s.config.Library.ViewMode == "list", func(args *widget.ButtonClickedEventArgs) {
-		s.config.Library.ViewMode = "list"
-		storage.SaveConfig(s.config)
+	listViewBtn := widgets.ToggleButton("List", view.ViewMode == "list", func(args *widget.ButtonClickedEventArgs) {
+		s.config.SetViewMode("list")
 		s.SetPendingFocus("toolbar-list")
 		s.callback.RequestRebuild()
 	})
@@ -288,7 +290,7 @@ func (s *LibraryScreen) buildToolbar() *widget.Container {
 
 	currentSortIdx := 0
 	for i, v := range sortValues {
-		if v == s.config.Library.SortBy {
+		if v == view.SortBy {
 			currentSortIdx = i
 			break
 		}
@@ -300,8 +302,7 @@ func (s *LibraryScreen) buildToolbar() *widget.Container {
 		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
 		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
 			currentSortIdx = (currentSortIdx + 1) % len(sortOptions)
-			s.config.Library.SortBy = sortValues[currentSortIdx]
-			storage.SaveConfig(s.config)
+			s.config.SetSortBy(sortValues[currentSortIdx])
 			s.SetPendingFocus("toolbar-sort")
 			s.callback.RequestRebuild()
 		}),
@@ -311,12 +312,11 @@ func (s *LibraryScreen) buildToolbar() *widget.Container {
 
 	// Favorites button
 	favText := "Favorites"
-	if s.config.Library.FavoritesFilter {
+	if view.FavoritesFilter {
 		favText = "[*] Favorites"
 	}
-	favButton := widgets.ToggleButton(favText, s.config.Library.FavoritesFilter, func(args *widget.ButtonClickedEventArgs) {
-		s.config.Library.FavoritesFilter = !s.config.Library.FavoritesFilter
-		storage.SaveConfig(s.config)
+	favButton := widgets.ToggleButton(favText, view.FavoritesFilter, func(args *widget.ButtonClickedEventArgs) {
+		s.config.ToggleFavoritesFilter()
 		s.SetPendingFocus("toolbar-favorites")
 		s.callback.RequestRebuild()
 	})
@@ -763,7 +763,7 @@ func (s *LibraryScreen) ApplyPendingIconScroll() {
 	if !s.pendingIconScroll {
 		return
 	}
-	if s.config.Library.ViewMode != "icon" || s.iconScrollContainer == nil {
+	if s.config.Values().Library.ViewMode != "icon" || s.iconScrollContainer == nil {
 		s.pendingIconScroll = false
 		s.iconSelectedID = ""
 		return
@@ -1039,7 +1039,7 @@ func (s *LibraryScreen) loadGameArtwork(gameID string) (art *ebiten.Image, pendi
 // SaveScrollPosition saves the current scroll position before a rebuild
 // This should be called before rebuildCurrentScreen
 func (s *LibraryScreen) SaveScrollPosition() {
-	if s.config.Library.ViewMode == "icon" {
+	if s.config.Values().Library.ViewMode == "icon" {
 		if s.iconScrollContainer != nil {
 			s.iconScrollTop = s.iconScrollContainer.ScrollTop
 		}
@@ -1052,7 +1052,8 @@ func (s *LibraryScreen) SaveScrollPosition() {
 
 // OnEnter is called when entering the library screen
 func (s *LibraryScreen) OnEnter() {
-	s.games = s.library.GamesSortedFiltered(s.config.Library.SortBy, s.config.Library.FavoritesFilter, s.searchText, s.callback.GameInfo)
+	view := s.config.Values().Library
+	s.games = s.library.GamesSortedFiltered(view.SortBy, view.FavoritesFilter, s.searchText, s.callback.GameInfo)
 	s.SetDefaultFocus("toolbar-icon") // Only sets if no pending focus (preserves game selection when returning)
 }
 
@@ -1099,7 +1100,7 @@ func (s *LibraryScreen) setupNavigation(gridColumns int, showBar bool) {
 		}
 
 		zoneType := types.NavZoneGrid
-		if s.config.Library.ViewMode == "list" {
+		if s.config.Values().Library.ViewMode == "list" {
 			zoneType = types.NavZoneVertical
 			gridColumns = 1
 		}
@@ -1135,7 +1136,7 @@ func (s *LibraryScreen) EnsureFocusedVisible(focused widget.Focuser) {
 
 	// Get the appropriate scroll container based on view mode
 	var scrollContainer *widgets.ScrollView
-	if s.config.Library.ViewMode == "icon" {
+	if s.config.Values().Library.ViewMode == "icon" {
 		scrollContainer = s.iconScrollContainer
 	} else {
 		scrollContainer = s.listScrollContainer

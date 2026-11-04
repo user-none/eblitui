@@ -4,6 +4,8 @@
 package settings
 
 import (
+	"sync"
+
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/user-none/eblitui/desktop/achievements"
@@ -25,8 +27,40 @@ type RetroAchievementsSection struct {
 	textInputs    *widgets.TextInputGroup
 	usernameInput *widget.TextInput
 	passwordInput *widget.TextInput
-	errorMessage  string
-	loggingIn     bool
+
+	// Login state. The login reply sets it on its own goroutine, so it is
+	// guarded by loginMu and only reached through the methods below.
+	loginMu      sync.Mutex
+	errorMessage string
+	loggingIn    bool
+}
+
+// loginState returns whether a login is running and the error to show.
+func (r *RetroAchievementsSection) loginState() (loggingIn bool, errorMessage string) {
+	r.loginMu.Lock()
+	defer r.loginMu.Unlock()
+	return r.loggingIn, r.errorMessage
+}
+
+// setLoginState records whether a login is running and the error to show.
+func (r *RetroAchievementsSection) setLoginState(loggingIn bool, errorMessage string) {
+	r.loginMu.Lock()
+	r.loggingIn = loggingIn
+	r.errorMessage = errorMessage
+	r.loginMu.Unlock()
+}
+
+// startLogin marks a login as running and clears the error, unless one is
+// already running. It reports whether the login was started.
+func (r *RetroAchievementsSection) startLogin() bool {
+	r.loginMu.Lock()
+	defer r.loginMu.Unlock()
+	if r.loggingIn {
+		return false
+	}
+	r.loggingIn = true
+	r.errorMessage = ""
+	return true
 }
 
 // NewRetroAchievementsSection creates a new RetroAchievements section.
@@ -63,7 +97,8 @@ func (r *RetroAchievementsSection) Update() {
 
 // hasStoredCredentials returns true if the user has stored login credentials
 func (r *RetroAchievementsSection) hasStoredCredentials() bool {
-	return r.config.RetroAchievements.Username != "" && r.config.RetroAchievements.Token != ""
+	ra := r.config.Values().RetroAchievements
+	return ra.Username != "" && ra.Token != ""
 }
 
 // isLoggedIn returns true if the user is logged in (live session or stored credentials)
@@ -89,26 +124,26 @@ func (r *RetroAchievementsSection) Build(focus types.FocusManager) *widget.Conta
 	if r.isLoggedIn() {
 		section.AddChild(r.buildLoggedInSection(focus))
 
+		ra := r.config.Values().RetroAchievements
+
 		// General section
 		section.AddChild(widgets.SectionHeader("General"))
 		section.AddChild(r.buildToggleRow(focus, "ra-enable", "Enable RetroAchievements", "",
-			r.config.RetroAchievements.Enabled,
+			ra.Enabled,
 			func() {
-				r.config.RetroAchievements.Enabled = !r.config.RetroAchievements.Enabled
-
-				if r.config.RetroAchievements.Enabled {
+				if r.config.ToggleRetroAchievements() {
 					// Toggling ON: auto-login if we have stored credentials
 					if r.achievements != nil && !r.achievements.IsLoggedIn() && r.hasStoredCredentials() {
-						username := r.config.RetroAchievements.Username
-						token := r.config.RetroAchievements.Token
+						stored := r.config.Values().RetroAchievements
+						username := stored.Username
+						token := stored.Token
 						r.achievements.LoginWithToken(username, token, func(success bool, result int, err error) {
 							if !success {
 								// Only clear token for credential errors, not transient failures
 								if result == rcheevos.InvalidCredentials ||
 									result == rcheevos.ExpiredToken ||
 									result == rcheevos.AccessDenied {
-									r.config.RetroAchievements.Token = ""
-									storage.SaveConfig(r.config)
+									r.config.ClearRetroAchievementsToken()
 								}
 							}
 						})
@@ -124,32 +159,32 @@ func (r *RetroAchievementsSection) Build(focus types.FocusManager) *widget.Conta
 		// Notifications section
 		section.AddChild(widgets.SectionHeader("Notifications"))
 		section.AddChild(r.buildToggleRow(focus, "ra-notification", "Show Notification", "Display popup on unlock",
-			r.config.RetroAchievements.ShowNotification,
+			ra.ShowNotification,
 			func() {
-				r.config.RetroAchievements.ShowNotification = !r.config.RetroAchievements.ShowNotification
+				r.config.ToggleAchievementNotification()
 			}))
 		section.AddChild(r.buildToggleRow(focus, "ra-sound", "Unlock Sound", "Play chime on achievement",
-			r.config.RetroAchievements.UnlockSound,
+			ra.UnlockSound,
 			func() {
-				r.config.RetroAchievements.UnlockSound = !r.config.RetroAchievements.UnlockSound
+				r.config.ToggleAchievementSound()
 			}))
 		section.AddChild(r.buildToggleRow(focus, "ra-screenshot", "Auto Screenshot", "Capture screen on unlock",
-			r.config.RetroAchievements.AutoScreenshot,
+			ra.AutoScreenshot,
 			func() {
-				r.config.RetroAchievements.AutoScreenshot = !r.config.RetroAchievements.AutoScreenshot
+				r.config.ToggleAchievementScreenshot()
 			}))
 
 		// Advanced section
 		section.AddChild(widgets.SectionHeader("Advanced"))
 		section.AddChild(r.buildToggleRow(focus, "ra-encore", "Encore Mode", "Re-trigger unlocked achievements",
-			r.config.RetroAchievements.EncoreMode,
+			ra.EncoreMode,
 			func() {
-				r.config.RetroAchievements.EncoreMode = !r.config.RetroAchievements.EncoreMode
+				r.config.ToggleEncoreMode()
 			}))
 		section.AddChild(r.buildToggleRow(focus, "ra-spectator", "Spectator Mode", "Watch achievements without submitting unlocks",
-			r.config.RetroAchievements.SpectatorMode,
+			ra.SpectatorMode,
 			func() {
-				r.config.RetroAchievements.SpectatorMode = !r.config.RetroAchievements.SpectatorMode
+				r.config.ToggleSpectatorMode()
 			}))
 	} else {
 		section.AddChild(r.buildLoginSection(focus))
@@ -191,7 +226,6 @@ func (r *RetroAchievementsSection) buildToggleRow(focus types.FocusManager, key,
 	// Toggle button (right-aligned via grid)
 	toggleBtn := widgets.OnOffButton(value, func(args *widget.ButtonClickedEventArgs) {
 		toggle()
-		storage.SaveConfig(r.config)
 		focus.SetPendingFocus(key)
 		r.callback.RequestRebuild()
 	})
@@ -220,7 +254,7 @@ func (r *RetroAchievementsSection) buildLoggedInSection(focus types.FocusManager
 	row := widgets.SettingsRow(2)
 
 	// Get username from manager if available, otherwise from config
-	username := r.config.RetroAchievements.Username
+	username := r.config.Values().RetroAchievements.Username
 	if r.achievements != nil && r.achievements.IsLoggedIn() {
 		username = r.achievements.GetUsername()
 	}
@@ -249,9 +283,7 @@ func (r *RetroAchievementsSection) buildLoggedInSection(focus types.FocusManager
 				r.achievements.Logout()
 			}
 			// Clear stored credentials
-			r.config.RetroAchievements.Username = ""
-			r.config.RetroAchievements.Token = ""
-			storage.SaveConfig(r.config)
+			r.config.ClearRetroAchievementsLogin()
 			focus.SetPendingFocus("ra-enable")
 			r.callback.RequestRebuild()
 		}),
@@ -299,8 +331,8 @@ func (r *RetroAchievementsSection) buildLoginSection(focus types.FocusManager) *
 
 	r.usernameInput = widgets.StyledTextInput("Enter username", false, style.Px(200))
 	r.textInputs.Add(r.usernameInput)
-	if r.config.RetroAchievements.Username != "" {
-		r.usernameInput.SetText(r.config.RetroAchievements.Username)
+	if username := r.config.Values().RetroAchievements.Username; username != "" {
+		r.usernameInput.SetText(username)
 	}
 	usernameRow.AddChild(r.usernameInput)
 	section.AddChild(usernameRow)
@@ -331,17 +363,19 @@ func (r *RetroAchievementsSection) buildLoginSection(focus types.FocusManager) *
 	passwordRow.AddChild(r.passwordInput)
 	section.AddChild(passwordRow)
 
+	loggingIn, errorMessage := r.loginState()
+
 	// Error message (if any)
-	if r.errorMessage != "" {
+	if errorMessage != "" {
 		errorText := widget.NewText(
-			widget.TextOpts.Text(r.errorMessage, style.FontFace(), style.Accent),
+			widget.TextOpts.Text(errorMessage, style.FontFace(), style.Accent),
 		)
 		section.AddChild(errorText)
 	}
 
 	// Login button
 	loginText := "Login"
-	if r.loggingIn {
+	if loggingIn {
 		loginText = "Logging in..."
 	}
 
@@ -350,7 +384,10 @@ func (r *RetroAchievementsSection) buildLoginSection(focus types.FocusManager) *
 		widget.ButtonOpts.Text(loginText, style.FontFace(), style.ButtonTextColor()),
 		widget.ButtonOpts.TextPadding(widget.NewInsetsSimple(style.ButtonPaddingSmall)),
 		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			if r.loggingIn || r.achievements == nil {
+			if r.achievements == nil {
+				return
+			}
+			if running, _ := r.loginState(); running {
 				return
 			}
 
@@ -358,29 +395,24 @@ func (r *RetroAchievementsSection) buildLoginSection(focus types.FocusManager) *
 			password := r.passwordInput.GetText()
 
 			if username == "" || password == "" {
-				r.errorMessage = "Username and password required"
+				r.setLoginState(false, "Username and password required")
 				r.callback.RequestRebuild()
 				return
 			}
 
-			r.loggingIn = true
-			r.errorMessage = ""
+			if !r.startLogin() {
+				return
+			}
 			r.callback.RequestRebuild()
 
 			r.achievements.Login(username, password, func(success bool, token string, err error) {
-				r.loggingIn = false
 				if success {
-					r.config.RetroAchievements.Username = username
-					r.config.RetroAchievements.Token = token
-					r.config.RetroAchievements.Enabled = true
-					storage.SaveConfig(r.config)
-					r.errorMessage = ""
+					r.config.SetRetroAchievementsLogin(username, token)
+					r.setLoginState(false, "")
+				} else if err != nil {
+					r.setLoginState(false, err.Error())
 				} else {
-					if err != nil {
-						r.errorMessage = err.Error()
-					} else {
-						r.errorMessage = "Login failed"
-					}
+					r.setLoginState(false, "Login failed")
 				}
 				focus.SetPendingFocus("ra-enable")
 				r.callback.RequestRebuild()

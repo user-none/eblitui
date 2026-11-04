@@ -95,13 +95,12 @@ func detectPresentKeys(jsonBytes []byte) map[string]bool {
 	return present
 }
 
-// ApplyMissingDefaults sets default values for config fields that are absent
-// from the JSON file. This replaces ensureConfigDefaults with key-presence
-// awareness: only truly missing fields get defaults, preserving intentional
-// zero values (e.g., volume=0). The version is not defaulted; migrateConfig
-// handles an absent version.
-func ApplyMissingDefaults(config *Config, presentKeys map[string]bool) {
-	defaults := DefaultConfig()
+// applyMissingDefaults sets default values for config fields that are absent
+// from the JSON file. Only truly missing fields get defaults, preserving
+// intentional zero values (e.g., volume=0). The version is not defaulted;
+// migrateConfig handles an absent version.
+func applyMissingDefaults(config *ConfigData, presentKeys map[string]bool) {
+	defaults := defaultConfigData()
 
 	if !presentKeys["theme"] {
 		config.Theme = defaults.Theme
@@ -138,10 +137,10 @@ func ApplyMissingDefaults(config *Config, presentKeys map[string]bool) {
 	}
 }
 
-// ValidateConfig checks all config fields against valid ranges and returns
+// validateConfig checks all config fields against valid ranges and returns
 // human-readable error descriptions. An empty slice means the config is valid.
 // validThemes should be the list of known theme names.
-func ValidateConfig(config *Config, validThemes []string) []string {
+func validateConfig(config *ConfigData, validThemes []string) []string {
 	var errors []string
 
 	// version
@@ -219,10 +218,10 @@ func ValidateConfig(config *Config, validThemes []string) []string {
 // MaxInputPlayers is the maximum number of player slots stored in config.
 const MaxInputPlayers = 2
 
-// ValidateInputConfig checks input config overrides using the provided
+// validateInputConfig checks input config overrides using the provided
 // validators. Returns error descriptions for invalid entries.
 // isValidKey checks if a key name is valid, isValidPad checks if a pad name is valid.
-func ValidateInputConfig(config *Config, isValidKey, isValidPad func(string) bool) []string {
+func validateInputConfig(config *ConfigData, isValidKey, isValidPad func(string) bool) []string {
 	var errors []string
 	for btn, keyName := range config.Input.P1Keyboard {
 		if !isValidKey(keyName) {
@@ -277,14 +276,14 @@ func ValidateInputConfig(config *Config, isValidKey, isValidPad func(string) boo
 	return errors
 }
 
-// CorrectInputConfig removes invalid entries from input override maps and
+// correctInputConfig removes invalid entries from input override maps and
 // profile/player configuration. Profiles missing identity fields are dropped,
 // duplicate IDs and duplicate names per controller model are dropped, invalid
 // bindings are removed, out-of-range rumble scales are reset to the default,
 // the players list is clamped, and dangling player profile references are
 // cleared.
 // isValidKey checks if a key name is valid, isValidPad checks if a pad name is valid.
-func CorrectInputConfig(config *Config, isValidKey, isValidPad func(string) bool) {
+func correctInputConfig(config *ConfigData, isValidKey, isValidPad func(string) bool) {
 	for btn, keyName := range config.Input.P1Keyboard {
 		if !isValidKey(keyName) {
 			delete(config.Input.P1Keyboard, btn)
@@ -345,10 +344,10 @@ func CorrectInputConfig(config *Config, isValidKey, isValidPad func(string) bool
 	}
 }
 
-// CorrectConfig resets any invalid fields to their defaults from DefaultConfig().
-// Valid fields are preserved. validThemes should be the list of known theme names.
-func CorrectConfig(config *Config, validThemes []string) *Config {
-	defaults := DefaultConfig()
+// correctConfig resets any invalid fields to their defaults. Valid fields are
+// preserved. validThemes should be the list of known theme names.
+func correctConfig(config *ConfigData, validThemes []string) *ConfigData {
+	defaults := defaultConfigData()
 
 	// version
 	if config.Version != configVersion {

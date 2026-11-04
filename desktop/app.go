@@ -314,7 +314,7 @@ func (a *App) loadConfig() bool {
 	}
 	a.config = config
 
-	if errs := storage.ValidateConfig(a.config, style.ThemeNames()); len(errs) > 0 {
+	if errs := a.config.Validate(style.ThemeNames()); len(errs) > 0 {
 		a.showStartupError("config.json", configPath, errs)
 		return false
 	}
@@ -326,8 +326,9 @@ func (a *App) loadConfig() bool {
 func (a *App) applyConfig() {
 	a.configLoadFailed = false
 	a.newAchievementManager()
-	style.ApplyThemeByName(a.config.Theme)
-	applySavedPadMappings(a.config.Input.PadMappings)
+	cfg := a.config.Values()
+	style.ApplyThemeByName(cfg.Theme)
+	applySavedPadMappings(cfg.Input.PadMappings)
 }
 
 // newAchievementManager creates the achievement manager for the current
@@ -447,7 +448,7 @@ func (a *App) updates() types.Updates {
 // startAchievementAutoLogin logs in to RetroAchievements in the background
 // with the stored token, when achievements are enabled and a token exists.
 func (a *App) startAchievementAutoLogin() {
-	ra := a.config.RetroAchievements
+	ra := a.config.Values().RetroAchievements
 	if !ra.Enabled || ra.Username == "" || ra.Token == "" {
 		return
 	}
@@ -460,8 +461,7 @@ func (a *App) startAchievementAutoLogin() {
 					if result == rcheevos.InvalidCredentials ||
 						result == rcheevos.ExpiredToken ||
 						result == rcheevos.AccessDenied {
-						a.config.RetroAchievements.Token = ""
-						storage.SaveConfig(a.config)
+						a.config.ClearRetroAchievementsToken()
 					}
 				}
 			},
@@ -479,7 +479,7 @@ func (a *App) scanSources() scanner.Sources {
 		src.ArtworkKeys = append([]string(nil), a.emu.Artwork.Keys...)
 	}
 	if a.config != nil {
-		src.ArtworkDownload = a.config.Library.ArtworkDownload
+		src.ArtworkDownload = a.config.Values().Library.ArtworkDownload
 	}
 	return src
 }
@@ -527,7 +527,8 @@ func (a *App) newCleanManager() *CleanManager {
 // GetWindowConfig returns the saved window dimensions, position, and fullscreen state from config.
 // This should be called before RunGame to set the initial window size.
 func (a *App) GetWindowConfig() (width, height int, x, y *int, fullscreen bool) {
-	return a.config.Window.Width, a.config.Window.Height, a.config.Window.X, a.config.Window.Y, a.config.Window.Fullscreen
+	w := a.config.Values().Window
+	return w.Width, w.Height, w.X, w.Y, w.Fullscreen
 }
 
 // saveWindowState saves current window position and size to config
@@ -550,22 +551,20 @@ func (a *App) saveWindowState() {
 	// in fullscreen saves the windowed size, not the fullscreen resolution.
 	// ebiten.WindowSize() cannot be used here because it returns 0,0 during
 	// window close on some platforms.
-	a.config.Window.Width = a.lastWindowedWidth
-	a.config.Window.Height = a.lastWindowedHeight
-	a.config.Window.X = &a.windowX
-	a.config.Window.Y = &a.windowY
-	a.config.Window.Fullscreen = a.lastFullscreenState
-
-	// Save to disk
-	storage.SaveConfig(a.config)
+	a.config.SetWindow(storage.WindowConfig{
+		Width:      a.lastWindowedWidth,
+		Height:     a.lastWindowedHeight,
+		X:          &a.windowX,
+		Y:          &a.windowY,
+		Fullscreen: a.lastFullscreenState,
+	})
 }
 
 // toggleFullscreen toggles between fullscreen and windowed mode
 func (a *App) toggleFullscreen() {
 	ebiten.SetFullscreen(!ebiten.IsFullscreen())
 	a.lastFullscreenState = ebiten.IsFullscreen()
-	a.config.Window.Fullscreen = a.lastFullscreenState
-	storage.SaveConfig(a.config)
+	a.config.SetFullscreen(a.lastFullscreenState)
 }
 
 // initScreens creates all screen instances
@@ -1010,19 +1009,20 @@ func (a *App) updatePlayerAssignment() {
 
 	// Give controllers without a standard layout a generated baseline
 	// mapping so they work everywhere standard buttons are polled.
-	if a.ensurePadMappings(pads) && !a.configLoadFailed {
-		storage.SaveConfig(a.config)
-	}
+	a.ensurePadMappings(pads)
 
 	// One-time bootstrap: first ever controller gets a profile and player 1.
-	if !a.configLoadFailed && AutoCreateFirstProfile(&a.config.Input, pads) {
-		storage.SaveConfig(a.config)
+	input := a.config.Input()
+	if !a.configLoadFailed && AutoCreateFirstProfile(&input, pads) {
+		id := a.config.AddProfile(input.Profiles[0])
+		a.config.SetPlayerProfile(0, id)
+		input = a.config.Input()
 		if a.state == StateSettings {
 			a.RequestRebuild()
 		}
 	}
 
-	events := a.assignment.Update(pads, &a.config.Input)
+	events := a.assignment.Update(pads, &input)
 
 	// Surface controller changes only during gameplay.
 	if a.state != StatePlaying {
@@ -1334,7 +1334,7 @@ func (a *App) SwitchToCleanProgress() {
 func (a *App) LaunchGame(gameID string, resume bool, discIndex int) {
 	// Reset shader buffers to avoid stale data from previous game
 	a.shaderManager.ResetBuffers()
-	a.shaderManager.SetAspectRatioMode(a.config.Video.AspectRatio)
+	a.shaderManager.SetAspectRatioMode(a.config.Values().Video.AspectRatio)
 
 	if a.gameplay.Launch(gameID, resume, discIndex) {
 		a.leaveDetail()
@@ -1439,13 +1439,12 @@ func (a *App) cheatSystem() cheats.System {
 func (a *App) handleDeleteAndContinue() {
 	switch a.errorFile {
 	case "config.json":
-		if err := storage.DeleteConfig(); err != nil {
-			log.Printf("Failed to delete config: %v", err)
+		config, err := storage.ResetConfig()
+		if err != nil {
+			log.Printf("Failed to reset config: %v", err)
+			config = storage.DefaultConfig()
 		}
-		a.config = storage.DefaultConfig()
-		if err := storage.SaveConfig(a.config); err != nil {
-			log.Printf("Failed to save config: %v", err)
-		}
+		a.config = config
 		a.applyConfig()
 		if !a.loadLibrary() {
 			return
@@ -1465,14 +1464,9 @@ func (a *App) handleDeleteAndContinue() {
 // handleResetAndContinue handles the reset and continue button for validation errors.
 // It corrects invalid config fields to defaults, saves, and proceeds to the library.
 func (a *App) handleResetAndContinue() {
-	// Correct invalid fields
+	// Correct invalid fields, which saves the corrected config
 	themeNames := style.ThemeNames()
-	storage.CorrectConfig(a.config, themeNames)
-
-	// Save corrected config
-	if err := storage.SaveConfig(a.config); err != nil {
-		log.Printf("Failed to save corrected config: %v", err)
-	}
+	a.config.Correct(themeNames)
 
 	a.applyConfig()
 	if !a.loadLibrary() {
@@ -1494,6 +1488,11 @@ func (a *App) SaveAndClose() {
 	// Capture current window state before saving
 	a.saveWindowState()
 
+	// The config saves itself after each change; wait for those writes.
+	// A config.json that failed to load is replaced by a default that is
+	// never written.
+	a.config.Flush()
+
 	// The library saves itself after each change; wait for those writes.
 	// A library that failed to validate, or the error screen's placeholder,
 	// is never changed and so never written.
@@ -1502,11 +1501,12 @@ func (a *App) SaveAndClose() {
 
 // preloadConfiguredShaders loads all shaders referenced in config
 func (a *App) preloadConfiguredShaders() {
+	shaders := a.config.Values().Shaders
 	allShaders := make(map[string]bool)
-	for _, id := range a.config.Shaders.UIShaders {
+	for _, id := range shaders.UIShaders {
 		allShaders[id] = true
 	}
-	for _, id := range a.config.Shaders.GameShaders {
+	for _, id := range shaders.GameShaders {
 		allShaders[id] = true
 	}
 
@@ -1523,7 +1523,7 @@ func (a *App) getActiveShaders() []string {
 	case StatePlaying:
 		return a.gameplay.GameShaders()
 	default:
-		return a.config.Shaders.UIShaders
+		return a.config.Shaders().UIShaders
 	}
 }
 

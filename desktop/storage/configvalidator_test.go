@@ -9,6 +9,12 @@ import (
 // validTestThemes is the list of theme names used in tests
 var validTestThemes = []string{"Default", "Dark", "Light", "Retro", "Pink", "Hot Pink", "Green LCD", "High Contrast"}
 
+// newTestConfigData returns the default configuration values to change
+func newTestConfigData() *ConfigData {
+	d := defaultConfigData()
+	return &d
+}
+
 func TestDetectPresentKeys(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -102,12 +108,12 @@ func TestDetectPresentKeys(t *testing.T) {
 
 func TestApplyMissingDefaults(t *testing.T) {
 	t.Run("all missing gets all defaults", func(t *testing.T) {
-		config := &Config{}
+		config := &ConfigData{}
 		presentKeys := map[string]bool{}
 
-		ApplyMissingDefaults(config, presentKeys)
+		applyMissingDefaults(config, presentKeys)
 
-		defaults := DefaultConfig()
+		defaults := newTestConfigData()
 		if config.Version != 0 {
 			t.Errorf("version: got %d, want 0 (left for migration)", config.Version)
 		}
@@ -147,7 +153,7 @@ func TestApplyMissingDefaults(t *testing.T) {
 	})
 
 	t.Run("present keys preserved even when zero", func(t *testing.T) {
-		config := &Config{
+		config := &ConfigData{
 			Audio:  AudioConfig{Volume: 0.0},
 			Window: WindowConfig{Width: 0, Height: 0},
 		}
@@ -157,7 +163,7 @@ func TestApplyMissingDefaults(t *testing.T) {
 			"window.height": true,
 		}
 
-		ApplyMissingDefaults(config, presentKeys)
+		applyMissingDefaults(config, presentKeys)
 
 		// These should NOT be overwritten since they're present
 		if config.Audio.Volume != 0.0 {
@@ -171,14 +177,14 @@ func TestApplyMissingDefaults(t *testing.T) {
 		}
 
 		// Missing fields should get defaults
-		defaults := DefaultConfig()
+		defaults := newTestConfigData()
 		if config.Theme != defaults.Theme {
 			t.Errorf("theme should default to %q, got %q", defaults.Theme, config.Theme)
 		}
 	})
 
 	t.Run("all present keeps values", func(t *testing.T) {
-		config := &Config{
+		config := &ConfigData{
 			Version: 1,
 			Theme:   "Dark",
 			Video:   VideoConfig{AspectRatio: "4:3"},
@@ -196,7 +202,7 @@ func TestApplyMissingDefaults(t *testing.T) {
 			"rewind.bufferSizeMB": true, "rewind.frameStep": true,
 		}
 
-		ApplyMissingDefaults(config, presentKeys)
+		applyMissingDefaults(config, presentKeys)
 
 		if config.Version != 1 {
 			t.Errorf("version should remain 1, got %d", config.Version)
@@ -219,10 +225,10 @@ func TestApplyMissingDefaults(t *testing.T) {
 	})
 
 	t.Run("absent aspect ratio defaults to dar", func(t *testing.T) {
-		config := &Config{}
+		config := &ConfigData{}
 		presentKeys := map[string]bool{}
 
-		ApplyMissingDefaults(config, presentKeys)
+		applyMissingDefaults(config, presentKeys)
 
 		if config.Video.AspectRatio != "dar" {
 			t.Errorf("video.aspectRatio should default to dar, got %q", config.Video.AspectRatio)
@@ -230,14 +236,14 @@ func TestApplyMissingDefaults(t *testing.T) {
 	})
 
 	t.Run("present aspect ratio preserved", func(t *testing.T) {
-		config := &Config{
+		config := &ConfigData{
 			Video: VideoConfig{AspectRatio: "stretch"},
 		}
 		presentKeys := map[string]bool{
 			"video.aspectRatio": true,
 		}
 
-		ApplyMissingDefaults(config, presentKeys)
+		applyMissingDefaults(config, presentKeys)
 
 		if config.Video.AspectRatio != "stretch" {
 			t.Errorf("video.aspectRatio should remain stretch, got %q", config.Video.AspectRatio)
@@ -247,8 +253,8 @@ func TestApplyMissingDefaults(t *testing.T) {
 
 func TestValidateConfig(t *testing.T) {
 	t.Run("valid config has no errors", func(t *testing.T) {
-		config := DefaultConfig()
-		errs := ValidateConfig(config, validTestThemes)
+		config := newTestConfigData()
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) != 0 {
 			t.Errorf("expected no errors for default config, got: %v", errs)
 		}
@@ -256,9 +262,9 @@ func TestValidateConfig(t *testing.T) {
 
 	t.Run("invalid version", func(t *testing.T) {
 		for _, version := range []int{0, 1, configVersion + 1, 99} {
-			config := DefaultConfig()
+			config := newTestConfigData()
 			config.Version = version
-			errs := ValidateConfig(config, validTestThemes)
+			errs := validateConfig(config, validTestThemes)
 			if len(errs) == 0 {
 				t.Errorf("expected error for version %d", version)
 			}
@@ -266,9 +272,9 @@ func TestValidateConfig(t *testing.T) {
 	})
 
 	t.Run("invalid theme", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Theme = "NonexistentTheme"
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) == 0 {
 			t.Error("expected error for invalid theme")
 		}
@@ -276,9 +282,9 @@ func TestValidateConfig(t *testing.T) {
 
 	t.Run("valid aspect ratios", func(t *testing.T) {
 		for _, ar := range ValidAspectRatios {
-			config := DefaultConfig()
+			config := newTestConfigData()
 			config.Video.AspectRatio = ar
-			errs := ValidateConfig(config, validTestThemes)
+			errs := validateConfig(config, validTestThemes)
 			if len(errs) != 0 {
 				t.Errorf("aspect ratio %q should be valid, got errors: %v", ar, errs)
 			}
@@ -286,54 +292,54 @@ func TestValidateConfig(t *testing.T) {
 	})
 
 	t.Run("invalid aspect ratio", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Video.AspectRatio = "16:9"
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) == 0 {
 			t.Error("expected error for invalid aspect ratio 16:9")
 		}
 	})
 
 	t.Run("negative volume", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Audio.Volume = -0.1
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) == 0 {
 			t.Error("expected error for negative volume")
 		}
 	})
 
 	t.Run("volume too high", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Audio.Volume = 2.1
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) == 0 {
 			t.Error("expected error for volume > 2.0")
 		}
 	})
 
 	t.Run("window width too small", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Window.Width = 800
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) == 0 {
 			t.Error("expected error for width < 900")
 		}
 	})
 
 	t.Run("window height too small", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Window.Height = 400
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) == 0 {
 			t.Error("expected error for height < 650")
 		}
 	})
 
 	t.Run("invalid viewMode", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Library.ViewMode = "grid"
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) == 0 {
 			t.Error("expected error for invalid viewMode")
 		}
@@ -341,66 +347,66 @@ func TestValidateConfig(t *testing.T) {
 
 	t.Run("artworkDownload values", func(t *testing.T) {
 		for _, v := range ValidArtworkDownloads {
-			config := DefaultConfig()
+			config := newTestConfigData()
 			config.Library.ArtworkDownload = v
-			if errs := ValidateConfig(config, validTestThemes); len(errs) != 0 {
+			if errs := validateConfig(config, validTestThemes); len(errs) != 0 {
 				t.Errorf("%q: %v", v, errs)
 			}
 		}
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Library.ArtworkDownload = "everything"
-		if errs := ValidateConfig(config, validTestThemes); len(errs) == 0 {
+		if errs := validateConfig(config, validTestThemes); len(errs) == 0 {
 			t.Error("expected error for invalid artworkDownload")
 		}
 	})
 
 	t.Run("invalid sortBy", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Library.SortBy = "date"
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) == 0 {
 			t.Error("expected error for invalid sortBy")
 		}
 	})
 
 	t.Run("bufferSizeMB too small", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Rewind.BufferSizeMB = 5
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) == 0 {
 			t.Error("expected error for bufferSizeMB < 10")
 		}
 	})
 
 	t.Run("bufferSizeMB too large", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Rewind.BufferSizeMB = 500
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) == 0 {
 			t.Error("expected error for bufferSizeMB > 400")
 		}
 	})
 
 	t.Run("frameStep too small", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Rewind.FrameStep = 0
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) == 0 {
 			t.Error("expected error for frameStep < 1")
 		}
 	})
 
 	t.Run("frameStep too large", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Rewind.FrameStep = 31
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) == 0 {
 			t.Error("expected error for frameStep > 30")
 		}
 	})
 
 	t.Run("multiple errors at once", func(t *testing.T) {
-		config := &Config{
+		config := &ConfigData{
 			Version: 99,
 			Theme:   "BadTheme",
 			Video:   VideoConfig{AspectRatio: "16:9"},
@@ -409,7 +415,7 @@ func TestValidateConfig(t *testing.T) {
 			Library: LibraryView{ViewMode: "grid", SortBy: "date", ArtworkDownload: "everything"},
 			Rewind:  RewindConfig{BufferSizeMB: 0, FrameStep: 0},
 		}
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) != 11 {
 			t.Errorf("expected 11 errors, got %d: %v", len(errs), errs)
 		}
@@ -417,72 +423,72 @@ func TestValidateConfig(t *testing.T) {
 
 	// Boundary values (valid)
 	t.Run("boundary: volume 0.0 is valid", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Audio.Volume = 0.0
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) != 0 {
 			t.Errorf("volume 0.0 should be valid, got errors: %v", errs)
 		}
 	})
 
 	t.Run("boundary: volume 2.0 is valid", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Audio.Volume = 2.0
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) != 0 {
 			t.Errorf("volume 2.0 should be valid, got errors: %v", errs)
 		}
 	})
 
 	t.Run("boundary: width 900 is valid", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Window.Width = 900
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) != 0 {
 			t.Errorf("width 900 should be valid, got errors: %v", errs)
 		}
 	})
 
 	t.Run("boundary: height 650 is valid", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Window.Height = 650
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) != 0 {
 			t.Errorf("height 650 should be valid, got errors: %v", errs)
 		}
 	})
 
 	t.Run("boundary: bufferSizeMB 10 is valid", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Rewind.BufferSizeMB = 10
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) != 0 {
 			t.Errorf("bufferSizeMB 10 should be valid, got errors: %v", errs)
 		}
 	})
 
 	t.Run("boundary: bufferSizeMB 400 is valid", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Rewind.BufferSizeMB = 400
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) != 0 {
 			t.Errorf("bufferSizeMB 400 should be valid, got errors: %v", errs)
 		}
 	})
 
 	t.Run("boundary: frameStep 1 is valid", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Rewind.FrameStep = 1
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) != 0 {
 			t.Errorf("frameStep 1 should be valid, got errors: %v", errs)
 		}
 	})
 
 	t.Run("boundary: frameStep 30 is valid", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Rewind.FrameStep = 30
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		if len(errs) != 0 {
 			t.Errorf("frameStep 30 should be valid, got errors: %v", errs)
 		}
@@ -491,7 +497,7 @@ func TestValidateConfig(t *testing.T) {
 
 func TestCorrectConfig(t *testing.T) {
 	t.Run("corrects only invalid fields", func(t *testing.T) {
-		config := &Config{
+		config := &ConfigData{
 			Version: 1,
 			Theme:   "Dark",                                            // valid
 			Audio:   AudioConfig{Volume: 999},                          // invalid
@@ -500,8 +506,8 @@ func TestCorrectConfig(t *testing.T) {
 			Rewind:  RewindConfig{BufferSizeMB: 100, FrameStep: 5},     // valid
 		}
 
-		corrected := CorrectConfig(config, validTestThemes)
-		defaults := DefaultConfig()
+		corrected := correctConfig(config, validTestThemes)
+		defaults := newTestConfigData()
 
 		// Valid fields preserved
 		if corrected.Theme != "Dark" {
@@ -533,10 +539,10 @@ func TestCorrectConfig(t *testing.T) {
 	})
 
 	t.Run("valid config unchanged", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		original, _ := json.Marshal(config)
 
-		corrected := CorrectConfig(config, validTestThemes)
+		corrected := correctConfig(config, validTestThemes)
 		after, _ := json.Marshal(corrected)
 
 		if string(original) != string(after) {
@@ -545,10 +551,10 @@ func TestCorrectConfig(t *testing.T) {
 	})
 
 	t.Run("invalid aspect ratio corrected to dar", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Video.AspectRatio = "16:9"
 
-		corrected := CorrectConfig(config, validTestThemes)
+		corrected := correctConfig(config, validTestThemes)
 
 		if corrected.Video.AspectRatio != "dar" {
 			t.Errorf("video.aspectRatio should be corrected to dar, got %q", corrected.Video.AspectRatio)
@@ -556,10 +562,10 @@ func TestCorrectConfig(t *testing.T) {
 	})
 
 	t.Run("valid aspect ratio preserved", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Video.AspectRatio = "4:3"
 
-		corrected := CorrectConfig(config, validTestThemes)
+		corrected := correctConfig(config, validTestThemes)
 
 		if corrected.Video.AspectRatio != "4:3" {
 			t.Errorf("video.aspectRatio should remain 4:3, got %q", corrected.Video.AspectRatio)
@@ -567,7 +573,7 @@ func TestCorrectConfig(t *testing.T) {
 	})
 
 	t.Run("all invalid resets all to defaults", func(t *testing.T) {
-		config := &Config{
+		config := &ConfigData{
 			Version: 99,
 			Theme:   "BadTheme",
 			Video:   VideoConfig{AspectRatio: "bad"},
@@ -577,8 +583,8 @@ func TestCorrectConfig(t *testing.T) {
 			Rewind:  RewindConfig{BufferSizeMB: 0, FrameStep: 0},
 		}
 
-		corrected := CorrectConfig(config, validTestThemes)
-		defaults := DefaultConfig()
+		corrected := correctConfig(config, validTestThemes)
+		defaults := newTestConfigData()
 
 		if corrected.Library.ArtworkDownload != defaults.Library.ArtworkDownload {
 			t.Errorf("artworkDownload: got %q, want %q", corrected.Library.ArtworkDownload, defaults.Library.ArtworkDownload)
@@ -622,55 +628,55 @@ func TestValidateInputConfig(t *testing.T) {
 	}
 
 	t.Run("empty config has no errors", func(t *testing.T) {
-		config := DefaultConfig()
-		errs := ValidateInputConfig(config, validKey, validPad)
+		config := newTestConfigData()
+		errs := validateInputConfig(config, validKey, validPad)
 		if len(errs) != 0 {
 			t.Errorf("expected no errors, got: %v", errs)
 		}
 	})
 
 	t.Run("valid overrides have no errors", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Input.P1Keyboard = map[string]string{"Up": "ArrowUp", "A": "J"}
 		config.Input.Profiles = []ControllerProfile{
 			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "default", Bindings: map[string]string{"A": "DpadUp"}},
 		}
 		config.Input.Players = []PlayerConfig{{Profile: "p1"}, {Profile: ""}}
-		errs := ValidateInputConfig(config, validKey, validPad)
+		errs := validateInputConfig(config, validKey, validPad)
 		if len(errs) != 0 {
 			t.Errorf("expected no errors, got: %v", errs)
 		}
 	})
 
 	t.Run("invalid key name detected", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Input.P1Keyboard = map[string]string{"A": "BadKey"}
-		errs := ValidateInputConfig(config, validKey, validPad)
+		errs := validateInputConfig(config, validKey, validPad)
 		if len(errs) != 1 {
 			t.Errorf("expected 1 error, got %d: %v", len(errs), errs)
 		}
 	})
 
 	t.Run("invalid pad name detected", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Input.Profiles = []ControllerProfile{
 			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "default", Bindings: map[string]string{"A": "BadPad"}},
 		}
-		errs := ValidateInputConfig(config, validKey, validPad)
+		errs := validateInputConfig(config, validKey, validPad)
 		if len(errs) != 1 {
 			t.Errorf("expected 1 error, got %d: %v", len(errs), errs)
 		}
 	})
 
 	t.Run("profile identity problems detected", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Input.Profiles = []ControllerProfile{
 			{ID: "", SDLID: "sdl1", Controller: "Pad", Name: "default"},
 			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "one"},
 			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "two"},
 			{ID: "p2", SDLID: "sdl1", Controller: "Pad", Name: "one"},
 		}
-		errs := ValidateInputConfig(config, validKey, validPad)
+		errs := validateInputConfig(config, validKey, validPad)
 		// missing id, duplicate id, duplicate name per model
 		if len(errs) != 3 {
 			t.Errorf("expected 3 errors, got %d: %v", len(errs), errs)
@@ -678,11 +684,11 @@ func TestValidateInputConfig(t *testing.T) {
 	})
 
 	t.Run("player problems detected", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Input.Players = []PlayerConfig{
 			{Profile: "missing"}, {Profile: ""}, {Profile: ""},
 		}
-		errs := ValidateInputConfig(config, validKey, validPad)
+		errs := validateInputConfig(config, validKey, validPad)
 		// too many players, unknown profile reference
 		if len(errs) != 2 {
 			t.Errorf("expected 2 errors, got %d: %v", len(errs), errs)
@@ -690,14 +696,14 @@ func TestValidateInputConfig(t *testing.T) {
 	})
 
 	t.Run("profile rumbleScale out of range detected", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Input.Profiles = []ControllerProfile{
 			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "one", RumbleScale: -0.05},
 			{ID: "p2", SDLID: "sdl1", Controller: "Pad", Name: "two", RumbleScale: 3.05},
 			{ID: "p3", SDLID: "sdl1", Controller: "Pad", Name: "three", RumbleScale: 3.0},
 			{ID: "p4", SDLID: "sdl1", Controller: "Pad", Name: "four", RumbleScale: 0.0},
 		}
-		errs := ValidateInputConfig(config, validKey, validPad)
+		errs := validateInputConfig(config, validKey, validPad)
 		if len(errs) != 2 {
 			t.Errorf("expected 2 errors, got %d: %v", len(errs), errs)
 		}
@@ -713,13 +719,13 @@ func TestCorrectInputConfig(t *testing.T) {
 	}
 
 	t.Run("removes invalid entries", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Input.P1Keyboard = map[string]string{"A": "J", "B": "BadKey"}
 		config.Input.Profiles = []ControllerProfile{
 			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "default", Bindings: map[string]string{"A": "A", "B": "BadPad"}},
 		}
 
-		CorrectInputConfig(config, validKey, validPad)
+		correctInputConfig(config, validKey, validPad)
 
 		if len(config.Input.P1Keyboard) != 1 {
 			t.Errorf("expected 1 keyboard entry, got %d", len(config.Input.P1Keyboard))
@@ -736,7 +742,7 @@ func TestCorrectInputConfig(t *testing.T) {
 	})
 
 	t.Run("drops invalid and duplicate profiles", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Input.Profiles = []ControllerProfile{
 			{ID: "", SDLID: "sdl1", Controller: "Pad", Name: "default"},
 			{ID: "p1", SDLID: "", Controller: "Pad", Name: "default"},
@@ -746,7 +752,7 @@ func TestCorrectInputConfig(t *testing.T) {
 			{ID: "p3", SDLID: "sdl2", Controller: "Pad", Name: "one"},
 		}
 
-		CorrectInputConfig(config, validKey, validPad)
+		correctInputConfig(config, validKey, validPad)
 
 		if len(config.Input.Profiles) != 2 {
 			t.Fatalf("expected 2 profiles, got %d: %v", len(config.Input.Profiles), config.Input.Profiles)
@@ -760,7 +766,7 @@ func TestCorrectInputConfig(t *testing.T) {
 	})
 
 	t.Run("clamps players and clears dangling references", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Input.Profiles = []ControllerProfile{
 			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "default"},
 		}
@@ -768,7 +774,7 @@ func TestCorrectInputConfig(t *testing.T) {
 			{Profile: "p1"}, {Profile: "missing"}, {Profile: "p1"},
 		}
 
-		CorrectInputConfig(config, validKey, validPad)
+		correctInputConfig(config, validKey, validPad)
 
 		if len(config.Input.Players) != 2 {
 			t.Fatalf("expected 2 players, got %d", len(config.Input.Players))
@@ -782,14 +788,14 @@ func TestCorrectInputConfig(t *testing.T) {
 	})
 
 	t.Run("resets out-of-range rumbleScale to default", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Input.Profiles = []ControllerProfile{
 			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "one", RumbleScale: 5.0},
 			{ID: "p2", SDLID: "sdl1", Controller: "Pad", Name: "two", RumbleScale: 0.5},
 			{ID: "p3", SDLID: "sdl1", Controller: "Pad", Name: "three"},
 		}
 
-		CorrectInputConfig(config, validKey, validPad)
+		correctInputConfig(config, validKey, validPad)
 
 		if config.Input.Profiles[0].RumbleScale != DefaultRumbleScale {
 			t.Errorf("out-of-range rumbleScale should reset to default, got %f", config.Input.Profiles[0].RumbleScale)
@@ -803,8 +809,8 @@ func TestCorrectInputConfig(t *testing.T) {
 	})
 
 	t.Run("nil maps are safe", func(t *testing.T) {
-		config := DefaultConfig()
-		CorrectInputConfig(config, validKey, validPad) // Should not panic
+		config := newTestConfigData()
+		correctInputConfig(config, validKey, validPad) // Should not panic
 	})
 }
 
@@ -813,7 +819,7 @@ func TestProfileRumbleScaleUnmarshal(t *testing.T) {
 		jsonBytes := []byte(`{"input": {"profiles": [
 			{"id": "p1", "sdlId": "sdl1", "controller": "Pad", "name": "one"}
 		]}}`)
-		config := &Config{}
+		config := &ConfigData{}
 		if err := json.Unmarshal(jsonBytes, config); err != nil {
 			t.Fatal(err)
 		}
@@ -826,7 +832,7 @@ func TestProfileRumbleScaleUnmarshal(t *testing.T) {
 		jsonBytes := []byte(`{"input": {"profiles": [
 			{"id": "p1", "sdlId": "sdl1", "controller": "Pad", "name": "one", "rumbleScale": 0}
 		]}}`)
-		config := &Config{}
+		config := &ConfigData{}
 		if err := json.Unmarshal(jsonBytes, config); err != nil {
 			t.Fatal(err)
 		}
@@ -839,7 +845,7 @@ func TestProfileRumbleScaleUnmarshal(t *testing.T) {
 		jsonBytes := []byte(`{"input": {"profiles": [
 			{"id": "p1", "sdlId": "sdl1", "controller": "Pad", "name": "one", "rumbleScale": 0.5}
 		]}}`)
-		config := &Config{}
+		config := &ConfigData{}
 		if err := json.Unmarshal(jsonBytes, config); err != nil {
 			t.Fatal(err)
 		}
@@ -912,7 +918,7 @@ func TestRumbleEnabled(t *testing.T) {
 
 func TestInputConfigSerialization(t *testing.T) {
 	t.Run("empty maps omitted from JSON", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		data, err := json.Marshal(config)
 		if err != nil {
 			t.Fatal(err)
@@ -925,7 +931,7 @@ func TestInputConfigSerialization(t *testing.T) {
 	})
 
 	t.Run("non-empty maps included in JSON", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Input.P1Keyboard = map[string]string{"Up": "ArrowUp"}
 		data, err := json.Marshal(config)
 		if err != nil {
@@ -941,7 +947,7 @@ func TestInputConfigSerialization(t *testing.T) {
 	})
 
 	t.Run("roundtrip preserves overrides", func(t *testing.T) {
-		config := DefaultConfig()
+		config := newTestConfigData()
 		config.Input.P1Keyboard = map[string]string{"Up": "ArrowUp", "A": "Z"}
 		config.Input.Profiles = []ControllerProfile{
 			{ID: "p1", SDLID: "sdl1", Controller: "Pad", Name: "default", Bindings: map[string]string{"A": "Y"}},
@@ -954,7 +960,7 @@ func TestInputConfigSerialization(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		var restored Config
+		var restored ConfigData
 		if err := json.Unmarshal(data, &restored); err != nil {
 			t.Fatal(err)
 		}
@@ -977,7 +983,7 @@ func TestInputConfigSerialization(t *testing.T) {
 	})
 
 	t.Run("legacy p1Controller key is ignored on load", func(t *testing.T) {
-		var restored Config
+		var restored ConfigData
 		legacy := `{"input":{"p1Keyboard":{"Up":"ArrowUp"},"p1Controller":{"A":"Y"}}}`
 		if err := json.Unmarshal([]byte(legacy), &restored); err != nil {
 			t.Fatal(err)
@@ -996,11 +1002,11 @@ func TestInputConfigSerialization(t *testing.T) {
 
 	t.Run("absent profiles and players stay empty", func(t *testing.T) {
 		jsonBytes := []byte(`{"version":1}`)
-		var config Config
+		var config ConfigData
 		if err := json.Unmarshal(jsonBytes, &config); err != nil {
 			t.Fatal(err)
 		}
-		ApplyMissingDefaults(&config, detectPresentKeys(jsonBytes))
+		applyMissingDefaults(&config, detectPresentKeys(jsonBytes))
 		if len(config.Input.Profiles) != 0 {
 			t.Error("profiles should default to empty")
 		}
@@ -1024,7 +1030,7 @@ func containsSubstring(s, substr string) bool {
 }
 
 func TestLegacyDisableAnalogStickIgnored(t *testing.T) {
-	var restored Config
+	var restored ConfigData
 	legacy := `{"input":{"p1Keyboard":{"Up":"ArrowUp"},"disableAnalogStick":true}}`
 	if err := json.Unmarshal([]byte(legacy), &restored); err != nil {
 		t.Fatal(err)
@@ -1042,22 +1048,22 @@ func TestLegacyDisableAnalogStickIgnored(t *testing.T) {
 }
 
 func TestPresentButZeroVsMissing(t *testing.T) {
-	// A key present with a zero value is kept by ApplyMissingDefaults and
-	// left for ValidateConfig to judge; an absent key gets its default.
+	// A key present with a zero value is kept by applyMissingDefaults and
+	// left for validateConfig to judge; an absent key gets its default.
 	t.Run("present volume=0 preserved", func(t *testing.T) {
 		jsonBytes := []byte(`{"audio": {"volume": 0}}`)
-		config := &Config{}
+		config := &ConfigData{}
 		json.Unmarshal(jsonBytes, config)
 
 		presentKeys := detectPresentKeys(jsonBytes)
-		ApplyMissingDefaults(config, presentKeys)
+		applyMissingDefaults(config, presentKeys)
 
 		if config.Audio.Volume != 0.0 {
 			t.Errorf("present volume=0 should be preserved, got %f", config.Audio.Volume)
 		}
 
 		// volume=0 is valid (within 0.0-2.0 range)
-		errs := ValidateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestThemes)
 		for _, e := range errs {
 			if len(e) > 12 && e[:12] == "audio.volume" {
 				t.Errorf("volume 0.0 should be valid, got error: %s", e)
@@ -1098,18 +1104,18 @@ func TestValidateAndCorrectPadMappings(t *testing.T) {
 	validKey := func(string) bool { return true }
 	validPad := func(string) bool { return true }
 
-	config := DefaultConfig()
+	config := newTestConfigData()
 	config.Input.PadMappings = map[string]string{
 		guid:  guid + ",Pad,a:b0,dpup:h0.1,",
 		"bad": "bad,Pad,a:b0,",
 	}
 
-	errs := ValidateInputConfig(config, validKey, validPad)
+	errs := validateInputConfig(config, validKey, validPad)
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error, got: %v", errs)
 	}
 
-	CorrectInputConfig(config, validKey, validPad)
+	correctInputConfig(config, validKey, validPad)
 	if len(config.Input.PadMappings) != 1 {
 		t.Fatalf("expected 1 mapping after correction, got: %v", config.Input.PadMappings)
 	}
@@ -1118,7 +1124,7 @@ func TestValidateAndCorrectPadMappings(t *testing.T) {
 	}
 
 	config.Input.PadMappings = map[string]string{"bad": "bad"}
-	CorrectInputConfig(config, validKey, validPad)
+	correctInputConfig(config, validKey, validPad)
 	if config.Input.PadMappings != nil {
 		t.Errorf("expected nil map after removing all entries, got: %v", config.Input.PadMappings)
 	}

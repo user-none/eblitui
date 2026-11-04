@@ -155,10 +155,11 @@ func NewGameplayManager(
 	onExitToLibrary func(),
 	onExitApp func(),
 ) *GameplayManager {
+	input := config.Values().Input
 	gm := &GameplayManager{
 		factory:            factory,
 		systemInfo:         systemInfo,
-		mappings:           buildPlayerMappings(systemInfo, &config.Input),
+		mappings:           buildPlayerMappings(systemInfo, &input),
 		autoSaveInterval:   style.AutoSaveInterval,
 		turboState:         &TurboState{multiplier: 1},
 		perfOverlay:        &PerfOverlay{},
@@ -227,8 +228,10 @@ func (gm *GameplayManager) GameShaders() []string {
 // range, uses the entry's remembered SelectedDisc. Ignored for single-disc
 // and cartridge games.
 func (gm *GameplayManager) Launch(gameID string, resume bool, discIndex int) bool {
+	cfg := gm.config.Values()
+
 	// Rebuild input mappings from current config (settings may have changed)
-	gm.mappings = buildPlayerMappings(gm.systemInfo, &gm.config.Input)
+	gm.mappings = buildPlayerMappings(gm.systemInfo, &cfg.Input)
 
 	// currentGame is gameplay's own copy of the entry; changes to the stored
 	// entry go through the library
@@ -299,13 +302,13 @@ func (gm *GameplayManager) Launch(gameID string, resume bool, discIndex int) boo
 	// overrides of the global settings
 	overrides := loadOverrides(gameID)
 	for _, opt := range gm.systemInfo.CoreOptions {
-		emu.SetOption(opt.Key, launchCoreOption(opt, gm.config.CoreOptions, overrides))
+		emu.SetOption(opt.Key, launchCoreOption(opt, cfg.CoreOptions, overrides))
 	}
-	gm.gameShaders = launchGameShaders(gm.config.Shaders.GameShaders, overrides)
+	gm.gameShaders = launchGameShaders(cfg.Shaders.GameShaders, overrides)
 
 	// Load BIOS files
 	for _, opt := range gm.systemInfo.BIOSOptions {
-		bc, hasCfg := gm.config.BIOS[opt.Key]
+		bc, hasCfg := cfg.BIOS[opt.Key]
 		if !hasCfg || bc.Active == "" {
 			if opt.Required {
 				gm.notification.ShowDefault("BIOS required: " + opt.Label)
@@ -372,7 +375,7 @@ func (gm *GameplayManager) Launch(gameID string, resume bool, discIndex int) boo
 
 	// Create renderer and shared structures for the emulation goroutine
 	gm.renderer = NewFramebufferRenderer(gm.systemInfo.PixelAspectRatio)
-	gm.renderer.SetAspectRatioMode(gm.config.Video.AspectRatio)
+	gm.renderer.SetAspectRatioMode(cfg.Video.AspectRatio)
 	gm.sharedInput = &SharedInput{}
 	gm.sharedFramebuffer = NewSharedFramebuffer(gm.systemInfo.ScreenWidth, gm.systemInfo.ScreenHeight)
 	gm.emuControl = NewEmuControl()
@@ -384,8 +387,8 @@ func (gm *GameplayManager) Launch(gameID string, resume bool, discIndex int) boo
 	// When muted, volume is set to 0 (silent output, loop still paced). If no
 	// audio device is available, NewAudioPlayer falls back to a timer-driven
 	// drain so the ring still empties.
-	volume := gm.config.Audio.Volume
-	if gm.config.Audio.Muted {
+	volume := cfg.Audio.Volume
+	if cfg.Audio.Muted {
 		volume = 0
 	}
 	gm.framePacer = newFramePacer(audioSampleRate, emu.GetTiming().FPS)
@@ -409,8 +412,8 @@ func (gm *GameplayManager) Launch(gameID string, resume bool, discIndex int) boo
 	gm.library.SetLastPlayed(gameID, time.Now().Unix())
 
 	// Create rewind buffer if enabled
-	if gm.config.Rewind.Enabled && gm.saveStater != nil && gm.systemInfo.SerializeSize > 0 {
-		gm.rewindBuffer = NewRewindBuffer(gm.config.Rewind.BufferSizeMB, gm.config.Rewind.FrameStep, gm.systemInfo.SerializeSize)
+	if cfg.Rewind.Enabled && gm.saveStater != nil && gm.systemInfo.SerializeSize > 0 {
+		gm.rewindBuffer = NewRewindBuffer(cfg.Rewind.BufferSizeMB, cfg.Rewind.FrameStep, gm.systemInfo.SerializeSize)
 	}
 
 	// Set TPS to 60 for all regions; emu goroutine handles its own timing
@@ -458,7 +461,7 @@ func (gm *GameplayManager) Launch(gameID string, resume bool, discIndex int) boo
 
 	// Initialize rumble if any assigned controller profile has a non-zero
 	// rumble intensity and the emulator exposes memory.
-	if gm.config.Input.RumbleEnabled() && gm.memoryInspector != nil {
+	if cfg.Input.RumbleEnabled() && gm.memoryInspector != nil {
 		gm.rumbleEngine = gm.loadRumbleRuleset(game.GameID, gm.memoryInspector)
 	}
 
@@ -516,6 +519,10 @@ func (gm *GameplayManager) emulationLoop() {
 
 	autoSaveTimer := time.Now().Add(time.Second) // First serialize after 1 second
 
+	// Settings cannot change while a game runs, so the fast-forward mute
+	// setting is read once rather than copied from the config every frame
+	fastForwardMute := gm.config.Values().Audio.FastForwardMute
+
 	for {
 		// Check pause/stop. Shutdown exits here (Stop + ring Close); the
 		// pacer only ever parks in a bounded time.Sleep.
@@ -532,7 +539,6 @@ func (gm *GameplayManager) emulationLoop() {
 
 		// Read turbo state
 		multiplier := gm.turboState.Read()
-		fastForwardMute := gm.config.Audio.FastForwardMute
 
 		// Run extra turbo frames. Always drain GetAudioSamples (even
 		// when muted) so the core's internal audio buffer doesn't

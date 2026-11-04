@@ -67,27 +67,30 @@ func inputButtonLabel(t *testing.T, f widget.Focuser) string {
 }
 
 func TestProfileDeleteTwoPresses(t *testing.T) {
-	// Deleting saves the config; keep it in a temp data directory
+	// Keep any config write in a temp data directory
 	dir := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", dir)
 	t.Setenv("HOME", dir)
 	t.Setenv("USERPROFILE", dir)
 	t.Setenv("APPDATA", dir)
 
-	config := &storage.Config{Input: storage.InputConfig{
-		Profiles: []storage.ControllerProfile{{ID: "p1", Name: "Pad"}, {ID: "p2", Name: "Other"}},
-		Players:  []storage.PlayerConfig{{Profile: "p1"}},
-	}}
+	config := storage.DefaultConfig()
+	p1 := config.AddProfile(storage.ControllerProfile{Name: "Pad"})
+	p2 := config.AddProfile(storage.ControllerProfile{Name: "Other"})
+	config.SetPlayerProfile(0, p1)
 	s := NewInputSection(&inputCallback{}, config, coreif.SystemInfo{})
 	focus := newInputFocus()
 	s.focus = focus
-	delKey := "input-profile-p1-delete"
-	build := func() { s.buildProfileRow(focus, &config.Input.Profiles[0]) }
+	delKey := "input-profile-" + p1 + "-delete"
+	build := func() {
+		profs := config.Values().Input.Profiles
+		s.buildProfileRow(focus, &profs[0])
+	}
 
 	// The first press arms the delete and keeps focus on it
 	build()
 	pressInputButton(t, focus.targets[delKey])
-	if len(config.Input.Profiles) != 2 {
+	if len(config.Values().Input.Profiles) != 2 {
 		t.Fatal("profile deleted on the first press")
 	}
 	if focus.pending != delKey {
@@ -114,11 +117,12 @@ func TestProfileDeleteTwoPresses(t *testing.T) {
 	pressInputButton(t, focus.targets[delKey])
 	build()
 	pressInputButton(t, focus.targets[delKey])
-	if len(config.Input.Profiles) != 1 || config.Input.Profiles[0].ID != "p2" {
-		t.Errorf("profiles = %+v, want only p2", config.Input.Profiles)
+	input := config.Values().Input
+	if len(input.Profiles) != 1 || input.Profiles[0].ID != p2 {
+		t.Errorf("profiles = %+v, want only %s", input.Profiles, p2)
 	}
-	if config.Input.Players[0].Profile != "" {
-		t.Errorf("player 1 profile = %q, want none", config.Input.Players[0].Profile)
+	if input.Players[0].Profile != "" {
+		t.Errorf("player 1 profile = %q, want none", input.Players[0].Profile)
 	}
 	if focus.pending != "input-new-profile" {
 		t.Errorf("pending focus = %q, want New Profile", focus.pending)

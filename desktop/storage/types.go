@@ -10,8 +10,10 @@ import (
 	"strings"
 )
 
-// Config represents the application configuration stored in config.json
-type Config struct {
+// ConfigData is the application configuration stored in config.json. The
+// live configuration is a Config; ConfigData values returned by
+// Config.Values are copies.
+type ConfigData struct {
 	Version           int                     `json:"version"`
 	Theme             string                  `json:"theme"` // Theme name: "Default", "Dark", "Light", "Retro"
 	Video             VideoConfig             `json:"video"`
@@ -311,9 +313,9 @@ type GameDisc struct {
 	Name  string `json:"name"`  // Per-disc display name
 }
 
-// DefaultConfig returns a new Config with default values
-func DefaultConfig() *Config {
-	return &Config{
+// defaultConfigData returns the default configuration values.
+func defaultConfigData() ConfigData {
+	return ConfigData{
 		Version: configVersion,
 		Theme:   "Default",
 		Video: VideoConfig{

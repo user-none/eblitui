@@ -142,10 +142,9 @@ func applySavedPadMappings(mappings map[string]string) {
 
 // ensurePadMappings gives every connected controller without a standard
 // layout a generated baseline mapping, applied immediately and stored in the
-// config. Each GUID is attempted once per session. Returns true if the
-// config was modified (caller must save).
-func (a *App) ensurePadMappings(pads []PadInfo) bool {
-	changed := false
+// config, unless config.json failed to load. Each GUID is attempted once
+// per session.
+func (a *App) ensurePadMappings(pads []PadInfo) {
 	for _, pad := range pads {
 		if pad.SDLID == "" || a.padMappingTried[pad.SDLID] {
 			continue
@@ -158,7 +157,7 @@ func (a *App) ensurePadMappings(pads []PadInfo) bool {
 		// A stored mapping that left the pad non-standard means the startup
 		// apply failed or was skipped; retry it rather than regenerating so
 		// saved profiles keyed to it stay valid.
-		if line, ok := a.config.Input.PadMappings[pad.SDLID]; ok {
+		if line, ok := a.config.Values().Input.PadMappings[pad.SDLID]; ok {
 			if !storage.ValidPadMapping(pad.SDLID, line) {
 				log.Printf("Skipping malformed pad mapping for %q", pad.SDLID)
 				continue
@@ -182,13 +181,10 @@ func (a *App) ensurePadMappings(pads []PadInfo) bool {
 		if !storage.ValidPadMapping(pad.SDLID, line) {
 			continue
 		}
-		if a.config.Input.PadMappings == nil {
-			a.config.Input.PadMappings = make(map[string]string)
+		if !a.configLoadFailed {
+			a.config.SetPadMapping(pad.SDLID, line)
 		}
-		a.config.Input.PadMappings[pad.SDLID] = line
-		changed = true
 	}
-	return changed
 }
 
 // restingAxisValues samples the current value of every axis on the pad.

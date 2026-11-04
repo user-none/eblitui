@@ -159,7 +159,7 @@ func (v *VideoSection) maxShaderLabelWidth() float64 {
 
 // buildAspectRatioRow creates a cycle button row for the aspect ratio setting
 func (v *VideoSection) buildAspectRatioRow(focus types.FocusManager) *widget.Container {
-	current := v.config.Video.AspectRatio
+	current := v.config.Values().Video.AspectRatio
 	displayName := storage.AspectRatioDisplayName(current)
 
 	row := widgets.SettingsRow(2)
@@ -172,8 +172,7 @@ func (v *VideoSection) buildAspectRatioRow(focus types.FocusManager) *widget.Con
 
 	ratios := storage.ValidAspectRatios
 	cycleBtn := widgets.CycleButton(displayName, slices.Index(ratios, current), len(ratios), style.Px(60), func(next int) {
-		v.config.Video.AspectRatio = ratios[next]
-		storage.SaveConfig(v.config)
+		v.config.SetAspectRatio(ratios[next])
 		focus.SetPendingFocus("video-aspect-ratio")
 		v.callback.RequestRebuild()
 	})
@@ -213,8 +212,7 @@ func (v *VideoSection) buildShaderRow(info shader.ShaderInfo, focus types.FocusM
 				}),
 			),
 			widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-				v.toggleShaderUI(info.ID)
-				storage.SaveConfig(v.config)
+				v.config.ToggleUIShader(info.ID)
 				focus.SetPendingFocus("shader-ui-" + info.ID)
 				v.callback.RequestRebuild()
 			}),
@@ -246,8 +244,7 @@ func (v *VideoSection) buildShaderRow(info shader.ShaderInfo, focus types.FocusM
 			}),
 		),
 		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			v.toggleShaderGame(info.ID)
-			storage.SaveConfig(v.config)
+			v.config.ToggleGameShader(info.ID)
 			focus.SetPendingFocus("shader-game-" + info.ID)
 			v.callback.RequestRebuild()
 		}),
@@ -260,49 +257,10 @@ func (v *VideoSection) buildShaderRow(info shader.ShaderInfo, focus types.FocusM
 
 // isShaderEnabledForUI checks if a shader is enabled for UI context
 func (v *VideoSection) isShaderEnabledForUI(id string) bool {
-	for _, s := range v.config.Shaders.UIShaders {
-		if s == id {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(v.config.Values().Shaders.UIShaders, id)
 }
 
 // isShaderEnabledForGame checks if a shader is enabled for Game context
 func (v *VideoSection) isShaderEnabledForGame(id string) bool {
-	for _, s := range v.config.Shaders.GameShaders {
-		if s == id {
-			return true
-		}
-	}
-	return false
-}
-
-// toggleShaderUI adds or removes a shader from the UI list
-func (v *VideoSection) toggleShaderUI(id string) {
-	if v.isShaderEnabledForUI(id) {
-		v.config.Shaders.UIShaders = removeFromSlice(v.config.Shaders.UIShaders, id)
-	} else {
-		v.config.Shaders.UIShaders = append(v.config.Shaders.UIShaders, id)
-	}
-}
-
-// toggleShaderGame adds or removes a shader from the Game list
-func (v *VideoSection) toggleShaderGame(id string) {
-	if v.isShaderEnabledForGame(id) {
-		v.config.Shaders.GameShaders = removeFromSlice(v.config.Shaders.GameShaders, id)
-	} else {
-		v.config.Shaders.GameShaders = append(v.config.Shaders.GameShaders, id)
-	}
-}
-
-// removeFromSlice removes all occurrences of value from slice
-func removeFromSlice(slice []string, value string) []string {
-	result := make([]string, 0, len(slice))
-	for _, s := range slice {
-		if s != value {
-			result = append(result, s)
-		}
-	}
-	return result
+	return slices.Contains(v.config.Values().Shaders.GameShaders, id)
 }

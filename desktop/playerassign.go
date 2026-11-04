@@ -140,8 +140,8 @@ func SnapshotPads() []PadInfo {
 // AutoCreateFirstProfile creates a profile for the first connected pad and
 // assigns it to player 1. This happens exactly once: only when no controller
 // profiles of any kind exist and no player has an assignment. All other
-// profile creation is explicit through settings. Returns true if the config
-// was modified (caller must save).
+// profile creation is explicit through settings. Returns true if input was
+// modified (the caller applies the change to the config).
 func AutoCreateFirstProfile(input *storage.InputConfig, pads []PadInfo) bool {
 	if len(input.Profiles) != 0 || len(pads) == 0 {
 		return false

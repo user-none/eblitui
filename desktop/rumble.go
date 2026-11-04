@@ -85,8 +85,9 @@ const motorRefresh = 50 * time.Millisecond
 // player slot's assigned controller profile, indexed by 0-based player.
 func (gm *GameplayManager) playerRumbleScales() [maxPlayers]float64 {
 	var scales [maxPlayers]float64
+	input := gm.config.Input()
 	for p := 0; p < maxPlayers; p++ {
-		scales[p] = gm.config.Input.PlayerRumbleScale(p)
+		scales[p] = input.PlayerRumbleScale(p)
 	}
 	return scales
 }

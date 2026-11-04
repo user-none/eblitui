@@ -63,44 +63,54 @@ func (r *RewindSection) Build(focus types.FocusManager) *widget.Container {
 		)),
 	)
 
+	rewind := r.config.Values().Rewind
+
 	// Enabled toggle
 	section.AddChild(r.buildToggleRow(focus, "rewind-enable", "Enabled",
-		r.config.Rewind.Enabled,
+		rewind.Enabled,
 		func() {
-			r.config.Rewind.Enabled = !r.config.Rewind.Enabled
+			r.config.ToggleRewind()
 		}))
 
 	// Buffer Size row (only shown when enabled)
-	if r.config.Rewind.Enabled {
+	if rewind.Enabled {
 		section.AddChild(r.buildValueRow(focus, "Buffer Size (MB)",
 			"rewind-buf-dec", "rewind-buf-inc",
 			&r.bufferValueText,
-			r.config.Rewind.BufferSizeMB,
+			rewind.BufferSizeMB,
 			func() {
-				if r.config.Rewind.BufferSizeMB > rewindBufferMin {
-					r.config.Rewind.BufferSizeMB -= rewindBufferStep
+				mb := r.config.Values().Rewind.BufferSizeMB
+				if mb > rewindBufferMin {
+					mb -= rewindBufferStep
 				}
+				r.config.SetRewindBufferSizeMB(mb)
 			},
 			func() {
-				if r.config.Rewind.BufferSizeMB < rewindBufferMax {
-					r.config.Rewind.BufferSizeMB += rewindBufferStep
+				mb := r.config.Values().Rewind.BufferSizeMB
+				if mb < rewindBufferMax {
+					mb += rewindBufferStep
 				}
+				r.config.SetRewindBufferSizeMB(mb)
 			}))
 
 		// Frame Step row
 		section.AddChild(r.buildValueRow(focus, "Frame Step",
 			"rewind-step-dec", "rewind-step-inc",
 			&r.stepValueText,
-			r.config.Rewind.FrameStep,
+			rewind.FrameStep,
 			func() {
-				if r.config.Rewind.FrameStep > rewindFrameMin {
-					r.config.Rewind.FrameStep -= rewindFrameStep
+				step := r.config.Values().Rewind.FrameStep
+				if step > rewindFrameMin {
+					step -= rewindFrameStep
 				}
+				r.config.SetRewindFrameStep(step)
 			},
 			func() {
-				if r.config.Rewind.FrameStep < rewindFrameMax {
-					r.config.Rewind.FrameStep += rewindFrameStep
+				step := r.config.Values().Rewind.FrameStep
+				if step < rewindFrameMax {
+					step += rewindFrameStep
 				}
+				r.config.SetRewindFrameStep(step)
 			}))
 
 		// Info text showing estimated rewind duration
@@ -125,7 +135,7 @@ func (r *RewindSection) Build(focus types.FocusManager) *widget.Container {
 func (r *RewindSection) setupNavigation(focus types.FocusManager) {
 	focus.RegisterNavZone("rewind-enable", types.NavZoneHorizontal, []string{"rewind-enable"}, 0)
 
-	if r.config.Rewind.Enabled {
+	if r.config.Values().Rewind.Enabled {
 		// Grid zone: 2 columns ([-] [+]), 2 rows (buffer, step)
 		// Grid handles left/right within rows and up/down between rows with column preservation
 		focus.RegisterNavZone("rewind-values", types.NavZoneGrid, []string{
@@ -150,7 +160,6 @@ func (r *RewindSection) buildToggleRow(focus types.FocusManager, key, label stri
 
 	toggleBtn := widgets.OnOffButton(value, func(args *widget.ButtonClickedEventArgs) {
 		toggle()
-		storage.SaveConfig(r.config)
 		focus.SetPendingFocus(key)
 		r.callback.RequestRebuild()
 	})
@@ -215,7 +224,6 @@ func (r *RewindSection) buildValueRow(focus types.FocusManager, label, decKey, i
 		),
 		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
 			onDec()
-			storage.SaveConfig(r.config)
 			r.updateValueLabels()
 		}),
 	)
@@ -236,7 +244,6 @@ func (r *RewindSection) buildValueRow(focus types.FocusManager, label, decKey, i
 		),
 		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
 			onInc()
-			storage.SaveConfig(r.config)
 			r.updateValueLabels()
 		}),
 	)
@@ -251,11 +258,12 @@ func (r *RewindSection) buildValueRow(focus types.FocusManager, label, decKey, i
 // updateValueLabels updates the value text and info text labels in-place
 // without triggering a full UI rebuild, preserving keyboard/gamepad focus.
 func (r *RewindSection) updateValueLabels() {
+	rewind := r.config.Values().Rewind
 	if r.bufferValueText != nil {
-		r.bufferValueText.Label = fmt.Sprintf("%d", r.config.Rewind.BufferSizeMB)
+		r.bufferValueText.Label = fmt.Sprintf("%d", rewind.BufferSizeMB)
 	}
 	if r.stepValueText != nil {
-		r.stepValueText.Label = fmt.Sprintf("%d", r.config.Rewind.FrameStep)
+		r.stepValueText.Label = fmt.Sprintf("%d", rewind.FrameStep)
 	}
 	if r.infoText != nil {
 		r.infoText.Label = r.estimateRewindDuration()
@@ -265,9 +273,10 @@ func (r *RewindSection) updateValueLabels() {
 // estimateRewindDuration calculates estimated rewind time based on settings
 func (r *RewindSection) estimateRewindDuration() string {
 	stateSize := r.serializeSize
-	entries := (r.config.Rewind.BufferSizeMB * 1024 * 1024) / stateSize
+	rewind := r.config.Values().Rewind
+	entries := (rewind.BufferSizeMB * 1024 * 1024) / stateSize
 	// At 60fps with frameStep, each entry covers frameStep frames
-	totalFrames := entries * r.config.Rewind.FrameStep
+	totalFrames := entries * rewind.FrameStep
 	seconds := totalFrames / 60
 	if seconds < 60 {
 		return fmt.Sprintf("~%d seconds of rewind at 60fps", seconds)

@@ -4,6 +4,8 @@
 package screens
 
 import (
+	"sync"
+
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/user-none/eblitui/desktop/types"
 	"github.com/user-none/eblitui/desktop/widgets"
@@ -34,7 +36,9 @@ type BaseScreen struct {
 	// widget): buttons, and text fields such as widgets.MultiLineInput
 	focusTargets map[string]widget.Focuser
 
-	// Key of the target to restore focus to after rebuild
+	// Key of the target to restore focus to after rebuild. Background work
+	// (a login reply, a BIOS load) sets it, so it is guarded by focusMu.
+	focusMu      sync.Mutex
 	pendingFocus string
 
 	// Zone-based navigation
@@ -113,7 +117,7 @@ func (b *BaseScreen) RegisterFocusWidget(key string, f widget.Focuser) {
 // triggered by async operations (e.g., achievement loading).
 // Does nothing if pendingFocus is already set (e.g., by OnEnter).
 func (b *BaseScreen) SaveFocusState(focused widget.Focuser) {
-	if b.pendingFocus != "" || focused == nil {
+	if focused == nil {
 		return
 	}
 	focusedWidget := focused.GetWidget()
@@ -122,7 +126,7 @@ func (b *BaseScreen) SaveFocusState(focused widget.Focuser) {
 	}
 	for key, f := range b.focusTargets {
 		if f.GetWidget() == focusedWidget {
-			b.pendingFocus = key
+			b.SetDefaultFocus(key)
 			return
 		}
 	}
@@ -265,29 +269,38 @@ func (b *BaseScreen) enterScrollView(sb *scrollBar) widget.Focuser {
 
 // SetPendingFocus sets the key of the button to focus after rebuild.
 func (b *BaseScreen) SetPendingFocus(key string) {
+	b.focusMu.Lock()
 	b.pendingFocus = key
+	b.focusMu.Unlock()
 }
 
 // SetDefaultFocus sets the pending focus only if no focus is currently pending.
 // Use this in OnEnter() to set initial focus without overriding restored focus.
 func (b *BaseScreen) SetDefaultFocus(key string) {
+	b.focusMu.Lock()
 	if b.pendingFocus == "" {
 		b.pendingFocus = key
 	}
+	b.focusMu.Unlock()
 }
 
 // GetPendingFocus returns the target that should receive focus after
 // rebuild. Returns nil if no pending focus or target not found.
 func (b *BaseScreen) GetPendingFocus() widget.Focuser {
-	if b.pendingFocus == "" {
+	b.focusMu.Lock()
+	key := b.pendingFocus
+	b.focusMu.Unlock()
+	if key == "" {
 		return nil
 	}
-	return b.focusTargets[b.pendingFocus]
+	return b.focusTargets[key]
 }
 
 // ClearPendingFocus clears the pending focus state.
 func (b *BaseScreen) ClearPendingFocus() {
+	b.focusMu.Lock()
 	b.pendingFocus = ""
+	b.focusMu.Unlock()
 }
 
 // RegisterNavZone registers a navigation zone with ordered buttons.

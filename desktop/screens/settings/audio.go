@@ -145,13 +145,14 @@ func (a *AudioSection) buildVolumeRow(focus types.FocusManager) *widget.Containe
 			}),
 		),
 		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			if a.config.Audio.Volume > volumeMin {
-				a.config.Audio.Volume = math.Round((a.config.Audio.Volume-volumeStep)*10) / 10
-				if a.config.Audio.Volume < volumeMin {
-					a.config.Audio.Volume = volumeMin
+			volume := a.config.Values().Audio.Volume
+			if volume > volumeMin {
+				volume = math.Round((volume-volumeStep)*10) / 10
+				if volume < volumeMin {
+					volume = volumeMin
 				}
 			}
-			storage.SaveConfig(a.config)
+			a.config.SetVolume(volume)
 			a.updateVolumeLabel()
 		}),
 	)
@@ -171,13 +172,14 @@ func (a *AudioSection) buildVolumeRow(focus types.FocusManager) *widget.Containe
 			}),
 		),
 		widget.ButtonOpts.ClickedHandler(func(args *widget.ButtonClickedEventArgs) {
-			if a.config.Audio.Volume < volumeMax {
-				a.config.Audio.Volume = math.Round((a.config.Audio.Volume+volumeStep)*10) / 10
-				if a.config.Audio.Volume > volumeMax {
-					a.config.Audio.Volume = volumeMax
+			volume := a.config.Values().Audio.Volume
+			if volume < volumeMax {
+				volume = math.Round((volume+volumeStep)*10) / 10
+				if volume > volumeMax {
+					volume = volumeMax
 				}
 			}
-			storage.SaveConfig(a.config)
+			a.config.SetVolume(volume)
 			a.updateVolumeLabel()
 		}),
 	)
@@ -191,7 +193,7 @@ func (a *AudioSection) buildVolumeRow(focus types.FocusManager) *widget.Containe
 
 // volumeLabel returns the current volume as a percentage string
 func (a *AudioSection) volumeLabel() string {
-	return fmt.Sprintf("%d%%", int(math.Round(a.config.Audio.Volume*100)))
+	return fmt.Sprintf("%d%%", int(math.Round(a.config.Values().Audio.Volume*100)))
 }
 
 // updateVolumeLabel updates the volume text label in-place
@@ -212,9 +214,8 @@ func (a *AudioSection) buildMuteRow(focus types.FocusManager) *widget.Container 
 	)
 	row.AddChild(label)
 
-	toggleBtn := widgets.OnOffButton(a.config.Audio.Muted, func(args *widget.ButtonClickedEventArgs) {
-		a.config.Audio.Muted = !a.config.Audio.Muted
-		storage.SaveConfig(a.config)
+	toggleBtn := widgets.OnOffButton(a.config.Values().Audio.Muted, func(args *widget.ButtonClickedEventArgs) {
+		a.config.ToggleMuted()
 		focus.SetPendingFocus("audio-mute")
 		a.callback.RequestRebuild()
 	})
@@ -234,9 +235,8 @@ func (a *AudioSection) buildFastForwardMuteRow(focus types.FocusManager) *widget
 	)
 	row.AddChild(label)
 
-	toggleBtn := widgets.OnOffButton(a.config.Audio.FastForwardMute, func(args *widget.ButtonClickedEventArgs) {
-		a.config.Audio.FastForwardMute = !a.config.Audio.FastForwardMute
-		storage.SaveConfig(a.config)
+	toggleBtn := widgets.OnOffButton(a.config.Values().Audio.FastForwardMute, func(args *widget.ButtonClickedEventArgs) {
+		a.config.ToggleFastForwardMute()
 		focus.SetPendingFocus("audio-ff-mute")
 		a.callback.RequestRebuild()
 	})

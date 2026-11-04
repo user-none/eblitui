@@ -32,11 +32,12 @@ func (s *InputSection) buildMainView(focus types.FocusManager, section *widget.C
 
 	// Controller profiles
 	section.AddChild(widgets.SectionHeader("Controller Profiles"))
-	if len(s.config.Input.Profiles) == 0 {
+	profs := s.config.Values().Input.Profiles
+	if len(profs) == 0 {
 		section.AddChild(widgets.NoticeText("No profiles. Connect a controller and create one."))
 	}
-	for i := range s.config.Input.Profiles {
-		section.AddChild(s.buildProfileRow(focus, &s.config.Input.Profiles[i]))
+	for i := range profs {
+		section.AddChild(s.buildProfileRow(focus, &profs[i]))
 	}
 	section.AddChild(s.buildNewProfileRow(focus))
 
@@ -67,7 +68,8 @@ func (s *InputSection) buildPlayerRow(focus types.FocusManager, player int) *wid
 	))
 
 	label := "No Controller"
-	assigned := s.config.Input.PlayerProfile(player)
+	input := s.config.Values().Input
+	assigned := input.PlayerProfile(player)
 	if assigned != nil {
 		label = profileDisplay(assigned)
 	}
@@ -96,15 +98,16 @@ func (s *InputSection) buildPlayerRow(focus types.FocusManager, player int) *wid
 // cyclePlayerProfile advances a player's assignment through
 // No Controller -> each profile -> No Controller.
 func (s *InputSection) cyclePlayerProfile(player int) {
-	profs := s.config.Input.Profiles
+	input := s.config.Values().Input
+	profs := input.Profiles
 	if len(profs) == 0 {
 		return
 	}
-	for len(s.config.Input.Players) <= player {
-		s.config.Input.Players = append(s.config.Input.Players, storage.PlayerConfig{})
-	}
 
-	cur := s.config.Input.Players[player].Profile
+	cur := ""
+	if player < len(input.Players) {
+		cur = input.Players[player].Profile
+	}
 	next := ""
 	if cur == "" {
 		next = profs[0].ID
@@ -118,9 +121,8 @@ func (s *InputSection) cyclePlayerProfile(player int) {
 			}
 		}
 	}
-	s.config.Input.Players[player].Profile = next
+	s.config.SetPlayerProfile(player, next)
 
-	storage.SaveConfig(s.config)
 	s.focus.SetPendingFocus(fmt.Sprintf("input-player-%d", player))
 	s.callback.RequestRebuild()
 }
@@ -173,23 +175,8 @@ func (s *InputSection) buildProfileRow(focus types.FocusManager, p *storage.Cont
 // deleteProfile removes a profile, once its Delete is confirmed. Players
 // referencing it are set to no controller.
 func (s *InputSection) deleteProfile(id string) {
-	profs := s.config.Input.Profiles
-	for i := range profs {
-		if profs[i].ID == id {
-			s.config.Input.Profiles = append(profs[:i], profs[i+1:]...)
-			break
-		}
-	}
-	if len(s.config.Input.Profiles) == 0 {
-		s.config.Input.Profiles = nil
-	}
-	for i := range s.config.Input.Players {
-		if s.config.Input.Players[i].Profile == id {
-			s.config.Input.Players[i].Profile = ""
-		}
-	}
+	s.config.DeleteProfile(id)
 
-	storage.SaveConfig(s.config)
 	s.focus.SetPendingFocus("input-new-profile")
 	s.callback.RequestRebuild()
 }
@@ -230,10 +217,10 @@ func (s *InputSection) setupMainNavigation(focus types.FocusManager) {
 	focus.RegisterNavZone("input-kb-edit", types.NavZoneVertical, []string{"input-kb-edit"}, 0)
 	zones = append(zones, "input-kb-edit")
 
-	if len(s.config.Input.Profiles) > 0 {
-		profileKeys := make([]string, 0, len(s.config.Input.Profiles)*2)
-		for i := range s.config.Input.Profiles {
-			id := s.config.Input.Profiles[i].ID
+	if profs := s.config.Values().Input.Profiles; len(profs) > 0 {
+		profileKeys := make([]string, 0, len(profs)*2)
+		for i := range profs {
+			id := profs[i].ID
 			profileKeys = append(profileKeys, "input-profile-"+id+"-edit")
 			profileKeys = append(profileKeys, "input-profile-"+id+"-delete")
 		}

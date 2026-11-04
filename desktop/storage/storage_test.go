@@ -39,9 +39,11 @@ func TestSaveConfigOwnerOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := SaveConfig(DefaultConfig()); err != nil {
-		t.Fatalf("SaveConfig: %v", err)
+	config, err := ResetConfig()
+	if err != nil {
+		t.Fatalf("ResetConfig: %v", err)
 	}
+	config.Flush()
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
@@ -177,7 +179,7 @@ func containsSub(s, sub string) bool {
 }
 
 func TestDefaultConfig(t *testing.T) {
-	config := DefaultConfig()
+	config := DefaultConfig().Values()
 
 	if config.Version != configVersion {
 		t.Errorf("expected version %d, got %d", configVersion, config.Version)
@@ -199,6 +201,66 @@ func TestDefaultConfig(t *testing.T) {
 	}
 	if config.Library.ArtworkDownload != ArtworkDownloadAll {
 		t.Errorf("expected artwork download %q, got %q", ArtworkDownloadAll, config.Library.ArtworkDownload)
+	}
+}
+
+// TestConfigRemoveBIOSFile tests that removing a variant's file keeps the
+// other variants and clears the active selection only when it was that
+// variant.
+func TestConfigRemoveBIOSFile(t *testing.T) {
+	config := DefaultConfig()
+	config.SetBIOSFile("bios", "US", "/us.bin")
+	config.SetBIOSFile("bios", "JP", "/jp.bin")
+	config.SetBIOSActive("bios", "JP")
+
+	config.RemoveBIOSFile("bios", "US")
+	bc := config.Values().BIOS["bios"]
+	if _, ok := bc.Files["US"]; ok || bc.Files["JP"] != "/jp.bin" || bc.Active != "JP" {
+		t.Errorf("after removing US: %+v", bc)
+	}
+
+	config.RemoveBIOSFile("bios", "JP")
+	bc = config.Values().BIOS["bios"]
+	if len(bc.Files) != 0 || bc.Active != "" {
+		t.Errorf("after removing the active JP: %+v", bc)
+	}
+}
+
+// TestConfigToggleShaderDuplicates tests that turning off a shader listed
+// more than once removes every occurrence.
+func TestConfigToggleShaderDuplicates(t *testing.T) {
+	data := defaultConfigData()
+	data.Shaders.UIShaders = []string{"crt", "scan", "crt"}
+	config := &Config{data: data}
+
+	if config.ToggleUIShader("crt") {
+		t.Error("toggle reported the shader on")
+	}
+	if got := config.Values().Shaders.UIShaders; len(got) != 1 || got[0] != "scan" {
+		t.Errorf("UI shaders = %v, want [scan]", got)
+	}
+}
+
+// TestConfigChangesPersist tests that a change made through a method is
+// written to config.json once flushed.
+func TestConfigChangesPersist(t *testing.T) {
+	useTempDataDir(t)
+	if err := EnsureDirectories(); err != nil {
+		t.Fatal(err)
+	}
+	config, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	config.SetTheme("Dark")
+	config.Flush()
+
+	reloaded, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if got := reloaded.Values().Theme; got != "Dark" {
+		t.Errorf("reloaded theme = %q, want Dark", got)
 	}
 }
 
@@ -439,7 +501,7 @@ func TestLibraryExcludedPaths(t *testing.T) {
 
 func TestApplyMissingDefaultsMigration(t *testing.T) {
 	// Test migration from version 0 when keys are absent
-	config := &Config{
+	config := &ConfigData{
 		Version: 0,
 		Audio:   AudioConfig{Volume: 0}, // Volume=0 is valid (0% volume)
 		Window:  WindowConfig{},
@@ -450,7 +512,7 @@ func TestApplyMissingDefaultsMigration(t *testing.T) {
 	presentKeys := map[string]bool{
 		"audio.volume": true,
 	}
-	ApplyMissingDefaults(config, presentKeys)
+	applyMissingDefaults(config, presentKeys)
 
 	// version is never defaulted; migrateConfig handles version 0
 	if config.Version != 0 {
@@ -469,7 +531,7 @@ func TestApplyMissingDefaultsMigration(t *testing.T) {
 
 func TestApplyMissingDefaultsPreservesZeroVolume(t *testing.T) {
 	// Volume=0 is a valid user setting (0% volume), must not be overwritten
-	config := &Config{
+	config := &ConfigData{
 		Version: 1,
 		Audio:   AudioConfig{Volume: 0.0},
 		Window:  WindowConfig{Width: 900, Height: 650},
@@ -484,7 +546,7 @@ func TestApplyMissingDefaultsPreservesZeroVolume(t *testing.T) {
 		"library.viewMode": true, "library.sortBy": true,
 		"rewind.bufferSizeMB": true, "rewind.frameStep": true,
 	}
-	ApplyMissingDefaults(config, presentKeys)
+	applyMissingDefaults(config, presentKeys)
 
 	if config.Audio.Volume != 0.0 {
 		t.Errorf("expected volume 0.0 to be preserved, got %f", config.Audio.Volume)
@@ -590,7 +652,7 @@ func TestGamesSortedFiltered(t *testing.T) {
 }
 
 func TestApplyMissingDefaultsAlreadyCurrent(t *testing.T) {
-	config := &Config{
+	config := &ConfigData{
 		Version: 1,
 		Theme:   "Dark",
 		Audio:   AudioConfig{Volume: 0.5},
@@ -605,7 +667,7 @@ func TestApplyMissingDefaultsAlreadyCurrent(t *testing.T) {
 		"library.viewMode": true, "library.sortBy": true,
 		"rewind.bufferSizeMB": true, "rewind.frameStep": true,
 	}
-	ApplyMissingDefaults(config, presentKeys)
+	applyMissingDefaults(config, presentKeys)
 
 	// Should preserve existing values, not overwrite with defaults
 	if config.Audio.Volume != 0.5 {
@@ -630,7 +692,7 @@ func TestApplyMissingDefaultsAlreadyCurrent(t *testing.T) {
 
 func TestApplyMissingDefaultsPartialFields(t *testing.T) {
 	// Some fields present, others absent
-	config := &Config{
+	config := &ConfigData{
 		Version: 0,
 		Audio:   AudioConfig{Volume: 0.8},
 		Window:  WindowConfig{},
@@ -643,7 +705,7 @@ func TestApplyMissingDefaultsPartialFields(t *testing.T) {
 		"audio.volume":     true,
 		"library.viewMode": true,
 	}
-	ApplyMissingDefaults(config, presentKeys)
+	applyMissingDefaults(config, presentKeys)
 
 	// Present keys preserved (even version=0)
 	if config.Version != 0 {
@@ -821,7 +883,7 @@ func TestMigrateConfig(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			config := &Config{Version: tc.version, Updates: UpdatesConfig{AutoCheck: tc.autoCheck}}
+			config := &ConfigData{Version: tc.version, Updates: UpdatesConfig{AutoCheck: tc.autoCheck}}
 			if got := migrateConfig(config); got != tc.wantMigrated {
 				t.Errorf("migrated = %v, want %v", got, tc.wantMigrated)
 			}
@@ -860,16 +922,18 @@ func TestLoadConfigMigrates(t *testing.T) {
 			useTempDataDir(t)
 			path := writeConfigFile(t, data)
 
-			config, err := LoadConfig()
+			loaded, err := LoadConfig()
 			if err != nil {
 				t.Fatalf("LoadConfig: %v", err)
 			}
+			config := loaded.Values()
 			if config.Version != configVersion || !config.Updates.AutoCheck || config.Theme != "Dark" {
 				t.Errorf("loaded version %d, autoCheck %v, theme %q", config.Version, config.Updates.AutoCheck, config.Theme)
 			}
 
 			// The migration is saved so it runs once
-			var saved Config
+			loaded.Flush()
+			var saved ConfigData
 			if err := ReadJSON(path, &saved); err != nil {
 				t.Fatalf("ReadJSON: %v", err)
 			}
@@ -889,9 +953,10 @@ func TestLoadConfigCurrentVersionNotRewritten(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	if config.Updates.AutoCheck {
+	if config.Values().Updates.AutoCheck {
 		t.Error("automatic checks turned off by the user were turned on")
 	}
+	config.Flush()
 
 	after, err := os.ReadFile(path)
 	if err != nil {
