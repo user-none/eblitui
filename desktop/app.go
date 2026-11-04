@@ -652,6 +652,13 @@ func (a *App) Update() error {
 		a.windowX, a.windowY = ebiten.WindowPosition()
 		a.lastFullscreenState = ebiten.IsFullscreen()
 
+		// Save a running game the way leaving through the pause menu does:
+		// battery save, resume state and play time. Exit does nothing when
+		// no game is loaded.
+		if a.gameplay != nil {
+			a.gameplay.Exit(true)
+		}
+
 		a.libraryScreen.HaltArtworkLoader()
 		a.screenshotManager.Close()
 		return ebiten.Termination

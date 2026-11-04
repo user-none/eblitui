@@ -829,12 +829,14 @@ func (gm *GameplayManager) Exit(saveResume bool) {
 	// closed before waiting because the goroutine may be blocked in ring.Write
 	// on a full ring; AudioPlayer.Close wakes that path. Otherwise the pacer
 	// parks only in a bounded time.Sleep, so the goroutine reaches its next
-	// CheckPause and exits.
+	// CheckPause and exits. The goroutine may still be mid-frame and using
+	// the player, whose writes return at once after Close, so the player is
+	// cleared only once the goroutine is done.
 	if gm.emuControl != nil {
 		gm.emuControl.Stop()
 		gm.audioPlayer.Close()
-		gm.audioPlayer = nil
 		<-gm.emuDone
+		gm.audioPlayer = nil
 	}
 
 	// Wait for any pending auto-save disk write to complete (max 2 seconds)
