@@ -9,6 +9,18 @@ import (
 // validTestThemes is the list of theme names used in tests
 var validTestThemes = []string{"Default", "Dark", "Light", "Retro", "Pink", "Hot Pink", "Green LCD", "High Contrast"}
 
+// validTestRules are the rules used in tests: the test themes, the keys
+// J, K, W and ArrowUp, and the pad buttons A, B and DpadUp.
+var validTestRules = ConfigRules{
+	Themes: validTestThemes,
+	ValidKey: func(name string) bool {
+		return name == "J" || name == "K" || name == "W" || name == "ArrowUp"
+	},
+	ValidPad: func(name string) bool {
+		return name == "A" || name == "B" || name == "DpadUp"
+	},
+}
+
 // newTestConfigData returns the default configuration values to change
 func newTestConfigData() *ConfigData {
 	d := defaultConfigData()
@@ -254,7 +266,7 @@ func TestApplyMissingDefaults(t *testing.T) {
 func TestValidateConfig(t *testing.T) {
 	t.Run("valid config has no errors", func(t *testing.T) {
 		config := newTestConfigData()
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) != 0 {
 			t.Errorf("expected no errors for default config, got: %v", errs)
 		}
@@ -264,7 +276,7 @@ func TestValidateConfig(t *testing.T) {
 		for _, version := range []int{0, 1, configVersion + 1, 99} {
 			config := newTestConfigData()
 			config.Version = version
-			errs := validateConfig(config, validTestThemes)
+			errs := validateConfig(config, validTestRules)
 			if len(errs) == 0 {
 				t.Errorf("expected error for version %d", version)
 			}
@@ -274,7 +286,7 @@ func TestValidateConfig(t *testing.T) {
 	t.Run("invalid theme", func(t *testing.T) {
 		config := newTestConfigData()
 		config.Theme = "NonexistentTheme"
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) == 0 {
 			t.Error("expected error for invalid theme")
 		}
@@ -284,7 +296,7 @@ func TestValidateConfig(t *testing.T) {
 		for _, ar := range ValidAspectRatios {
 			config := newTestConfigData()
 			config.Video.AspectRatio = ar
-			errs := validateConfig(config, validTestThemes)
+			errs := validateConfig(config, validTestRules)
 			if len(errs) != 0 {
 				t.Errorf("aspect ratio %q should be valid, got errors: %v", ar, errs)
 			}
@@ -294,7 +306,7 @@ func TestValidateConfig(t *testing.T) {
 	t.Run("invalid aspect ratio", func(t *testing.T) {
 		config := newTestConfigData()
 		config.Video.AspectRatio = "16:9"
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) == 0 {
 			t.Error("expected error for invalid aspect ratio 16:9")
 		}
@@ -303,7 +315,7 @@ func TestValidateConfig(t *testing.T) {
 	t.Run("negative volume", func(t *testing.T) {
 		config := newTestConfigData()
 		config.Audio.Volume = -0.1
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) == 0 {
 			t.Error("expected error for negative volume")
 		}
@@ -312,7 +324,7 @@ func TestValidateConfig(t *testing.T) {
 	t.Run("volume too high", func(t *testing.T) {
 		config := newTestConfigData()
 		config.Audio.Volume = 2.1
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) == 0 {
 			t.Error("expected error for volume > 2.0")
 		}
@@ -321,7 +333,7 @@ func TestValidateConfig(t *testing.T) {
 	t.Run("window width too small", func(t *testing.T) {
 		config := newTestConfigData()
 		config.Window.Width = 800
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) == 0 {
 			t.Error("expected error for width < 900")
 		}
@@ -330,7 +342,7 @@ func TestValidateConfig(t *testing.T) {
 	t.Run("window height too small", func(t *testing.T) {
 		config := newTestConfigData()
 		config.Window.Height = 400
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) == 0 {
 			t.Error("expected error for height < 650")
 		}
@@ -339,7 +351,7 @@ func TestValidateConfig(t *testing.T) {
 	t.Run("invalid viewMode", func(t *testing.T) {
 		config := newTestConfigData()
 		config.Library.ViewMode = "grid"
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) == 0 {
 			t.Error("expected error for invalid viewMode")
 		}
@@ -349,13 +361,13 @@ func TestValidateConfig(t *testing.T) {
 		for _, v := range ValidArtworkDownloads {
 			config := newTestConfigData()
 			config.Library.ArtworkDownload = v
-			if errs := validateConfig(config, validTestThemes); len(errs) != 0 {
+			if errs := validateConfig(config, validTestRules); len(errs) != 0 {
 				t.Errorf("%q: %v", v, errs)
 			}
 		}
 		config := newTestConfigData()
 		config.Library.ArtworkDownload = "everything"
-		if errs := validateConfig(config, validTestThemes); len(errs) == 0 {
+		if errs := validateConfig(config, validTestRules); len(errs) == 0 {
 			t.Error("expected error for invalid artworkDownload")
 		}
 	})
@@ -363,7 +375,7 @@ func TestValidateConfig(t *testing.T) {
 	t.Run("invalid sortBy", func(t *testing.T) {
 		config := newTestConfigData()
 		config.Library.SortBy = "date"
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) == 0 {
 			t.Error("expected error for invalid sortBy")
 		}
@@ -372,7 +384,7 @@ func TestValidateConfig(t *testing.T) {
 	t.Run("bufferSizeMB too small", func(t *testing.T) {
 		config := newTestConfigData()
 		config.Rewind.BufferSizeMB = 5
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) == 0 {
 			t.Error("expected error for bufferSizeMB < 10")
 		}
@@ -381,7 +393,7 @@ func TestValidateConfig(t *testing.T) {
 	t.Run("bufferSizeMB too large", func(t *testing.T) {
 		config := newTestConfigData()
 		config.Rewind.BufferSizeMB = 500
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) == 0 {
 			t.Error("expected error for bufferSizeMB > 400")
 		}
@@ -390,7 +402,7 @@ func TestValidateConfig(t *testing.T) {
 	t.Run("frameStep too small", func(t *testing.T) {
 		config := newTestConfigData()
 		config.Rewind.FrameStep = 0
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) == 0 {
 			t.Error("expected error for frameStep < 1")
 		}
@@ -399,7 +411,7 @@ func TestValidateConfig(t *testing.T) {
 	t.Run("frameStep too large", func(t *testing.T) {
 		config := newTestConfigData()
 		config.Rewind.FrameStep = 31
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) == 0 {
 			t.Error("expected error for frameStep > 30")
 		}
@@ -415,7 +427,7 @@ func TestValidateConfig(t *testing.T) {
 			Library: LibraryView{ViewMode: "grid", SortBy: "date", ArtworkDownload: "everything"},
 			Rewind:  RewindConfig{BufferSizeMB: 0, FrameStep: 0},
 		}
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) != 11 {
 			t.Errorf("expected 11 errors, got %d: %v", len(errs), errs)
 		}
@@ -425,7 +437,7 @@ func TestValidateConfig(t *testing.T) {
 	t.Run("boundary: volume 0.0 is valid", func(t *testing.T) {
 		config := newTestConfigData()
 		config.Audio.Volume = 0.0
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) != 0 {
 			t.Errorf("volume 0.0 should be valid, got errors: %v", errs)
 		}
@@ -434,7 +446,7 @@ func TestValidateConfig(t *testing.T) {
 	t.Run("boundary: volume 2.0 is valid", func(t *testing.T) {
 		config := newTestConfigData()
 		config.Audio.Volume = 2.0
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) != 0 {
 			t.Errorf("volume 2.0 should be valid, got errors: %v", errs)
 		}
@@ -443,7 +455,7 @@ func TestValidateConfig(t *testing.T) {
 	t.Run("boundary: width 900 is valid", func(t *testing.T) {
 		config := newTestConfigData()
 		config.Window.Width = 900
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) != 0 {
 			t.Errorf("width 900 should be valid, got errors: %v", errs)
 		}
@@ -452,7 +464,7 @@ func TestValidateConfig(t *testing.T) {
 	t.Run("boundary: height 650 is valid", func(t *testing.T) {
 		config := newTestConfigData()
 		config.Window.Height = 650
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) != 0 {
 			t.Errorf("height 650 should be valid, got errors: %v", errs)
 		}
@@ -461,7 +473,7 @@ func TestValidateConfig(t *testing.T) {
 	t.Run("boundary: bufferSizeMB 10 is valid", func(t *testing.T) {
 		config := newTestConfigData()
 		config.Rewind.BufferSizeMB = 10
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) != 0 {
 			t.Errorf("bufferSizeMB 10 should be valid, got errors: %v", errs)
 		}
@@ -470,7 +482,7 @@ func TestValidateConfig(t *testing.T) {
 	t.Run("boundary: bufferSizeMB 400 is valid", func(t *testing.T) {
 		config := newTestConfigData()
 		config.Rewind.BufferSizeMB = 400
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) != 0 {
 			t.Errorf("bufferSizeMB 400 should be valid, got errors: %v", errs)
 		}
@@ -479,7 +491,7 @@ func TestValidateConfig(t *testing.T) {
 	t.Run("boundary: frameStep 1 is valid", func(t *testing.T) {
 		config := newTestConfigData()
 		config.Rewind.FrameStep = 1
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) != 0 {
 			t.Errorf("frameStep 1 should be valid, got errors: %v", errs)
 		}
@@ -488,7 +500,7 @@ func TestValidateConfig(t *testing.T) {
 	t.Run("boundary: frameStep 30 is valid", func(t *testing.T) {
 		config := newTestConfigData()
 		config.Rewind.FrameStep = 30
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		if len(errs) != 0 {
 			t.Errorf("frameStep 30 should be valid, got errors: %v", errs)
 		}
@@ -506,7 +518,7 @@ func TestCorrectConfig(t *testing.T) {
 			Rewind:  RewindConfig{BufferSizeMB: 100, FrameStep: 5},     // valid
 		}
 
-		corrected := correctConfig(config, validTestThemes)
+		corrected := correctConfig(config, validTestRules)
 		defaults := newTestConfigData()
 
 		// Valid fields preserved
@@ -542,7 +554,7 @@ func TestCorrectConfig(t *testing.T) {
 		config := newTestConfigData()
 		original, _ := json.Marshal(config)
 
-		corrected := correctConfig(config, validTestThemes)
+		corrected := correctConfig(config, validTestRules)
 		after, _ := json.Marshal(corrected)
 
 		if string(original) != string(after) {
@@ -554,7 +566,7 @@ func TestCorrectConfig(t *testing.T) {
 		config := newTestConfigData()
 		config.Video.AspectRatio = "16:9"
 
-		corrected := correctConfig(config, validTestThemes)
+		corrected := correctConfig(config, validTestRules)
 
 		if corrected.Video.AspectRatio != "dar" {
 			t.Errorf("video.aspectRatio should be corrected to dar, got %q", corrected.Video.AspectRatio)
@@ -565,7 +577,7 @@ func TestCorrectConfig(t *testing.T) {
 		config := newTestConfigData()
 		config.Video.AspectRatio = "4:3"
 
-		corrected := correctConfig(config, validTestThemes)
+		corrected := correctConfig(config, validTestRules)
 
 		if corrected.Video.AspectRatio != "4:3" {
 			t.Errorf("video.aspectRatio should remain 4:3, got %q", corrected.Video.AspectRatio)
@@ -583,7 +595,7 @@ func TestCorrectConfig(t *testing.T) {
 			Rewind:  RewindConfig{BufferSizeMB: 0, FrameStep: 0},
 		}
 
-		corrected := correctConfig(config, validTestThemes)
+		corrected := correctConfig(config, validTestRules)
 		defaults := newTestConfigData()
 
 		if corrected.Library.ArtworkDownload != defaults.Library.ArtworkDownload {
@@ -1063,7 +1075,7 @@ func TestPresentButZeroVsMissing(t *testing.T) {
 		}
 
 		// volume=0 is valid (within 0.0-2.0 range)
-		errs := validateConfig(config, validTestThemes)
+		errs := validateConfig(config, validTestRules)
 		for _, e := range errs {
 			if len(e) > 12 && e[:12] == "audio.volume" {
 				t.Errorf("volume 0.0 should be valid, got error: %s", e)
@@ -1127,5 +1139,49 @@ func TestValidateAndCorrectPadMappings(t *testing.T) {
 	correctInputConfig(config, validKey, validPad)
 	if config.Input.PadMappings != nil {
 		t.Errorf("expected nil map after removing all entries, got: %v", config.Input.PadMappings)
+	}
+}
+
+// TestConfigValidateCorrectInput tests that Config.Validate reports invalid
+// input entries along with other fields, and Config.Correct removes them
+// while keeping the valid ones.
+func TestConfigValidateCorrectInput(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.SetKeyboardBinding("Up", "W")
+	cfg.SetKeyboardBinding("A", "NoSuchKey")
+	id := cfg.AddProfile(ControllerProfile{
+		SDLID: "guid", Controller: "Pad", Name: "Mine", RumbleScale: 1,
+		Bindings: map[string]string{"A": "B", "B": "NoSuchButton"},
+	})
+	cfg.SetPlayerProfile(0, id)
+	cfg.SetTheme("NoSuchTheme")
+
+	errs := cfg.Validate(validTestRules)
+	for _, want := range []string{"theme", `input.p1Keyboard["A"]`, `bindings["B"]`} {
+		found := false
+		for _, e := range errs {
+			if strings.Contains(e, want) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("no error for %s in %v", want, errs)
+		}
+	}
+	if len(errs) != 3 {
+		t.Errorf("got %d errors, want 3: %v", len(errs), errs)
+	}
+
+	cfg.Correct(validTestRules)
+	if errs := cfg.Validate(validTestRules); len(errs) != 0 {
+		t.Fatalf("errors after Correct: %v", errs)
+	}
+	v := cfg.Values()
+	if len(v.Input.P1Keyboard) != 1 || v.Input.P1Keyboard["Up"] != "W" {
+		t.Errorf("keyboard = %v, want only Up=W", v.Input.P1Keyboard)
+	}
+	prof := v.Input.PlayerProfile(0)
+	if prof == nil || prof.ID != id || len(prof.Bindings) != 1 || prof.Bindings["A"] != "B" {
+		t.Errorf("player 1 profile = %+v, want %s with only A=B", prof, id)
 	}
 }

@@ -152,18 +152,19 @@ func CreateConfigIfMissing() error {
 	return nil
 }
 
-// Validate checks all config fields against valid ranges and returns
-// human-readable error descriptions. An empty slice means the config is
-// valid. validThemes should be the list of known theme names.
-func (c *Config) Validate(validThemes []string) []string {
+// Validate checks all config fields, input included, against valid ranges
+// and rules, and returns human-readable error descriptions. An empty slice
+// means the config is valid.
+func (c *Config) Validate(rules ConfigRules) []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return validateConfig(&c.data, validThemes)
+	return validateConfig(&c.data, rules)
 }
 
-// Correct resets any invalid fields to their defaults, keeping valid ones.
-func (c *Config) Correct(validThemes []string) {
-	c.update(func(d *ConfigData) { correctConfig(d, validThemes) })
+// Correct resets any invalid fields to their defaults and removes invalid
+// input entries, keeping valid ones.
+func (c *Config) Correct(rules ConfigRules) {
+	c.update(func(d *ConfigData) { correctConfig(d, rules) })
 }
 
 // Values returns a copy of the configuration that shares nothing with it.

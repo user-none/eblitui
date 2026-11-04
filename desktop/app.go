@@ -314,7 +314,7 @@ func (a *App) loadConfig() bool {
 	}
 	a.config = config
 
-	if errs := a.config.Validate(style.ThemeNames()); len(errs) > 0 {
+	if errs := a.config.Validate(configRules()); len(errs) > 0 {
 		a.showStartupError("config.json", configPath, errs)
 		return false
 	}
@@ -1461,12 +1461,22 @@ func (a *App) handleDeleteAndContinue() {
 	a.finishStartup()
 }
 
+// configRules returns the rules the configuration is validated and
+// corrected against: the known themes and the bindable key and button
+// names.
+func configRules() storage.ConfigRules {
+	return storage.ConfigRules{
+		Themes:   style.ThemeNames(),
+		ValidKey: validKeyName,
+		ValidPad: validPadName,
+	}
+}
+
 // handleResetAndContinue handles the reset and continue button for validation errors.
 // It corrects invalid config fields to defaults, saves, and proceeds to the library.
 func (a *App) handleResetAndContinue() {
 	// Correct invalid fields, which saves the corrected config
-	themeNames := style.ThemeNames()
-	a.config.Correct(themeNames)
+	a.config.Correct(configRules())
 
 	a.applyConfig()
 	if !a.loadLibrary() {

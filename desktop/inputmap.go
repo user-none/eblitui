@@ -174,6 +174,19 @@ func ParseKey(name string) (ebiten.Key, bool) {
 	return k, ok
 }
 
+// validKeyName reports whether name is a key that can be bound: known and
+// not reserved for the application.
+func validKeyName(name string) bool {
+	k, ok := ParseKey(name)
+	return ok && !reservedKeys[k]
+}
+
+// validPadName reports whether name is a known gamepad button.
+func validPadName(name string) bool {
+	_, ok := ParsePad(name)
+	return ok
+}
+
 // ParsePad converts a gamepad button name string to an ebiten.StandardGamepadButton.
 // Returns the button and true if the name is valid, or 0 and false otherwise.
 func ParsePad(name string) (ebiten.StandardGamepadButton, bool) {

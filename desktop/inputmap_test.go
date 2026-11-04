@@ -468,3 +468,31 @@ func TestBuildPlayerMappings(t *testing.T) {
 		t.Error("unassigned player should use default pad mapping")
 	}
 }
+
+// TestConfigRulesAcceptCapturedNames tests that every name the binding
+// screens can save passes the config rules, so a saved binding never makes
+// the config invalid, and that reserved and unknown names fail.
+func TestConfigRulesAcceptCapturedNames(t *testing.T) {
+	rules := configRules()
+	for key, name := range keyToName {
+		if !IsReservedKey(key) && !rules.ValidKey(name) {
+			t.Errorf("captured key name %q rejected", name)
+		}
+	}
+	for _, name := range padToName {
+		if !rules.ValidPad(name) {
+			t.Errorf("captured pad name %q rejected", name)
+		}
+	}
+	for key := range reservedKeys {
+		if name, ok := KeyToName(key); ok && rules.ValidKey(name) {
+			t.Errorf("reserved key name %q accepted", name)
+		}
+	}
+	if rules.ValidKey("NoSuchKey") || rules.ValidPad("NoSuchButton") {
+		t.Error("unknown name accepted")
+	}
+	if len(rules.Themes) == 0 {
+		t.Error("no themes in rules")
+	}
+}

@@ -137,10 +137,18 @@ func applyMissingDefaults(config *ConfigData, presentKeys map[string]bool) {
 	}
 }
 
-// validateConfig checks all config fields against valid ranges and returns
-// human-readable error descriptions. An empty slice means the config is valid.
-// validThemes should be the list of known theme names.
-func validateConfig(config *ConfigData, validThemes []string) []string {
+// ConfigRules are the values a configuration is checked against that only
+// the application knows. All fields must be set.
+type ConfigRules struct {
+	Themes   []string               // known theme names
+	ValidKey func(name string) bool // a key name usable in a keyboard binding
+	ValidPad func(name string) bool // a button name usable in a controller binding
+}
+
+// validateConfig checks all config fields against valid ranges and rules,
+// and returns human-readable error descriptions. An empty slice means the
+// config is valid.
+func validateConfig(config *ConfigData, rules ConfigRules) []string {
 	var errors []string
 
 	// version
@@ -149,15 +157,8 @@ func validateConfig(config *ConfigData, validThemes []string) []string {
 	}
 
 	// theme
-	themeValid := false
-	for _, t := range validThemes {
-		if config.Theme == t {
-			themeValid = true
-			break
-		}
-	}
-	if !themeValid {
-		errors = append(errors, fmt.Sprintf("theme: %q (valid: %v)", config.Theme, validThemes))
+	if !slices.Contains(rules.Themes, config.Theme) {
+		errors = append(errors, fmt.Sprintf("theme: %q (valid: %v)", config.Theme, rules.Themes))
 	}
 
 	// video.aspectRatio
@@ -211,6 +212,9 @@ func validateConfig(config *ConfigData, validThemes []string) []string {
 	if config.Rewind.FrameStep < 1 || config.Rewind.FrameStep > 30 {
 		errors = append(errors, fmt.Sprintf("rewind.frameStep: %d (valid: 1-30)", config.Rewind.FrameStep))
 	}
+
+	// input
+	errors = append(errors, validateInputConfig(config, rules.ValidKey, rules.ValidPad)...)
 
 	return errors
 }
@@ -344,9 +348,10 @@ func correctInputConfig(config *ConfigData, isValidKey, isValidPad func(string) 
 	}
 }
 
-// correctConfig resets any invalid fields to their defaults. Valid fields are
-// preserved. validThemes should be the list of known theme names.
-func correctConfig(config *ConfigData, validThemes []string) *ConfigData {
+// correctConfig resets any invalid fields to their defaults and removes
+// invalid input entries (see correctInputConfig). Valid fields are
+// preserved.
+func correctConfig(config *ConfigData, rules ConfigRules) *ConfigData {
 	defaults := defaultConfigData()
 
 	// version
@@ -355,14 +360,7 @@ func correctConfig(config *ConfigData, validThemes []string) *ConfigData {
 	}
 
 	// theme
-	themeValid := false
-	for _, t := range validThemes {
-		if config.Theme == t {
-			themeValid = true
-			break
-		}
-	}
-	if !themeValid {
+	if !slices.Contains(rules.Themes, config.Theme) {
 		config.Theme = defaults.Theme
 	}
 
@@ -417,6 +415,9 @@ func correctConfig(config *ConfigData, validThemes []string) *ConfigData {
 	if config.Rewind.FrameStep < 1 || config.Rewind.FrameStep > 30 {
 		config.Rewind.FrameStep = defaults.Rewind.FrameStep
 	}
+
+	// input
+	correctInputConfig(config, rules.ValidKey, rules.ValidPad)
 
 	return config
 }
