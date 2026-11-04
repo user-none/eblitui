@@ -2,7 +2,7 @@ package storage
 
 import "testing"
 
-func TestSanitizeLibraryEntries(t *testing.T) {
+func TestSanitizeGameEntries(t *testing.T) {
 	t.Run("negative playTimeSeconds set to 0", func(t *testing.T) {
 		lib := DefaultLibrary()
 		lib.AddGame(GameEntry{GameID: "1", PlayTimeSeconds: -100})
@@ -133,7 +133,7 @@ func TestSanitizeLibraryEntries(t *testing.T) {
 	})
 }
 
-func TestValidateLibrary(t *testing.T) {
+func TestLibraryValidate(t *testing.T) {
 	t.Run("valid library no errors", func(t *testing.T) {
 		lib := DefaultLibrary()
 		errs := lib.Validate()
@@ -175,7 +175,7 @@ func TestValidateLibrary(t *testing.T) {
 	})
 }
 
-func TestCorrectLibrary(t *testing.T) {
+func TestLibraryCorrect(t *testing.T) {
 	t.Run("fixes invalid version", func(t *testing.T) {
 		lib := &Library{data: libraryData{Version: 99}}
 		lib.Correct()
@@ -215,7 +215,7 @@ func TestCleanGameKey(t *testing.T) {
 	}
 }
 
-func TestSanitizeLibraryEntriesGameKeys(t *testing.T) {
+func TestSanitizeGameEntriesGameKeys(t *testing.T) {
 	lib := &Library{data: libraryData{Games: map[string]*GameEntry{
 		"1A2B3C4D":   {GameID: "1A2B3C4D"},
 		"../evil":    {GameID: "../evil"},

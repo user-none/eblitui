@@ -20,10 +20,10 @@ func testInfo(m map[string][2]string) GameInfo {
 	}
 }
 
-// TestSaveConfigOwnerOnly tests that config.json, which holds the
+// TestConfigFileOwnerOnly tests that config.json, which holds the
 // RetroAchievements token, is readable only by its owner, including when a
 // temp file left by an earlier failed write had wider permissions.
-func TestSaveConfigOwnerOnly(t *testing.T) {
+func TestConfigFileOwnerOnly(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix permission bits do not apply on Windows")
 	}
@@ -321,7 +321,7 @@ func TestAtomicWriteJSON(t *testing.T) {
 	}
 }
 
-func TestLibraryAddGetGame(t *testing.T) {
+func TestLibraryAddAndGame(t *testing.T) {
 	lib := DefaultLibrary()
 
 	game := GameEntry{

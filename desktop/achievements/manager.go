@@ -49,7 +49,6 @@ type Manager struct {
 	emulator   EmulatorInterface
 	loggedIn   bool
 	username   string
-	token      string
 	gameLoaded bool
 
 	// Callbacks for unlock events
@@ -180,7 +179,6 @@ func (m *Manager) Login(username, password string, callback func(success bool, t
 		m.mu.Lock()
 		m.loggedIn = true
 		m.username = user.Username
-		m.token = user.Token
 		m.mu.Unlock()
 
 		callback(true, user.Token, nil)
@@ -206,7 +204,6 @@ func (m *Manager) LoginWithToken(username, token string, callback func(success b
 		m.mu.Lock()
 		m.loggedIn = true
 		m.username = user.Username
-		m.token = user.Token
 		m.mu.Unlock()
 
 		callback(true, rcheevos.OK, nil)
@@ -220,7 +217,6 @@ func (m *Manager) Logout() {
 	m.mu.Lock()
 	m.loggedIn = false
 	m.username = ""
-	m.token = ""
 	m.gameLoaded = false
 	m.cachedAchievements = nil
 	m.cachedGameTitle = ""

@@ -22,7 +22,7 @@ func TestGameCount(t *testing.T) {
 	}
 }
 
-func TestMergeScannedGames(t *testing.T) {
+func TestMergeScanned(t *testing.T) {
 	library := storage.DefaultLibrary()
 	library.AddGame(storage.GameEntry{GameID: "old", File: "/old.sms"})
 	library.AddGame(storage.GameEntry{GameID: "kept", File: "/kept.sms"})
