@@ -4,13 +4,27 @@
 package desktop
 
 import (
-	"image"
+	"sort"
 	"unicode/utf8"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
+	"github.com/hajimehoshi/ebiten/v2/vector"
 	"github.com/user-none/eblitui/desktop/style"
+)
+
+// maxSearchRunes is the most characters the search text holds. Longer text
+// is far past any game title, so it could not match anything.
+const maxSearchRunes = 256
+
+// Overlay text parts: searchPrefix is shown before the search text,
+// searchTrimmed in place of the start of text too wide for the screen, and
+// searchCursor after the text while typing.
+const (
+	searchPrefix  = "Filter: "
+	searchTrimmed = "..."
+	searchCursor  = "_"
 )
 
 // SearchOverlay displays a search filter at the bottom-left of the screen
@@ -18,9 +32,6 @@ type SearchOverlay struct {
 	text      string
 	active    bool              // Currently capturing keyboard input
 	onChanged func(text string) // Callback when text changes
-
-	// Pre-allocated background image (avoid per-frame allocations)
-	bg *ebiten.Image
 }
 
 // NewSearchOverlay creates a new search overlay with the given change callback
@@ -75,21 +86,34 @@ func (s *SearchOverlay) HandleInput() bool {
 	}
 
 	// Character input
-	chars := ebiten.AppendInputChars(nil)
-	if len(chars) > 0 {
-		for _, c := range chars {
-			// Don't add the '/' that activated search
-			if c != '/' || s.text != "" {
-				s.text += string(c)
-			}
-		}
-		if s.onChanged != nil {
-			s.onChanged(s.text)
-		}
-		return true
+	if chars := ebiten.AppendInputChars(nil); len(chars) > 0 {
+		s.appendChars(chars)
 	}
 
 	return true // Active, consume input even if nothing typed
+}
+
+// appendChars adds typed characters to the search text, up to
+// maxSearchRunes; characters past the limit are dropped. A '/' typed into
+// empty text is the key that activated search and is not added. The change
+// callback runs only when the text changed.
+func (s *SearchOverlay) appendChars(chars []rune) {
+	n := utf8.RuneCountInString(s.text)
+	changed := false
+	for _, c := range chars {
+		if n >= maxSearchRunes {
+			break
+		}
+		if c == '/' && s.text == "" {
+			continue
+		}
+		s.text += string(c)
+		n++
+		changed = true
+	}
+	if changed && s.onChanged != nil {
+		s.onChanged(s.text)
+	}
 }
 
 // backspace removes the last character of the search text: one whole rune,
@@ -107,50 +131,70 @@ func (s *SearchOverlay) backspace() bool {
 	return true
 }
 
-// Draw renders the search overlay at bottom-left
+// visibleSearchText returns the overlay text for search text body: the
+// prefix, the text and, when active, the cursor. When that is wider than
+// maxWidth as measured by width, the start of the text is replaced with
+// "..." and as few characters as needed are dropped from it, so the end
+// being typed stays in view. The prefix and cursor are always kept.
+func visibleSearchText(body string, active bool, maxWidth float64, width func(string) float64) string {
+	cursor := ""
+	if active {
+		cursor = searchCursor
+	}
+	full := searchPrefix + body + cursor
+	if width(full) <= maxWidth {
+		return full
+	}
+
+	runes := []rune(body)
+	trimmed := func(drop int) string {
+		return searchPrefix + searchTrimmed + string(runes[drop:]) + cursor
+	}
+	// Narrower the more is dropped, so find the fewest drops that fit; when
+	// even dropping everything is too wide, everything is dropped
+	drop := sort.Search(len(runes), func(i int) bool {
+		return width(trimmed(i)) <= maxWidth
+	})
+	return trimmed(drop)
+}
+
+// Draw renders the search overlay at bottom-left. The overlay is never
+// wider than the screen less its margins.
 func (s *SearchOverlay) Draw(screen *ebiten.Image) {
 	if !s.IsVisible() && !s.active {
 		return
 	}
 
 	bounds := screen.Bounds()
-	screenHeight := bounds.Dy()
-
-	// Build display text
-	displayText := "Filter: " + s.text
-	if s.active {
-		displayText += "_" // Cursor when active
+	padding := style.OverlayPadding
+	margin := style.OverlayMargin
+	maxTextWidth := float64(bounds.Dx() - margin*2 - padding*2)
+	if maxTextWidth <= 0 {
+		return
 	}
 
-	// Calculate text size
-	textWidth, textHeight := text.Measure(displayText, *style.FontFace(), 0)
-
-	// Padding
-	padding := style.OverlayPadding
-	bgWidth := int(textWidth) + padding*2
-	bgHeight := int(textHeight) + padding*2
+	face := *style.FontFace()
+	width := func(t string) float64 {
+		w, _ := text.Measure(t, face, 0)
+		return w
+	}
+	displayText := visibleSearchText(s.text, s.active, maxTextWidth, width)
+	textWidth, textHeight := text.Measure(displayText, face, 0)
 
 	// Position: bottom-left, margin (mirrors Notification at bottom-right)
-	margin := style.OverlayMargin
-	bgX := margin
-	bgY := screenHeight - bgHeight - margin
+	bgWidth := float32(textWidth) + float32(padding*2)
+	bgHeight := float32(textHeight) + float32(padding*2)
+	bgX := float32(margin)
+	bgY := float32(bounds.Dy()) - bgHeight - float32(margin)
 
-	// Reuse or create background image
-	if s.bg == nil || s.bg.Bounds().Dx() < bgWidth || s.bg.Bounds().Dy() < bgHeight {
-		s.bg = ebiten.NewImage(bgWidth, bgHeight)
-	}
-	s.bg.Clear()
+	// Drawn straight onto the screen, so no image the size of the text is
+	// ever allocated
 	overlayBg := style.OverlayBackground
 	overlayBg.A = 153 // 60% opacity
-	s.bg.Fill(overlayBg)
+	vector.FillRect(screen, bgX, bgY, bgWidth, bgHeight, overlayBg, false)
 
-	opts := &ebiten.DrawImageOptions{}
-	opts.GeoM.Translate(float64(bgX), float64(bgY))
-	screen.DrawImage(s.bg.SubImage(image.Rect(0, 0, bgWidth, bgHeight)).(*ebiten.Image), opts)
-
-	// Draw text
 	textOpts := &text.DrawOptions{}
-	textOpts.GeoM.Translate(float64(bgX+padding), float64(bgY+padding))
+	textOpts.GeoM.Translate(float64(bgX)+float64(padding), float64(bgY)+float64(padding))
 	textOpts.ColorScale.ScaleWithColor(style.Text)
-	text.Draw(screen, displayText, *style.FontFace(), textOpts)
+	text.Draw(screen, displayText, face, textOpts)
 }

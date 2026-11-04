@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"strings"
 	"testing"
 	"unicode/utf8"
 )
@@ -127,5 +128,65 @@ func TestSearchOverlayBackspaceEmpty(t *testing.T) {
 	s := NewSearchOverlay(func(string) { called = true })
 	if s.backspace() || called {
 		t.Fatal("backspace on empty text removed something or reported a change")
+	}
+}
+
+// TestSearchOverlayAppendCap tests that the search text stops at
+// maxSearchRunes characters, multi-byte ones counting as one, and that the
+// callback runs only when the text changed.
+func TestSearchOverlayAppendCap(t *testing.T) {
+	calls := 0
+	s := NewSearchOverlay(func(string) { calls++ })
+	wide := []rune(strings.Repeat(string(rune(0x65E5)), maxSearchRunes-1))
+
+	s.appendChars(wide)
+	s.appendChars([]rune("ab"))
+	if n := utf8.RuneCountInString(s.text); n != maxSearchRunes {
+		t.Fatalf("text has %d characters, want %d", n, maxSearchRunes)
+	}
+	if !strings.HasSuffix(s.text, "a") {
+		t.Fatalf("text ends %q, want the first character past the old end", s.text[len(s.text)-3:])
+	}
+	s.appendChars([]rune("c"))
+	if calls != 2 {
+		t.Fatalf("callback ran %d times, want 2", calls)
+	}
+}
+
+// TestSearchOverlayAppendSkipsActivatingSlash tests that a '/' typed into
+// empty text is not added, but one after other text is.
+func TestSearchOverlayAppendSkipsActivatingSlash(t *testing.T) {
+	calls := 0
+	s := NewSearchOverlay(func(string) { calls++ })
+	s.appendChars([]rune("/"))
+	if s.text != "" || calls != 0 {
+		t.Fatalf("text = %q, %d calls after the activating slash", s.text, calls)
+	}
+	s.appendChars([]rune("/a/b"))
+	if s.text != "a/b" {
+		t.Fatalf("text = %q, want a/b", s.text)
+	}
+}
+
+// TestVisibleSearchText tests that the overlay text is shown whole when it
+// fits, and otherwise keeps the prefix, "..." and as much of the end of the
+// text as fits, with the cursor when active.
+func TestVisibleSearchText(t *testing.T) {
+	width := func(s string) float64 { return float64(utf8.RuneCountInString(s)) }
+	prefix := len(searchPrefix)
+
+	if got := visibleSearchText("sonic", true, 100, width); got != searchPrefix+"sonic"+searchCursor {
+		t.Errorf("fitting text = %q", got)
+	}
+	if got := visibleSearchText("sonic", false, float64(prefix+5), width); got != searchPrefix+"sonic" {
+		t.Errorf("exactly fitting text = %q", got)
+	}
+
+	maxWidth := float64(prefix + len(searchTrimmed) + 3 + len(searchCursor))
+	if got := visibleSearchText("abcdefgh", true, maxWidth, width); got != searchPrefix+searchTrimmed+"fgh"+searchCursor {
+		t.Errorf("trimmed text = %q", got)
+	}
+	if got := visibleSearchText("abcdefgh", false, 1, width); got != searchPrefix+searchTrimmed {
+		t.Errorf("text with no room = %q", got)
 	}
 }
