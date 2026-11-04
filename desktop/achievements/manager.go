@@ -5,6 +5,7 @@ package achievements
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/png" // PNG decoder for badge images
@@ -564,7 +565,7 @@ func (m *Manager) serverCall(request *rcheevos.ServerRequest) {
 		}
 		defer resp.Body.Close()
 
-		body, err := io.ReadAll(resp.Body)
+		body, err := readResponseBody(resp.Body)
 		if err != nil {
 			log.Printf("[RetroAchievements] Read error: %v", err)
 			request.Respond(nil, resp.StatusCode)
@@ -573,6 +574,28 @@ func (m *Manager) serverCall(request *rcheevos.ServerRequest) {
 
 		request.Respond(body, resp.StatusCode)
 	}()
+}
+
+// maxResponseBytes is the largest API response read. The largest
+// console has library is 215 KB.  The limit leaves a wide
+// margin while keeping a hostile or broken server from sending an endless
+// body.
+const maxResponseBytes = 16 * 1024 * 1024
+
+// errResponseTooLarge is returned when a response is longer than
+// maxResponseBytes.
+var errResponseTooLarge = errors.New("response larger than 16 MiB")
+
+// readResponseBody reads a response body of at most maxResponseBytes.
+func readResponseBody(r io.Reader) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(r, maxResponseBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxResponseBytes {
+		return nil, errResponseTooLarge
+	}
+	return body, nil
 }
 
 // handleEvent processes achievement events
