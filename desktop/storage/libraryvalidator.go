@@ -24,6 +24,21 @@ func CleanGameKey(key string) string {
 	return cleaned
 }
 
+// validGameKey reports whether key can be used as a game key in file paths:
+// not empty and unchanged by CleanGameKey. An empty key would name the
+// parent directory itself.
+func validGameKey(key string) bool {
+	return key != "" && CleanGameKey(key) == key
+}
+
+// gameKeyError returns an error for a game key that is not valid, or nil.
+func gameKeyError(key string) error {
+	if !validGameKey(key) {
+		return fmt.Errorf("invalid game key %q", key)
+	}
+	return nil
+}
+
 // SanitizeRemovedGames silently corrects invalid removed game entries the
 // same way as library entries, and clears any files and added time so a
 // restored entry only gets the files a scan finds and is added when found.
@@ -46,7 +61,7 @@ func sanitizeGameEntries(games map[string]*GameEntry) {
 			continue
 		}
 		cleaned := CleanGameKey(key)
-		if cleaned == key && game.GameID == key {
+		if validGameKey(key) && game.GameID == key {
 			continue
 		}
 		delete(games, key)

@@ -1000,6 +1000,75 @@ func TestLegacySaveSlots(t *testing.T) {
 	}
 }
 
+// TestMigrateSaveSlotsSkipsInvalidKeys tests that a version 1 library's save
+// slots move to the settings files of valid game keys only: an empty or
+// unclean key writes no settings file.
+func TestMigrateSaveSlotsSkipsInvalidKeys(t *testing.T) {
+	useTempDataDir(t)
+	path, err := GetLibraryPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := `{"version": 1, "games": {
+		"T-1": {"settings": {"saveSlot": 2}},
+		"": {"settings": {"saveSlot": 3}},
+		"..": {"settings": {"saveSlot": 4}}
+	}}`
+	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := LoadLibrary(); err != nil {
+		t.Fatalf("LoadLibrary: %v", err)
+	}
+
+	settings, err := LoadGameSettings("T-1")
+	if err != nil || settings.SaveStates.Slot != 2 {
+		t.Fatalf("T-1 settings = %+v, %v; want slot 2", settings, err)
+	}
+	dir, err := GetGameSettingsDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "T-1.json" {
+		names := make([]string, 0, len(entries))
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Fatalf("settings files = %v, want only T-1.json", names)
+	}
+}
+
+// TestGamePathsRejectInvalidKeys tests that every per-game path refuses an
+// empty or unclean game ID, so none can resolve to a shared directory or
+// leave it, and accepts a valid one.
+func TestGamePathsRejectInvalidKeys(t *testing.T) {
+	useTempDataDir(t)
+	funcs := map[string]func(string) (string, error){
+		"GetGameSettingsPath":  GetGameSettingsPath,
+		"GetGameSaveDir":       GetGameSaveDir,
+		"GetGameScreenshotDir": GetGameScreenshotDir,
+		"GetGameArtworkDir":    GetGameArtworkDir,
+	}
+	for name, fn := range funcs {
+		for _, key := range []string{"", ".", "..", "a/b", `a\b`, "a\nb"} {
+			if p, err := fn(key); err == nil {
+				t.Errorf("%s(%q) = %q, want error", name, key, p)
+			}
+		}
+		if _, err := fn("T-1"); err != nil {
+			t.Errorf("%s(T-1): %v", name, err)
+		}
+	}
+}
+
 func TestAddPlayTimeNonexistentGame(t *testing.T) {
 	lib := DefaultLibrary()
 

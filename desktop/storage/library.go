@@ -191,7 +191,7 @@ func migrateSaveSlots(path string) {
 	}
 
 	for key, slot := range slots {
-		if CleanGameKey(key) != key {
+		if !validGameKey(key) {
 			continue
 		}
 		settings, err := LoadGameSettings(key)

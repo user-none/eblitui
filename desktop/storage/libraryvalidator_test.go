@@ -225,6 +225,8 @@ func TestSanitizeGameEntriesGameKeys(t *testing.T) {
 		"DUP/":       {GameID: "DUP/"},
 		"DUP":        {GameID: "DUP"},
 		"MK-81009\n": {GameID: "MK-81009\n"},
+		"":           {GameID: ""},
+		"\n":         {GameID: "\n"},
 	}}}
 
 	sanitizeGameEntries(lib.data.Games)

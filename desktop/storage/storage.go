@@ -139,8 +139,12 @@ func GetGameSettingsDir() (string, error) {
 	return filepath.Join(baseDir, gameSettingsDir), nil
 }
 
-// GetGameSettingsPath returns the path to a game's settings file
+// GetGameSettingsPath returns the path to a game's settings file. An empty
+// or unclean game ID is an error.
 func GetGameSettingsPath(gameID string) (string, error) {
+	if err := gameKeyError(gameID); err != nil {
+		return "", err
+	}
 	dir, err := GetGameSettingsDir()
 	if err != nil {
 		return "", err
@@ -175,8 +179,12 @@ func GetUpdateDir() (string, error) {
 	return filepath.Join(baseDir, updateDir), nil
 }
 
-// GetGameScreenshotDir returns the screenshot directory for a specific game (by game ID)
+// GetGameScreenshotDir returns the screenshot directory for a specific game
+// (by game ID). An empty or unclean game ID is an error.
 func GetGameScreenshotDir(gameID string) (string, error) {
+	if err := gameKeyError(gameID); err != nil {
+		return "", err
+	}
 	dir, err := GetScreenshotDir()
 	if err != nil {
 		return "", err
@@ -184,8 +192,12 @@ func GetGameScreenshotDir(gameID string) (string, error) {
 	return filepath.Join(dir, gameID), nil
 }
 
-// GetGameSaveDir returns the save directory for a specific game (by game ID)
+// GetGameSaveDir returns the save directory for a specific game (by game
+// ID). An empty or unclean game ID is an error.
 func GetGameSaveDir(gameID string) (string, error) {
+	if err := gameKeyError(gameID); err != nil {
+		return "", err
+	}
 	savesDir, err := GetSavesDir()
 	if err != nil {
 		return "", err
@@ -193,8 +205,12 @@ func GetGameSaveDir(gameID string) (string, error) {
 	return filepath.Join(savesDir, gameID), nil
 }
 
-// GetGameArtworkDir returns the directory holding a game's artwork images
+// GetGameArtworkDir returns the directory holding a game's artwork images.
+// An empty or unclean game ID is an error.
 func GetGameArtworkDir(gameID string) (string, error) {
+	if err := gameKeyError(gameID); err != nil {
+		return "", err
+	}
 	artworkDir, err := GetArtworkDir()
 	if err != nil {
 		return "", err
