@@ -4,7 +4,6 @@
 package update
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -14,14 +13,9 @@ import (
 	"github.com/user-none/eblitui/desktop/netutil"
 )
 
-const (
-	// fetchTimeout bounds each manifest or signature request, including
-	// redirects.
-	fetchTimeout = 30 * time.Second
-
-	// maxRedirects is the most redirects followed for one request.
-	maxRedirects = 10
-)
+// fetchTimeout bounds each manifest or signature request, including
+// redirects.
+const fetchTimeout = 30 * time.Second
 
 // versionPlaceholder is replaced by the offered version in the release page
 // URL.
@@ -49,7 +43,7 @@ func NewSource(manifestURL, signatureURL, releasePageURL string) (*Source, error
 		manifestURL:    manifestURL,
 		signatureURL:   signatureURL,
 		releasePageURL: releasePageURL,
-		client:         newHTTPClient(),
+		client:         netutil.NewClient(fetchTimeout),
 	}, nil
 }
 
@@ -84,22 +78,4 @@ func (s *Source) FetchLatest() (manifest, sig []byte, err error) {
 // MAJOR.MINOR.PATCH.
 func (s *Source) ReleasePage(version string) string {
 	return strings.ReplaceAll(s.releasePageURL, versionPlaceholder, version)
-}
-
-// newHTTPClient returns a client that follows redirects only to HTTPS URLs.
-// It uses the default transport, which verifies server certificates against
-// the system's trusted roots.
-func newHTTPClient() *http.Client {
-	return &http.Client{
-		Timeout: fetchTimeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if req.URL.Scheme != "https" {
-				return errors.New("redirect to a non-HTTPS URL")
-			}
-			if len(via) >= maxRedirects {
-				return errors.New("too many redirects")
-			}
-			return nil
-		},
-	}
 }

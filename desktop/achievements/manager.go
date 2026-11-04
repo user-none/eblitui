@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/user-none/eblitui/desktop/netutil"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/go-rcheevos"
 )
@@ -83,9 +84,8 @@ type Manager struct {
 // NewManager creates a new achievement manager
 func NewManager(notification Notification, config *storage.Config, appName, appVersion string, consoleID uint32, bigEndian bool, sampleRate int) *Manager {
 	m := &Manager{
-		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
+		// HTTPS only, for API calls, their redirects and image downloads.
+		httpClient:      netutil.NewClient(netutil.HTTPTimeout),
 		notification:    notification,
 		config:          config,
 		consoleID:       consoleID,

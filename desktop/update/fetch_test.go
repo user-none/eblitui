@@ -69,14 +69,14 @@ func TestFetchLatest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSource: %v", err)
 	}
-	s.client = testClient(srv)
+	s.client = testClient(t, srv)
 	manifest, sig, err := s.FetchLatest()
 	if err != nil || string(manifest) != "manifest" || string(sig) != "signature" {
 		t.Errorf("FetchLatest = %q, %q, %v", manifest, sig, err)
 	}
 
 	s, _ = NewSource(srv.URL+"/files/erings-manifest.json", srv.URL+"/missing.sig", srv.URL+"/{version}")
-	s.client = testClient(srv)
+	s.client = testClient(t, srv)
 	if _, _, err := s.FetchLatest(); err == nil {
 		t.Error("expected an error for a missing signature file")
 	}
@@ -89,17 +89,20 @@ func TestFetchRejectsUntrustedCertificate(t *testing.T) {
 	defer srv.Close()
 
 	// The test server's certificate is not signed by a trusted root
-	if _, err := netutil.Download(newHTTPClient(), srv.URL, 10); err == nil {
+	if _, err := netutil.Download(netutil.NewClient(fetchTimeout), srv.URL, 10); err == nil {
 		t.Error("server with an untrusted certificate accepted")
 	}
 }
 
-// testClient returns the update HTTP client set up to trust srv's
-// certificate
-func testClient(srv *httptest.Server) *http.Client {
-	client := newHTTPClient()
-	client.Transport = srv.Client().Transport
-	return client
+// testClient returns the update HTTP client with the default transport,
+// which the client sends through, trusting srv's certificate for the rest
+// of the test.
+func testClient(t *testing.T, srv *httptest.Server) *http.Client {
+	t.Helper()
+	orig := http.DefaultTransport
+	http.DefaultTransport = srv.Client().Transport
+	t.Cleanup(func() { http.DefaultTransport = orig })
+	return netutil.NewClient(fetchTimeout)
 }
 
 func TestHTTPClientRedirects(t *testing.T) {
@@ -126,7 +129,7 @@ func TestHTTPClientRedirects(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	client := testClient(srv)
+	client := testClient(t, srv)
 
 	tests := []struct {
 		path    string

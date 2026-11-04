@@ -23,7 +23,6 @@ import (
 	"hash/crc32"
 	"image"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -58,9 +57,6 @@ const MaxIndexSize = 16 * 1024 * 1024
 // MaxImageSize is the largest image accepted: 10 MiB.
 const MaxImageSize = 10 * 1024 * 1024
 
-// maxRedirects is the most redirects followed for one request.
-const maxRedirects = 10
-
 // imageTypes are the image types this build downloads and shows, in display
 // order. Entries of any other type are ignored.
 var imageTypes = []string{"boxart", "boxback", "disc", "flyer", "poster"}
@@ -90,21 +86,8 @@ var regionOrder = []string{"", "us", "jp", "eu"}
 // regionNames name the regions shown by name; any other is "Other"
 var regionNames = map[string]string{"us": "USA", "jp": "Japan", "eu": "Europe"}
 
-// httpClient fetches the index and images. It follows redirects only to
-// HTTPS URLs and uses the default transport, which verifies server
-// certificates against the system's trusted roots.
-var httpClient = &http.Client{
-	Timeout: netutil.HTTPTimeout,
-	CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if req.URL.Scheme != "https" {
-			return errors.New("redirect to a non-HTTPS URL")
-		}
-		if len(via) >= maxRedirects {
-			return errors.New("too many redirects")
-		}
-		return nil
-	},
-}
+// httpClient fetches the index and images over HTTPS only.
+var httpClient = netutil.NewClient(netutil.HTTPTimeout)
 
 // legacyBoxArt is the box art file name used before the artwork index.
 // It is shown when a game has no boxart.webp yet, and removed by Clean
