@@ -204,29 +204,45 @@ func GetGameArtworkDir(gameID string) (string, error) {
 // It writes to a temporary file first, then renames to the target path.
 // This ensures the file is never in a partially-written state.
 func AtomicWriteJSON(path string, data interface{}) error {
+	return atomicWriteJSON(path, data, 0644)
+}
+
+// atomicWriteJSON is AtomicWriteJSON writing the file with mode perm.
+func atomicWriteJSON(path string, data interface{}, perm os.FileMode) error {
 	// Marshal JSON with indentation for readability
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON: %w", err)
 	}
 
-	return AtomicWriteFile(path, jsonData)
+	return atomicWriteFile(path, jsonData, perm)
 }
 
 // AtomicWriteFile writes data to a file atomically.
 // It writes to a temporary file first, then renames to the target path.
 // This ensures the file is never in a partially-written state.
 func AtomicWriteFile(path string, data []byte) error {
+	return atomicWriteFile(path, data, 0644)
+}
+
+// atomicWriteFile is AtomicWriteFile writing the file with mode perm.
+func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	// Ensure directory exists
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	// Write to temporary file in the same directory
+	// Write to temporary file in the same directory. A temp file left by an
+	// earlier failed write keeps its mode through WriteFile, so the mode is
+	// set explicitly; the rename carries it to the target.
 	tempFile := path + ".tmp"
-	if err := os.WriteFile(tempFile, data, 0644); err != nil {
+	if err := os.WriteFile(tempFile, data, perm); err != nil {
 		return fmt.Errorf("failed to write temp file: %w", err)
+	}
+	if err := os.Chmod(tempFile, perm); err != nil {
+		os.Remove(tempFile)
+		return fmt.Errorf("failed to set temp file mode: %w", err)
 	}
 
 	// Rename temp file to target (atomic on most filesystems)

@@ -78,14 +78,15 @@ func migrateConfig(config *Config) bool {
 	return migrated
 }
 
-// SaveConfig saves the configuration to config.json atomically
+// SaveConfig saves the configuration to config.json atomically. The file
+// holds the RetroAchievements token, so it is readable only by its owner.
 func SaveConfig(config *Config) error {
 	path, err := GetConfigPath()
 	if err != nil {
 		return err
 	}
 
-	return AtomicWriteJSON(path, config)
+	return atomicWriteJSON(path, config, 0600)
 }
 
 // CreateConfigIfMissing creates a default config.json if it doesn't exist

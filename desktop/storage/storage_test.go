@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -14,6 +15,37 @@ func testInfo(m map[string][2]string) GameInfo {
 	return func(g *GameEntry) (string, string) {
 		v := m[g.GameID]
 		return v[0], v[1]
+	}
+}
+
+// TestSaveConfigOwnerOnly tests that config.json, which holds the
+// RetroAchievements token, is readable only by its owner, including when a
+// temp file left by an earlier failed write had wider permissions.
+func TestSaveConfigOwnerOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits do not apply on Windows")
+	}
+	useTempDataDir(t)
+	if err := EnsureDirectories(); err != nil {
+		t.Fatal(err)
+	}
+	path, err := GetConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path+".tmp", []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SaveConfig(DefaultConfig()); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0600 {
+		t.Fatalf("config.json mode = %o, want 600", perm)
 	}
 }
 
