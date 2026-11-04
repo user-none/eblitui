@@ -100,10 +100,6 @@ func (m *SaveStateManager) Save(saveStater coreif.SaveStater) error {
 		return err
 	}
 
-	if err := os.MkdirAll(saveDir, 0755); err != nil {
-		return fmt.Errorf("failed to create save directory: %w", err)
-	}
-
 	statePath := filepath.Join(saveDir, fmt.Sprintf("state-%d.state", m.currentSlot))
 
 	// Serialize emulator state
@@ -112,7 +108,7 @@ func (m *SaveStateManager) Save(saveStater coreif.SaveStater) error {
 		return fmt.Errorf("failed to serialize state: %w", err)
 	}
 
-	if err := os.WriteFile(statePath, state, 0644); err != nil {
+	if err := storage.AtomicWriteFile(statePath, state); err != nil {
 		return fmt.Errorf("failed to write state file: %w", err)
 	}
 
@@ -171,10 +167,6 @@ func (m *SaveStateManager) SaveResume(saveStater coreif.SaveStater) error {
 		return err
 	}
 
-	if err := os.MkdirAll(saveDir, 0755); err != nil {
-		return fmt.Errorf("failed to create save directory: %w", err)
-	}
-
 	statePath := filepath.Join(saveDir, "resume.state")
 
 	state, err := saveStater.Serialize()
@@ -182,7 +174,7 @@ func (m *SaveStateManager) SaveResume(saveStater coreif.SaveStater) error {
 		return fmt.Errorf("failed to serialize state: %w", err)
 	}
 
-	return os.WriteFile(statePath, state, 0644)
+	return storage.AtomicWriteFile(statePath, state)
 }
 
 // SaveResumeData saves pre-serialized state data as the resume state.
@@ -197,12 +189,8 @@ func (m *SaveStateManager) SaveResumeData(state []byte) error {
 		return err
 	}
 
-	if err := os.MkdirAll(saveDir, 0755); err != nil {
-		return fmt.Errorf("failed to create save directory: %w", err)
-	}
-
 	statePath := filepath.Join(saveDir, "resume.state")
-	return os.WriteFile(statePath, state, 0644)
+	return storage.AtomicWriteFile(statePath, state)
 }
 
 // LoadResume loads the resume state
@@ -257,12 +245,8 @@ func (m *SaveStateManager) SaveSRAM(batterySaver coreif.BatterySaver) error {
 		return err
 	}
 
-	if err := os.MkdirAll(saveDir, 0755); err != nil {
-		return fmt.Errorf("failed to create save directory: %w", err)
-	}
-
 	sramPath := filepath.Join(saveDir, "cart.srm")
-	return os.WriteFile(sramPath, batterySaver.GetSRAM(), 0644)
+	return storage.AtomicWriteFile(sramPath, batterySaver.GetSRAM())
 }
 
 // LoadSRAM loads the cartridge SRAM

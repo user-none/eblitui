@@ -1,10 +1,12 @@
 package storage
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 )
 
@@ -46,6 +48,71 @@ func TestSaveConfigOwnerOnly(t *testing.T) {
 	}
 	if perm := info.Mode().Perm(); perm != 0600 {
 		t.Fatalf("config.json mode = %o, want 600", perm)
+	}
+}
+
+// TestAtomicWriteFileReplacesStaleTemp tests that a temp file left by an
+// earlier failed write is replaced and not left behind.
+func TestAtomicWriteFileReplacesStaleTemp(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "data.json")
+	if err := os.WriteFile(path+".tmp", []byte("stale contents that are longer"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := AtomicWriteFile(path, []byte("new")); err != nil {
+		t.Fatalf("AtomicWriteFile: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != "new" {
+		t.Fatalf("file = %q, %v; want %q", got, err, "new")
+	}
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Fatal("temp file left behind")
+	}
+}
+
+// TestAtomicWriteFileConcurrent tests that writers to the same file at the
+// same time each write it whole: the result is exactly one writer's data,
+// never a mix, and every write succeeds.
+func TestAtomicWriteFileConcurrent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "data.bin")
+	const writers = 16
+	const size = 4 * 1024 * 1024
+
+	// Release every writer at once so their writes overlap.
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errs := make([]error, writers)
+	for i := range writers {
+		data := bytes.Repeat([]byte{byte(i + 1)}, size)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			errs[i] = AtomicWriteFile(path, data)
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("writer %d: %v", i, err)
+		}
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != size {
+		t.Fatalf("file is %d bytes, want %d", len(got), size)
+	}
+	for _, b := range got {
+		if b != got[0] {
+			t.Fatal("file mixes data from more than one writer")
+		}
+	}
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Fatal("temp file left behind")
 	}
 }
 

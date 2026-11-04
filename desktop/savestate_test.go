@@ -1,8 +1,75 @@
 package desktop
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/user-none/eblitui/desktop/storage"
 )
+
+// fakeSaveCore serializes to state and holds sram as its battery save.
+type fakeSaveCore struct {
+	state []byte
+	sram  []byte
+}
+
+func (f fakeSaveCore) Serialize() ([]byte, error) { return f.state, nil }
+func (f fakeSaveCore) Deserialize([]byte) error   { return nil }
+func (f fakeSaveCore) HasSRAM() bool              { return true }
+func (f fakeSaveCore) GetSRAM() []byte            { return f.sram }
+func (f fakeSaveCore) SetSRAM([]byte)             {}
+
+// TestSaveFilesWrittenWhole tests that state slots, the resume state and
+// the battery save are written with their full contents and leave no temp
+// file, replacing an existing file and a temp file left by an earlier
+// failed write.
+func TestSaveFilesWrittenWhole(t *testing.T) {
+	useTempDataDir(t)
+	m := NewSaveStateManager(nil)
+	m.SetGame("T-1")
+	dir, err := storage.GetGameSaveDir("T-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"state-0.state", "resume.state", "cart.srm"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("old contents that are longer"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name+".tmp"), []byte("stale"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	core := fakeSaveCore{state: []byte("state"), sram: []byte("sram")}
+	if err := m.Save(core); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := m.SaveResume(core); err != nil {
+		t.Fatalf("SaveResume: %v", err)
+	}
+	if err := m.SaveSRAM(core); err != nil {
+		t.Fatalf("SaveSRAM: %v", err)
+	}
+
+	want := map[string][]byte{"state-0.state": core.state, "resume.state": core.state, "cart.srm": core.sram}
+	for name, data := range want {
+		got, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !bytes.Equal(got, data) {
+			t.Errorf("%s = %q, want %q", name, got, data)
+		}
+		if _, err := os.Stat(filepath.Join(dir, name+".tmp")); !os.IsNotExist(err) {
+			t.Errorf("%s.tmp left behind", name)
+		}
+	}
+}
 
 func TestNewSaveStateManager(t *testing.T) {
 	m := NewSaveStateManager(nil)

@@ -6,9 +6,11 @@ package storage
 import (
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 )
 
 var appName string
@@ -225,33 +227,88 @@ func AtomicWriteFile(path string, data []byte) error {
 	return atomicWriteFile(path, data, 0644)
 }
 
-// atomicWriteFile is AtomicWriteFile writing the file with mode perm.
+// writeLocks serialize writes to the same file. A path always maps to the
+// same lock, so writers to one file take turns with its temp file, while
+// writes to different files almost always proceed in parallel.
+var writeLocks [64]sync.Mutex
+
+// writeLock returns the lock for writes to path.
+func writeLock(path string) *sync.Mutex {
+	h := fnv.New32a()
+	h.Write([]byte(path))
+	return &writeLocks[h.Sum32()%uint32(len(writeLocks))]
+}
+
+// atomicWriteFile is AtomicWriteFile writing the file with mode perm. The
+// data is written to path.tmp and flushed to disk, then renamed over path,
+// so path holds either its old or its new contents, even after a crash or
+// power loss.
 func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	lock := writeLock(path)
+	lock.Lock()
+	defer lock.Unlock()
+
 	// Ensure directory exists
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	// Write to temporary file in the same directory. A temp file left by an
-	// earlier failed write keeps its mode through WriteFile, so the mode is
-	// set explicitly; the rename carries it to the target.
 	tempFile := path + ".tmp"
-	if err := os.WriteFile(tempFile, data, perm); err != nil {
-		return fmt.Errorf("failed to write temp file: %w", err)
-	}
-	if err := os.Chmod(tempFile, perm); err != nil {
+	if err := writeSynced(tempFile, data, perm); err != nil {
 		os.Remove(tempFile)
-		return fmt.Errorf("failed to set temp file mode: %w", err)
+		return err
 	}
 
 	// Rename temp file to target (atomic on most filesystems)
 	if err := os.Rename(tempFile, path); err != nil {
-		os.Remove(tempFile) // Clean up on failure
+		os.Remove(tempFile)
 		return fmt.Errorf("failed to rename temp file: %w", err)
 	}
 
+	syncDir(dir)
 	return nil
+}
+
+// writeSynced writes data to path with mode perm and flushes it to disk
+// before returning. A file left at path by an earlier failed write keeps its
+// mode when opened, so the mode is set explicitly.
+func writeSynced(path string, data []byte, perm os.FileMode) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	if err := f.Chmod(perm); err != nil {
+		f.Close()
+		return fmt.Errorf("failed to set temp file mode: %w", err)
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return fmt.Errorf("failed to write temp file: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return fmt.Errorf("failed to flush temp file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
+	return nil
+}
+
+// syncDir flushes a directory so a rename in it is on disk. It is best
+// effort: the rename has already taken effect, and some filesystems do not
+// support flushing a directory. Windows cannot flush a directory at all.
+func syncDir(dir string) {
+	if runtime.GOOS == "windows" {
+		return
+	}
+	d, err := os.Open(dir)
+	if err != nil {
+		return
+	}
+	d.Sync()
+	d.Close()
 }
 
 // ReadJSON reads and unmarshals a JSON file
