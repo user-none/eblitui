@@ -261,14 +261,6 @@ func ArtworkDownloadDisplayName(setting string) string {
 	}
 }
 
-// Library represents the game library stored in library.json
-type Library struct {
-	Version         int                   `json:"version"`
-	ScanDirectories []ScanDirectory       `json:"scanDirectories"`
-	ExcludedPaths   []string              `json:"excludedPaths"`
-	Games           map[string]*GameEntry `json:"games"` // Game ID -> entry
-}
-
 // ScanDirectory represents a directory to scan for ROMs
 type ScanDirectory struct {
 	Path      string `json:"path"`
@@ -363,15 +355,5 @@ func DefaultConfig() *Config {
 		Updates: UpdatesConfig{
 			AutoCheck: true,
 		},
-	}
-}
-
-// DefaultLibrary returns a new Library with default values
-func DefaultLibrary() *Library {
-	return &Library{
-		Version:         libraryVersion,
-		ScanDirectories: []ScanDirectory{},
-		ExcludedPaths:   []string{},
-		Games:           make(map[string]*GameEntry),
 	}
 }

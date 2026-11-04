@@ -91,14 +91,15 @@ func (s FileStatus) HasMissing() bool {
 // RemoveMissing removes the missing files found by CheckFiles, keyed by
 // game key: disc rows whose file is gone are dropped, and games with no
 // file left move to removed.json. A status whose disc count no longer
-// matches its game is skipped. The library is saved when anything
-// changed. Returns the number of games changed or removed.
+// matches its game is skipped. Returns the number of games changed or
+// removed.
 func (lib *Library) RemoveMissing(files map[string]FileStatus) (int, error) {
 	var gone []string
+	lib.mu.Lock()
 	pruned := 0
 	for key, status := range files {
-		game := lib.GetGame(key)
-		if game == nil {
+		game, ok := lib.data.Games[key]
+		if !ok {
 			continue
 		}
 		if status.Missing {
@@ -110,15 +111,13 @@ func (lib *Library) RemoveMissing(files map[string]FileStatus) (int, error) {
 			pruned++
 		}
 	}
+	lib.mu.Unlock()
+	if pruned > 0 {
+		lib.changed()
+	}
 
-	switch {
-	case len(gone) > 0:
-		// Saves the library, including the pruned discs
+	if len(gone) > 0 {
 		if err := lib.RemoveGames(gone...); err != nil {
-			return 0, err
-		}
-	case pruned > 0:
-		if err := SaveLibrary(lib); err != nil {
 			return 0, err
 		}
 	}

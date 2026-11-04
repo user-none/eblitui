@@ -24,25 +24,24 @@ func TestGameCount(t *testing.T) {
 
 func TestMergeScannedGames(t *testing.T) {
 	library := storage.DefaultLibrary()
-	old := &storage.GameEntry{GameID: "old", File: "/old.sms"}
-	library.AddGame(old)
-	library.AddGame(&storage.GameEntry{GameID: "kept", File: "/kept.sms"})
+	library.AddGame(storage.GameEntry{GameID: "old", File: "/old.sms"})
+	library.AddGame(storage.GameEntry{GameID: "kept", File: "/kept.sms"})
 
 	found := map[string]*storage.GameEntry{
 		"old": {GameID: "old", File: "/moved.sms"},
 		"new": {GameID: "new", File: "/new.sms"},
 	}
 
-	if got := mergeScannedGames(library, found); got != 1 {
+	if got := library.MergeScanned(found); got != 1 {
 		t.Errorf("new games = %d, want 1", got)
 	}
 	if library.GameCount() != 3 {
 		t.Errorf("library games = %d, want 3", library.GameCount())
 	}
-	if g := library.GetGame("old"); g == old || g.File != "/moved.sms" {
+	if g, _ := library.Game("old"); g.File != "/moved.sms" {
 		t.Errorf("old entry = %+v, want replaced by the scanned entry", g)
 	}
-	if library.GetGame("new") == nil || library.GetGame("kept") == nil {
+	if !library.HasGame("new") || !library.HasGame("kept") {
 		t.Error("new or kept entry missing")
 	}
 }

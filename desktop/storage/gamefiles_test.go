@@ -147,7 +147,7 @@ func TestRemoveDisc(t *testing.T) {
 // games with a missing file
 func missingFiles(lib *Library) map[string]FileStatus {
 	files := make(map[string]FileStatus)
-	for key, game := range lib.Games {
+	for key, game := range lib.data.Games {
 		if status := game.CheckFiles(); status.HasMissing() {
 			files[key] = status
 		}
@@ -182,15 +182,15 @@ func TestRemoveMissing(t *testing.T) {
 	d1 := touch(t, roms, "d1.chd")
 	gone := filepath.Join(roms, "gone")
 
-	lib := DefaultLibrary()
-	lib.AddGame(&GameEntry{GameID: "cart", File: cart})
-	lib.AddGame(&GameEntry{GameID: "lostcart", File: gone, PlayTimeSeconds: 30})
-	lib.AddGame(&GameEntry{
+	lib := loadPersistedLibrary(t)
+	lib.AddGame(GameEntry{GameID: "cart", File: cart})
+	lib.AddGame(GameEntry{GameID: "lostcart", File: gone, PlayTimeSeconds: 30})
+	lib.AddGame(GameEntry{
 		GameID:       "partial",
 		Discs:        []GameDisc{{Index: 0, File: gone}, {Index: 1, File: d1}},
 		SelectedDisc: 1,
 	})
-	lib.AddGame(&GameEntry{GameID: "lostdisc", Discs: []GameDisc{{Index: 0, File: gone}}})
+	lib.AddGame(GameEntry{GameID: "lostdisc", Discs: []GameDisc{{Index: 0, File: gone}}})
 
 	n, err := lib.RemoveMissing(missingFiles(lib))
 	if err != nil {
@@ -200,12 +200,13 @@ func TestRemoveMissing(t *testing.T) {
 		t.Errorf("RemoveMissing() = %d, want 3", n)
 	}
 
+	lib.Flush()
 	saved := loadSavedLibrary(t)
 	for _, l := range []*Library{lib, saved} {
-		if len(l.Games) != 2 || l.Games["cart"] == nil || l.Games["partial"] == nil {
-			t.Fatalf("games = %v, want cart and partial", l.Games)
+		if len(l.data.Games) != 2 || l.data.Games["cart"] == nil || l.data.Games["partial"] == nil {
+			t.Fatalf("games = %v, want cart and partial", l.data.Games)
 		}
-		p := l.Games["partial"]
+		p := l.data.Games["partial"]
 		if len(p.Discs) != 1 || p.Discs[0].File != d1 || p.SelectedDisc != 0 {
 			t.Errorf("partial = %+v, want only d1 selected", p)
 		}
@@ -228,8 +229,8 @@ func TestRemoveMissingOnlyPrunedDiscs(t *testing.T) {
 	roms := t.TempDir()
 	d1 := touch(t, roms, "d1.chd")
 
-	lib := DefaultLibrary()
-	lib.AddGame(&GameEntry{GameID: "partial", Discs: []GameDisc{{File: d1}, {File: filepath.Join(roms, "gone")}}})
+	lib := loadPersistedLibrary(t)
+	lib.AddGame(GameEntry{GameID: "partial", Discs: []GameDisc{{File: d1}, {File: filepath.Join(roms, "gone")}}})
 
 	n, err := lib.RemoveMissing(missingFiles(lib))
 	if err != nil {
@@ -238,8 +239,9 @@ func TestRemoveMissingOnlyPrunedDiscs(t *testing.T) {
 	if n != 1 {
 		t.Errorf("RemoveMissing() = %d, want 1", n)
 	}
-	if saved := loadSavedLibrary(t); len(saved.Games["partial"].Discs) != 1 {
-		t.Errorf("saved discs = %v, want 1", saved.Games["partial"].Discs)
+	lib.Flush()
+	if saved := loadSavedLibrary(t); len(saved.data.Games["partial"].Discs) != 1 {
+		t.Errorf("saved discs = %v, want 1", saved.data.Games["partial"].Discs)
 	}
 	path, _ := GetRemovedGamesPath()
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -249,8 +251,13 @@ func TestRemoveMissingOnlyPrunedDiscs(t *testing.T) {
 
 func TestRemoveMissingNothingMissing(t *testing.T) {
 	useTempDataDir(t)
-	lib := DefaultLibrary()
-	lib.AddGame(&GameEntry{GameID: "cart", File: touch(t, t.TempDir(), "cart.sms")})
+	lib := loadPersistedLibrary(t)
+	lib.AddGame(GameEntry{GameID: "cart", File: touch(t, t.TempDir(), "cart.sms")})
+	lib.Flush()
+	path, _ := GetLibraryPath()
+	if err := os.Remove(path); err != nil {
+		t.Fatalf("Remove library.json: %v", err)
+	}
 
 	n, err := lib.RemoveMissing(missingFiles(lib))
 	if err != nil {
@@ -259,7 +266,7 @@ func TestRemoveMissingNothingMissing(t *testing.T) {
 	if n != 0 {
 		t.Errorf("RemoveMissing() = %d, want 0", n)
 	}
-	path, _ := GetLibraryPath()
+	lib.Flush()
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Error("library.json written when nothing changed")
 	}
@@ -268,7 +275,7 @@ func TestRemoveMissingNothingMissing(t *testing.T) {
 func TestRemoveMissingSkipsStaleStatus(t *testing.T) {
 	useTempDataDir(t)
 	lib := DefaultLibrary()
-	lib.AddGame(&GameEntry{GameID: "discs", Discs: []GameDisc{{File: "a"}, {File: "b"}, {File: "c"}}})
+	lib.AddGame(GameEntry{GameID: "discs", Discs: []GameDisc{{File: "a"}, {File: "b"}, {File: "c"}}})
 
 	// The statuses no longer match the library: an unknown game, and a
 	// disc count that changed since the check
@@ -282,7 +289,7 @@ func TestRemoveMissingSkipsStaleStatus(t *testing.T) {
 	if n != 0 {
 		t.Errorf("RemoveMissing() = %d, want 0", n)
 	}
-	if got := len(lib.GetGame("discs").Discs); got != 3 {
+	if got := len(lib.data.Games["discs"].Discs); got != 3 {
 		t.Errorf("discs = %d, want 3 untouched", got)
 	}
 }

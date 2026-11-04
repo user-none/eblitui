@@ -16,6 +16,16 @@ func useTempDataDir(t *testing.T) {
 	t.Setenv("APPDATA", dir)
 }
 
+// loadPersistedLibrary returns a library that saves to the data directory
+func loadPersistedLibrary(t *testing.T) *Library {
+	t.Helper()
+	lib, err := LoadLibrary()
+	if err != nil {
+		t.Fatalf("LoadLibrary: %v", err)
+	}
+	return lib
+}
+
 // loadSavedLibrary reads library.json back from the data directory
 func loadSavedLibrary(t *testing.T) *Library {
 	t.Helper()
@@ -24,7 +34,7 @@ func loadSavedLibrary(t *testing.T) *Library {
 		t.Fatalf("GetLibraryPath: %v", err)
 	}
 	lib := &Library{}
-	if err := ReadJSON(path, lib); err != nil {
+	if err := ReadJSON(path, &lib.data); err != nil {
 		t.Fatalf("ReadJSON library: %v", err)
 	}
 	return lib
@@ -103,25 +113,26 @@ func TestLoadRemovedGamesSanitizes(t *testing.T) {
 
 func TestRemoveGamesMovesUserData(t *testing.T) {
 	useTempDataDir(t)
-	lib := DefaultLibrary()
-	lib.AddGame(&GameEntry{GameID: "aaaa", File: "/roms/a.sms", ConsoleID: 7, Favorite: true, PlayTimeSeconds: 120, LastPlayed: 50, Added: 10})
-	lib.AddGame(&GameEntry{
+	lib := loadPersistedLibrary(t)
+	lib.AddGame(GameEntry{GameID: "aaaa", File: "/roms/a.sms", ConsoleID: 7, Favorite: true, PlayTimeSeconds: 120, LastPlayed: 50, Added: 10})
+	lib.AddGame(GameEntry{
 		GameID:       "T-1",
 		Discs:        []GameDisc{{Index: 0, File: "/roms/d1.chd"}, {Index: 1, File: "/roms/d2.chd"}},
 		SelectedDisc: 1,
 	})
-	lib.AddGame(&GameEntry{GameID: "keep", File: "/roms/k.sms"})
+	lib.AddGame(GameEntry{GameID: "keep", File: "/roms/k.sms"})
 
 	if err := lib.RemoveGames("aaaa", "T-1", "unknown"); err != nil {
 		t.Fatalf("RemoveGames: %v", err)
 	}
 
-	if lib.GameCount() != 1 || lib.GetGame("keep") == nil {
-		t.Errorf("library games = %v, want only keep", lib.Games)
+	if lib.GameCount() != 1 || !lib.HasGame("keep") {
+		t.Errorf("library games = %v, want only keep", lib.data.Games)
 	}
+	lib.Flush()
 	saved := loadSavedLibrary(t)
-	if len(saved.Games) != 1 || saved.Games["keep"] == nil {
-		t.Errorf("saved library games = %v, want only keep", saved.Games)
+	if len(saved.data.Games) != 1 || saved.data.Games["keep"] == nil {
+		t.Errorf("saved library games = %v, want only keep", saved.data.Games)
 	}
 
 	removed, err := LoadRemovedGames()
@@ -147,8 +158,8 @@ func TestRemoveGamesMovesUserData(t *testing.T) {
 func TestRemoveGamesKeepsEarlierRemovals(t *testing.T) {
 	useTempDataDir(t)
 	lib := DefaultLibrary()
-	lib.AddGame(&GameEntry{GameID: "a", File: "/roms/a.sms"})
-	lib.AddGame(&GameEntry{GameID: "b", File: "/roms/b.sms"})
+	lib.AddGame(GameEntry{GameID: "a", File: "/roms/a.sms"})
+	lib.AddGame(GameEntry{GameID: "b", File: "/roms/b.sms"})
 
 	if err := lib.RemoveGames("a"); err != nil {
 		t.Fatalf("RemoveGames a: %v", err)
@@ -170,12 +181,12 @@ func TestRemoveGamesOverwritesCorruptRemovedFile(t *testing.T) {
 	useTempDataDir(t)
 	writeCorruptRemoved(t)
 	lib := DefaultLibrary()
-	lib.AddGame(&GameEntry{GameID: "a", File: "/roms/a.sms"})
+	lib.AddGame(GameEntry{GameID: "a", File: "/roms/a.sms"})
 
 	if err := lib.RemoveGames("a"); err != nil {
 		t.Fatalf("RemoveGames: %v", err)
 	}
-	if lib.GetGame("a") != nil {
+	if lib.HasGame("a") {
 		t.Error("game still in library")
 	}
 	path, err := GetRemovedGamesPath()
@@ -200,10 +211,10 @@ func TestDropRestoredGames(t *testing.T) {
 		t.Fatalf("SaveRemovedGames: %v", err)
 	}
 	lib := DefaultLibrary()
-	lib.AddGame(&GameEntry{GameID: "back", File: "/roms/back.sms"})
+	lib.AddGame(GameEntry{GameID: "back", File: "/roms/back.sms"})
 
-	if err := DropRestoredGames(lib); err != nil {
-		t.Fatalf("DropRestoredGames: %v", err)
+	if err := lib.dropRestoredGames(); err != nil {
+		t.Fatalf("dropRestoredGames: %v", err)
 	}
 
 	removed, err := LoadRemovedGames()

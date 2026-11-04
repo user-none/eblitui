@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -81,7 +82,7 @@ type GameplayManager struct {
 
 	// Auto-save state
 	autoSaveInterval time.Duration
-	autoSaving       bool
+	autoSaving       atomic.Bool // set while the auto-save goroutine writes
 	autoSaveWg       sync.WaitGroup
 
 	// Rumble. rumbleSource supplies the .erumble files (nil when none);
@@ -229,11 +230,14 @@ func (gm *GameplayManager) Launch(gameID string, resume bool, discIndex int) boo
 	// Rebuild input mappings from current config (settings may have changed)
 	gm.mappings = buildPlayerMappings(gm.systemInfo, &gm.config.Input)
 
-	game := gm.library.GetGame(gameID)
-	if game == nil {
+	// currentGame is gameplay's own copy of the entry; changes to the stored
+	// entry go through the library
+	entry, ok := gm.library.Game(gameID)
+	if !ok {
 		gm.notification.ShowDefault("Game not found")
 		return false
 	}
+	game := &entry
 
 	// Create emulator
 	emu := gm.factory.CreateEmulator()
@@ -279,6 +283,7 @@ func (gm *GameplayManager) Launch(gameID string, resume bool, discIndex int) boo
 		gm.disc = disc
 		emu.SetDisc(disc)
 		// Persist the chosen disc so it is remembered next launch.
+		gm.library.SetSelectedDisc(gameID, idx)
 		game.SelectedDisc = idx
 	} else {
 		data, _, lerr := romloader.Load(game.File, gm.systemInfo.Extensions)
@@ -401,8 +406,7 @@ func (gm *GameplayManager) Launch(gameID string, resume bool, discIndex int) boo
 	}
 
 	// Update library entry
-	game.LastPlayed = time.Now().Unix()
-	storage.SaveLibrary(gm.library)
+	gm.library.SetLastPlayed(gameID, time.Now().Unix())
 
 	// Create rewind buffer if enabled
 	if gm.config.Rewind.Enabled && gm.saveStater != nil && gm.systemInfo.SerializeSize > 0 {
@@ -736,7 +740,7 @@ func (gm *GameplayManager) Update() (pauseMenuOpened bool, err error) {
 
 	// Check for cached auto-save state from emu goroutine → write to disk
 	gm.autoSaveStateMu.Lock()
-	if gm.autoSaveReady && !gm.autoSaving {
+	if gm.autoSaveReady && !gm.autoSaving.Load() {
 		state := gm.autoSaveState
 		gm.autoSaveReady = false
 		gm.autoSaveStateMu.Unlock()
@@ -1010,7 +1014,7 @@ func (gm *GameplayManager) handleSaveStateKeys() {
 // triggerAutoSave saves the emulator state to disk.
 // When the goroutine is paused, serializes fresh. Otherwise uses cached state.
 func (gm *GameplayManager) triggerAutoSave() {
-	if gm.emulator == nil || gm.currentGame == nil || gm.autoSaving {
+	if gm.emulator == nil || gm.currentGame == nil || gm.autoSaving.Load() {
 		return
 	}
 
@@ -1040,22 +1044,29 @@ func (gm *GameplayManager) triggerAutoSave() {
 		return
 	}
 
+	gm.updatePlayTime()
 	gm.writeAutoSave(state)
 }
 
 // writeAutoSave writes pre-serialized state data to disk asynchronously.
+// The goroutine only writes the file: the path is resolved before it
+// starts, so a game launched while it is still writing cannot change
+// where it writes.
 func (gm *GameplayManager) writeAutoSave(state []byte) {
-	gm.autoSaving = true
+	path, err := gm.saveStateManager.ResumePath()
+	if err != nil {
+		log.Printf("Auto-save failed: %v", err)
+		return
+	}
+	gm.autoSaving.Store(true)
 	gm.autoSaveWg.Add(1)
 	go func() {
 		defer gm.autoSaveWg.Done()
-		defer func() { gm.autoSaving = false }()
+		defer gm.autoSaving.Store(false)
 
-		if err := gm.saveStateManager.SaveResumeData(state); err != nil {
+		if err := storage.AtomicWriteFile(path, state); err != nil {
 			log.Printf("Auto-save failed: %v", err)
 		}
-
-		gm.updatePlayTime()
 	}()
 }
 
@@ -1084,11 +1095,11 @@ func (gm *GameplayManager) updatePlayTime() {
 
 	// Only update if there's actual play time
 	if totalSession > 0 {
+		gm.library.AddPlayTime(gm.currentGame.GameID, totalSession)
 		gm.currentGame.PlayTimeSeconds += totalSession
 		gm.playTime.sessionSeconds = 0
 		if gm.playTime.tracking {
 			gm.playTime.trackStart = time.Now().Unix()
 		}
-		storage.SaveLibrary(gm.library)
 	}
 }

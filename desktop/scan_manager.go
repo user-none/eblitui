@@ -5,7 +5,6 @@ package desktop
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/desktop/scanner"
@@ -68,9 +67,9 @@ func (sm *ScanManager) IsScanning() bool {
 func (sm *ScanManager) Start() {
 	// Create scanner with current library data
 	sm.activeScanner = scanner.NewScanner(
-		sm.library.ScanDirectories,
-		sm.library.ExcludedPaths,
-		sm.existingGames(),
+		sm.library.ScanDirectories(),
+		sm.library.ExcludedPaths(),
+		sm.library.ScanBase(),
 		sm.extensions,
 		sm.defaultConsoleID,
 		sm.disc,
@@ -83,26 +82,6 @@ func (sm *ScanManager) Start() {
 
 	// Start scanner in background
 	go sm.activeScanner.Run()
-}
-
-// existingGames returns the entries whose user data a scan keeps: the
-// library's games, plus removed games not in the library so a scan that
-// finds one again restores it
-func (sm *ScanManager) existingGames() map[string]*storage.GameEntry {
-	removed, err := storage.LoadRemovedGames()
-	if err != nil {
-		log.Printf("Failed to load removed games: %v", err)
-		return sm.library.Games
-	}
-
-	existing := make(map[string]*storage.GameEntry, len(sm.library.Games)+len(removed.Games))
-	for key, game := range removed.Games {
-		existing[key] = game
-	}
-	for key, game := range sm.library.Games {
-		existing[key] = game
-	}
-	return existing
 }
 
 // Update polls for scan progress and completion.
@@ -142,15 +121,7 @@ func (sm *ScanManager) Update() {
 
 // handleComplete processes scan results
 func (sm *ScanManager) handleComplete(result scanner.ScanResult) {
-	newGames := mergeScannedGames(sm.library, sm.activeScanner.Games())
-
-	// Save updated library, then drop restored games from the removed
-	// games so their user data is never only in removed.json
-	if err := storage.SaveLibrary(sm.library); err != nil {
-		log.Printf("Failed to save library: %v", err)
-	} else if err := storage.DropRestoredGames(sm.library); err != nil {
-		log.Printf("Failed to update removed games: %v", err)
-	}
+	newGames := sm.library.MergeScanned(sm.activeScanner.Games())
 
 	// Prepare notification message
 	var msg string
@@ -181,18 +152,4 @@ func gameCount(n int) string {
 		return "1 game"
 	}
 	return fmt.Sprintf("%d games", n)
-}
-
-// mergeScannedGames puts the games a scan found into the library,
-// replacing the entries they update, and returns how many were not in the
-// library before. Restored removed games count as new.
-func mergeScannedGames(library *storage.Library, found map[string]*storage.GameEntry) int {
-	newGames := 0
-	for key, game := range found {
-		if library.Games[key] == nil {
-			newGames++
-		}
-		library.Games[key] = game
-	}
-	return newGames
 }

@@ -116,15 +116,15 @@ func TestCleanManagerRemovesMissing(t *testing.T) {
 	useTempDataDir(t)
 	roms := t.TempDir()
 	lib := storage.DefaultLibrary()
-	lib.AddGame(&storage.GameEntry{GameID: "present", File: touchROM(t, roms, "a.sms")})
-	lib.AddGame(&storage.GameEntry{GameID: "lost", File: filepath.Join(roms, "gone.sms"), PlayTimeSeconds: 40})
+	lib.AddGame(storage.GameEntry{GameID: "present", File: touchROM(t, roms, "a.sms")})
+	lib.AddGame(storage.GameEntry{GameID: "lost", File: filepath.Join(roms, "gone.sms"), PlayTimeSeconds: 40})
 	cm := NewCleanManager(lib, screens.NewScanProgressScreen(), nil, nil)
 
 	if msg := runClean(t, cm, false); msg != "Cleaned 1 game" {
 		t.Errorf("message = %q, want Cleaned 1 game", msg)
 	}
-	if lib.GetGame("lost") != nil || lib.GetGame("present") == nil {
-		t.Errorf("library games = %v, want only present", lib.Games)
+	if lib.HasGame("lost") || !lib.HasGame("present") {
+		t.Errorf("library games = %v, want only present", lib.Games())
 	}
 	removed, err := storage.LoadRemovedGames()
 	if err != nil {
@@ -138,13 +138,13 @@ func TestCleanManagerRemovesMissing(t *testing.T) {
 func TestCleanManagerCancelChangesNothing(t *testing.T) {
 	useTempDataDir(t)
 	lib := storage.DefaultLibrary()
-	lib.AddGame(&storage.GameEntry{GameID: "lost", File: filepath.Join(t.TempDir(), "gone.sms")})
+	lib.AddGame(storage.GameEntry{GameID: "lost", File: filepath.Join(t.TempDir(), "gone.sms")})
 	cm := NewCleanManager(lib, screens.NewScanProgressScreen(), nil, nil)
 
 	if msg := runClean(t, cm, true); msg != "" {
 		t.Errorf("message = %q, want none", msg)
 	}
-	if lib.GetGame("lost") == nil {
+	if !lib.HasGame("lost") {
 		t.Error("cancelled clean removed a game")
 	}
 }
@@ -154,7 +154,7 @@ func TestCleanManagerCancelChangesNothing(t *testing.T) {
 func artworkLibrary(t *testing.T, names ...string) (*storage.Library, string) {
 	t.Helper()
 	lib := storage.DefaultLibrary()
-	lib.AddGame(&storage.GameEntry{GameID: "T-1", File: touchROM(t, t.TempDir(), "a.cue")})
+	lib.AddGame(storage.GameEntry{GameID: "T-1", File: touchROM(t, t.TempDir(), "a.cue")})
 	dir, err := storage.GetGameArtworkDir("T-1")
 	if err != nil {
 		t.Fatal(err)

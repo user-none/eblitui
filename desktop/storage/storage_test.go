@@ -205,14 +205,14 @@ func TestDefaultConfig(t *testing.T) {
 func TestDefaultLibrary(t *testing.T) {
 	lib := DefaultLibrary()
 
-	if lib.Version != libraryVersion {
-		t.Errorf("expected version %d, got %d", libraryVersion, lib.Version)
+	if lib.data.Version != libraryVersion {
+		t.Errorf("expected version %d, got %d", libraryVersion, lib.data.Version)
 	}
-	if len(lib.Games) != 0 {
-		t.Errorf("expected empty games map, got %d entries", len(lib.Games))
+	if len(lib.data.Games) != 0 {
+		t.Errorf("expected empty games map, got %d entries", len(lib.data.Games))
 	}
-	if len(lib.ScanDirectories) != 0 {
-		t.Errorf("expected empty scan directories, got %d entries", len(lib.ScanDirectories))
+	if len(lib.data.ScanDirectories) != 0 {
+		t.Errorf("expected empty scan directories, got %d entries", len(lib.data.ScanDirectories))
 	}
 }
 
@@ -262,7 +262,7 @@ func TestAtomicWriteJSON(t *testing.T) {
 func TestLibraryAddGetGame(t *testing.T) {
 	lib := DefaultLibrary()
 
-	game := &GameEntry{
+	game := GameEntry{
 		GameID: "12345678",
 		File:   "/path/to/game.sms",
 	}
@@ -275,8 +275,8 @@ func TestLibraryAddGetGame(t *testing.T) {
 	}
 
 	// Get game
-	retrieved := lib.GetGame("12345678")
-	if retrieved == nil {
+	retrieved, ok := lib.Game("12345678")
+	if !ok {
 		t.Fatal("game not found")
 	}
 	if retrieved.File != "/path/to/game.sms" {
@@ -287,13 +287,13 @@ func TestLibraryAddGetGame(t *testing.T) {
 func TestLibrarySorting(t *testing.T) {
 	lib := DefaultLibrary()
 
-	lib.AddGame(&GameEntry{GameID: "1", PlayTimeSeconds: 100, LastPlayed: 1000})
-	lib.AddGame(&GameEntry{GameID: "2", PlayTimeSeconds: 500, LastPlayed: 500})
-	lib.AddGame(&GameEntry{GameID: "3", PlayTimeSeconds: 300, LastPlayed: 2000})
+	lib.AddGame(GameEntry{GameID: "1", PlayTimeSeconds: 100, LastPlayed: 1000})
+	lib.AddGame(GameEntry{GameID: "2", PlayTimeSeconds: 500, LastPlayed: 500})
+	lib.AddGame(GameEntry{GameID: "3", PlayTimeSeconds: 300, LastPlayed: 2000})
 	info := testInfo(map[string][2]string{"1": {"Zelda"}, "2": {"Alex Kidd"}, "3": {"Sonic"}})
 
 	// Sort by title
-	games := lib.GetGamesSorted("title", false, info)
+	games := lib.GamesSorted("title", false, info)
 	if len(games) != 3 {
 		t.Fatalf("expected 3 games, got %d", len(games))
 	}
@@ -305,13 +305,13 @@ func TestLibrarySorting(t *testing.T) {
 	}
 
 	// Sort by play time
-	games = lib.GetGamesSorted("playTime", false, info)
+	games = lib.GamesSorted("playTime", false, info)
 	if games[0].GameID != "2" { // Most played (500s)
 		t.Errorf("expected most played Alex Kidd (2), got %s", games[0].GameID)
 	}
 
 	// Sort by last played
-	games = lib.GetGamesSorted("lastPlayed", false, info)
+	games = lib.GamesSorted("lastPlayed", false, info)
 	if games[0].GameID != "3" { // Most recent (2000)
 		t.Errorf("expected most recent Sonic (3), got %s", games[0].GameID)
 	}
@@ -322,7 +322,7 @@ func TestLibrarySortingStability(t *testing.T) {
 	// order is the same on every sort.
 	lib := DefaultLibrary()
 	for _, id := range []string{"C", "A", "B", "D", "E"} {
-		lib.AddGame(&GameEntry{GameID: id})
+		lib.AddGame(GameEntry{GameID: id})
 	}
 	info := testInfo(map[string][2]string{
 		"C": {"Zillion", "jp"},
@@ -336,7 +336,7 @@ func TestLibrarySortingStability(t *testing.T) {
 	// game ID breaks the jp tie.
 	want := []string{"E", "B", "C", "D", "A"}
 	for i := 0; i < 5; i++ {
-		games := lib.GetGamesSorted("title", false, info)
+		games := lib.GamesSorted("title", false, info)
 		if len(games) != len(want) {
 			t.Fatalf("expected %d games, got %d", len(want), len(games))
 		}
@@ -349,13 +349,13 @@ func TestLibrarySortingStability(t *testing.T) {
 
 	// Equal lastPlayed and playTime fall back to title order
 	lib2 := DefaultLibrary()
-	lib2.AddGame(&GameEntry{GameID: "C", LastPlayed: 1000, PlayTimeSeconds: 100})
-	lib2.AddGame(&GameEntry{GameID: "A", LastPlayed: 1000, PlayTimeSeconds: 100})
-	lib2.AddGame(&GameEntry{GameID: "B", LastPlayed: 1000, PlayTimeSeconds: 100})
+	lib2.AddGame(GameEntry{GameID: "C", LastPlayed: 1000, PlayTimeSeconds: 100})
+	lib2.AddGame(GameEntry{GameID: "A", LastPlayed: 1000, PlayTimeSeconds: 100})
+	lib2.AddGame(GameEntry{GameID: "B", LastPlayed: 1000, PlayTimeSeconds: 100})
 	info2 := testInfo(map[string][2]string{"C": {"Game C"}, "A": {"Game A"}, "B": {"Game B"}})
 	for _, sortBy := range []string{"lastPlayed", "playTime"} {
 		for i := 0; i < 5; i++ {
-			games := lib2.GetGamesSorted(sortBy, false, info2)
+			games := lib2.GamesSorted(sortBy, false, info2)
 			for j, id := range []string{"A", "B", "C"} {
 				if games[j].GameID != id {
 					t.Errorf("%s iteration %d: position %d is %s, want %s", sortBy, i, j, games[j].GameID, id)
@@ -368,19 +368,19 @@ func TestLibrarySortingStability(t *testing.T) {
 func TestLibraryFavoritesFilter(t *testing.T) {
 	lib := DefaultLibrary()
 
-	lib.AddGame(&GameEntry{GameID: "1", Favorite: true})
-	lib.AddGame(&GameEntry{GameID: "2", Favorite: false})
-	lib.AddGame(&GameEntry{GameID: "3", Favorite: true})
+	lib.AddGame(GameEntry{GameID: "1", Favorite: true})
+	lib.AddGame(GameEntry{GameID: "2", Favorite: false})
+	lib.AddGame(GameEntry{GameID: "3", Favorite: true})
 	info := testInfo(nil)
 
 	// All games
-	all := lib.GetGamesSorted("title", false, info)
+	all := lib.GamesSorted("title", false, info)
 	if len(all) != 3 {
 		t.Errorf("expected 3 games, got %d", len(all))
 	}
 
 	// Favorites only
-	favorites := lib.GetGamesSorted("title", true, info)
+	favorites := lib.GamesSorted("title", true, info)
 	if len(favorites) != 2 {
 		t.Errorf("expected 2 favorites, got %d", len(favorites))
 	}
@@ -392,20 +392,20 @@ func TestLibraryScanDirectories(t *testing.T) {
 	lib.AddScanDirectory("/path/to/roms", true)
 	lib.AddScanDirectory("/path/to/more", false)
 
-	if len(lib.ScanDirectories) != 2 {
-		t.Errorf("expected 2 directories, got %d", len(lib.ScanDirectories))
+	if len(lib.ScanDirectories()) != 2 {
+		t.Errorf("expected 2 directories, got %d", len(lib.ScanDirectories()))
 	}
 
 	// Add duplicate (should be ignored)
 	lib.AddScanDirectory("/path/to/roms", false)
-	if len(lib.ScanDirectories) != 2 {
-		t.Errorf("duplicate should be ignored, got %d directories", len(lib.ScanDirectories))
+	if len(lib.ScanDirectories()) != 2 {
+		t.Errorf("duplicate should be ignored, got %d directories", len(lib.ScanDirectories()))
 	}
 
 	// Remove directory
 	lib.RemoveScanDirectory("/path/to/roms")
-	if len(lib.ScanDirectories) != 1 {
-		t.Errorf("expected 1 directory after removal, got %d", len(lib.ScanDirectories))
+	if len(lib.ScanDirectories()) != 1 {
+		t.Errorf("expected 1 directory after removal, got %d", len(lib.ScanDirectories()))
 	}
 }
 
@@ -415,8 +415,8 @@ func TestLibraryExcludedPaths(t *testing.T) {
 	lib.AddExcludedPath("/path/to/exclude")
 	lib.AddExcludedPath("/path/to/file.sms")
 
-	if len(lib.ExcludedPaths) != 2 {
-		t.Errorf("expected 2 excluded paths, got %d", len(lib.ExcludedPaths))
+	if len(lib.ExcludedPaths()) != 2 {
+		t.Errorf("expected 2 excluded paths, got %d", len(lib.ExcludedPaths()))
 	}
 
 	// Test path exclusion
@@ -432,8 +432,8 @@ func TestLibraryExcludedPaths(t *testing.T) {
 
 	// Remove excluded path
 	lib.RemoveExcludedPath("/path/to/exclude")
-	if len(lib.ExcludedPaths) != 1 {
-		t.Errorf("expected 1 excluded path after removal, got %d", len(lib.ExcludedPaths))
+	if len(lib.ExcludedPaths()) != 1 {
+		t.Errorf("expected 1 excluded path after removal, got %d", len(lib.ExcludedPaths()))
 	}
 }
 
@@ -491,32 +491,33 @@ func TestApplyMissingDefaultsPreservesZeroVolume(t *testing.T) {
 	}
 }
 
-func TestUpdatePlayTime(t *testing.T) {
+func TestAddPlayTimeSetLastPlayed(t *testing.T) {
 	lib := DefaultLibrary()
 
-	lib.AddGame(&GameEntry{
+	lib.AddGame(GameEntry{
 		GameID:          "12345678",
 		PlayTimeSeconds: 100,
 	})
 
-	lib.UpdatePlayTime("12345678", 50)
+	lib.AddPlayTime("12345678", 50)
+	lib.SetLastPlayed("12345678", 1700000000)
 
-	game := lib.GetGame("12345678")
+	game, _ := lib.Game("12345678")
 	if game.PlayTimeSeconds != 150 {
 		t.Errorf("expected 150 seconds, got %d", game.PlayTimeSeconds)
 	}
-	if game.LastPlayed == 0 {
-		t.Error("LastPlayed should be updated")
+	if game.LastPlayed != 1700000000 {
+		t.Errorf("expected LastPlayed 1700000000, got %d", game.LastPlayed)
 	}
 }
 
-func TestGetGamesSortedFiltered(t *testing.T) {
+func TestGamesSortedFiltered(t *testing.T) {
 	lib := DefaultLibrary()
 
-	lib.AddGame(&GameEntry{GameID: "1"})
-	lib.AddGame(&GameEntry{GameID: "2"})
-	lib.AddGame(&GameEntry{GameID: "3"})
-	lib.AddGame(&GameEntry{GameID: "4", Favorite: true})
+	lib.AddGame(GameEntry{GameID: "1"})
+	lib.AddGame(GameEntry{GameID: "2"})
+	lib.AddGame(GameEntry{GameID: "3"})
+	lib.AddGame(GameEntry{GameID: "4", Favorite: true})
 	info := testInfo(map[string][2]string{
 		"1": {"Sonic the Hedgehog", "us"},
 		"2": {"Alex Kidd in Miracle World", "eu"},
@@ -525,13 +526,13 @@ func TestGetGamesSortedFiltered(t *testing.T) {
 	})
 
 	// Empty search returns all games
-	games := lib.GetGamesSortedFiltered("title", false, "", info)
+	games := lib.GamesSortedFiltered("title", false, "", info)
 	if len(games) != 4 {
 		t.Errorf("expected 4 games with empty search, got %d", len(games))
 	}
 
 	// Case-insensitive search by title
-	games = lib.GetGamesSortedFiltered("title", false, "sonic", info)
+	games = lib.GamesSortedFiltered("title", false, "sonic", info)
 	if len(games) != 1 {
 		t.Errorf("expected 1 game matching 'sonic', got %d", len(games))
 	}
@@ -540,19 +541,19 @@ func TestGetGamesSortedFiltered(t *testing.T) {
 	}
 
 	// Case-insensitive search - uppercase
-	games = lib.GetGamesSortedFiltered("title", false, "SONIC", info)
+	games = lib.GamesSortedFiltered("title", false, "SONIC", info)
 	if len(games) != 1 {
 		t.Errorf("expected 1 game matching 'SONIC', got %d", len(games))
 	}
 
 	// Search matches the title only, not the region
-	games = lib.GetGamesSortedFiltered("title", false, "eu", info)
+	games = lib.GamesSortedFiltered("title", false, "eu", info)
 	if len(games) != 0 {
 		t.Errorf("expected 0 games matching 'eu', got %d", len(games))
 	}
 
 	// Partial match - "world" only matches "Miracle World"
-	games = lib.GetGamesSortedFiltered("title", false, "world", info)
+	games = lib.GamesSortedFiltered("title", false, "world", info)
 	if len(games) != 1 {
 		t.Errorf("expected 1 game matching 'world', got %d", len(games))
 	}
@@ -561,7 +562,7 @@ func TestGetGamesSortedFiltered(t *testing.T) {
 	}
 
 	// Combined with favorites filter
-	games = lib.GetGamesSortedFiltered("title", true, "", info)
+	games = lib.GamesSortedFiltered("title", true, "", info)
 	if len(games) != 1 {
 		t.Errorf("expected 1 favorite game, got %d", len(games))
 	}
@@ -570,19 +571,19 @@ func TestGetGamesSortedFiltered(t *testing.T) {
 	}
 
 	// Combined filters: favorites + search
-	games = lib.GetGamesSortedFiltered("title", true, "wonder", info)
+	games = lib.GamesSortedFiltered("title", true, "wonder", info)
 	if len(games) != 1 {
 		t.Errorf("expected 1 game matching 'wonder' and favorite, got %d", len(games))
 	}
 
 	// No matches
-	games = lib.GetGamesSortedFiltered("title", false, "nonexistent", info)
+	games = lib.GamesSortedFiltered("title", false, "nonexistent", info)
 	if len(games) != 0 {
 		t.Errorf("expected 0 games matching 'nonexistent', got %d", len(games))
 	}
 
 	// No matches with favorites filter
-	games = lib.GetGamesSortedFiltered("title", true, "sonic", info)
+	games = lib.GamesSortedFiltered("title", true, "sonic", info)
 	if len(games) != 0 {
 		t.Errorf("expected 0 games matching 'sonic' with favorites filter, got %d", len(games))
 	}
@@ -705,14 +706,14 @@ func TestReadJSONNonexistentFile(t *testing.T) {
 }
 
 func TestLibraryNilGamesMap(t *testing.T) {
-	lib := &Library{Games: nil}
+	lib := &Library{data: libraryData{Games: nil}}
 
 	// These should not panic with nil Games map
 	if lib.GameCount() != 0 {
 		t.Errorf("expected 0, got %d", lib.GameCount())
 	}
-	if g := lib.GetGame("test"); g != nil {
-		t.Errorf("expected nil, got %+v", g)
+	if g, ok := lib.Game("test"); ok {
+		t.Errorf("expected no game, got %+v", g)
 	}
 
 	// No matching game, so nothing is read or written
@@ -720,38 +721,25 @@ func TestLibraryNilGamesMap(t *testing.T) {
 		t.Errorf("RemoveGames: %v", err)
 	}
 
-	games := lib.GetGamesSorted("title", false, testInfo(nil))
-	if games != nil {
-		t.Errorf("expected nil, got %v", games)
+	games := lib.GamesSorted("title", false, testInfo(nil))
+	if len(games) != 0 {
+		t.Errorf("expected no games, got %v", games)
 	}
 
-	filtered := lib.GetGamesSortedFiltered("title", false, "test", testInfo(nil))
-	if filtered != nil {
-		t.Errorf("expected nil, got %v", filtered)
-	}
-}
-
-func TestLibraryAddGameInitializesMap(t *testing.T) {
-	lib := &Library{Games: nil}
-
-	lib.AddGame(&GameEntry{GameID: "abc"})
-
-	if lib.Games == nil {
-		t.Fatal("Games map should be initialized")
-	}
-	if lib.GameCount() != 1 {
-		t.Errorf("expected 1, got %d", lib.GameCount())
+	filtered := lib.GamesSortedFiltered("title", false, "test", testInfo(nil))
+	if len(filtered) != 0 {
+		t.Errorf("expected no games, got %v", filtered)
 	}
 }
 
 func TestLibraryDefaultSortOrder(t *testing.T) {
 	lib := DefaultLibrary()
-	lib.AddGame(&GameEntry{GameID: "1"})
-	lib.AddGame(&GameEntry{GameID: "2"})
+	lib.AddGame(GameEntry{GameID: "1"})
+	lib.AddGame(GameEntry{GameID: "2"})
 	info := testInfo(map[string][2]string{"1": {"Zelda"}, "2": {"Alex Kidd"}})
 
 	// "unknown_sort" should fall back to title sort
-	games := lib.GetGamesSorted("unknown_sort", false, info)
+	games := lib.GamesSorted("unknown_sort", false, info)
 	if len(games) != 2 {
 		t.Fatalf("expected 2 games, got %d", len(games))
 	}
@@ -780,14 +768,15 @@ func TestMigrateLibraryVersion2(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadLibrary: %v", err)
 	}
-	if lib.Version != libraryVersion {
-		t.Errorf("version = %d, want %d", lib.Version, libraryVersion)
+	if lib.data.Version != libraryVersion {
+		t.Errorf("version = %d, want %d", lib.data.Version, libraryVersion)
 	}
-	g := lib.GetGame("T-14310G")
-	if g == nil || g.GameID != "T-14310G" || !g.Favorite || g.PlayTimeSeconds != 60 || len(g.Discs) != 1 {
+	g, ok := lib.Game("T-14310G")
+	if !ok || g.GameID != "T-14310G" || !g.Favorite || g.PlayTimeSeconds != 60 || len(g.Discs) != 1 {
 		t.Fatalf("migrated entry = %+v", g)
 	}
 
+	lib.Flush()
 	saved, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
@@ -806,12 +795,12 @@ func TestMigrateLibraryCurrentVersion(t *testing.T) {
 	// A current library is left alone and no library file is read. Older
 	// versions read the library file for save slots, so they are not
 	// exercised here.
-	lib := &Library{Version: libraryVersion}
-	if migrateLibrary(lib, "") {
+	data := &libraryData{Version: libraryVersion}
+	if migrateLibrary(data, "") {
 		t.Error("current library reported as migrated")
 	}
-	if lib.Version != libraryVersion {
-		t.Errorf("expected version %d, got %d", libraryVersion, lib.Version)
+	if data.Version != libraryVersion {
+		t.Errorf("expected version %d, got %d", libraryVersion, data.Version)
 	}
 }
 
@@ -946,28 +935,32 @@ func TestLegacySaveSlots(t *testing.T) {
 	}
 }
 
-func TestUpdatePlayTimeNonexistentGame(t *testing.T) {
+func TestAddPlayTimeNonexistentGame(t *testing.T) {
 	lib := DefaultLibrary()
 
 	// Should not panic for non-existent game
-	lib.UpdatePlayTime("nonexistent", 100)
+	lib.AddPlayTime("nonexistent", 100)
+	lib.SetLastPlayed("nonexistent", 100)
+	if lib.GameCount() != 0 {
+		t.Errorf("expected 0 games, got %d", lib.GameCount())
+	}
 }
 
 func TestAddScanDirectoryRecursiveFlag(t *testing.T) {
 	lib := DefaultLibrary()
 
 	lib.AddScanDirectory("/roms", true)
-	if len(lib.ScanDirectories) != 1 {
-		t.Fatalf("expected 1 directory, got %d", len(lib.ScanDirectories))
+	if len(lib.ScanDirectories()) != 1 {
+		t.Fatalf("expected 1 directory, got %d", len(lib.ScanDirectories()))
 	}
-	if !lib.ScanDirectories[0].Recursive {
+	if !lib.ScanDirectories()[0].Recursive {
 		t.Error("expected recursive to be true")
 	}
 
 	// Adding same path again should be ignored regardless of recursive flag
 	lib.AddScanDirectory("/roms", false)
-	if len(lib.ScanDirectories) != 1 {
-		t.Errorf("duplicate should be ignored, got %d", len(lib.ScanDirectories))
+	if len(lib.ScanDirectories()) != 1 {
+		t.Errorf("duplicate should be ignored, got %d", len(lib.ScanDirectories()))
 	}
 }
 
@@ -977,8 +970,8 @@ func TestRemoveScanDirectoryNotFound(t *testing.T) {
 
 	// Removing non-existent should not affect list
 	lib.RemoveScanDirectory("/nonexistent")
-	if len(lib.ScanDirectories) != 1 {
-		t.Errorf("expected 1 directory, got %d", len(lib.ScanDirectories))
+	if len(lib.ScanDirectories()) != 1 {
+		t.Errorf("expected 1 directory, got %d", len(lib.ScanDirectories()))
 	}
 }
 
@@ -988,8 +981,8 @@ func TestRemoveExcludedPathNotFound(t *testing.T) {
 
 	// Removing non-existent should not affect list
 	lib.RemoveExcludedPath("/nonexistent")
-	if len(lib.ExcludedPaths) != 1 {
-		t.Errorf("expected 1 excluded path, got %d", len(lib.ExcludedPaths))
+	if len(lib.ExcludedPaths()) != 1 {
+		t.Errorf("expected 1 excluded path, got %d", len(lib.ExcludedPaths()))
 	}
 }
 
@@ -998,7 +991,7 @@ func TestAddExcludedPathDuplicate(t *testing.T) {
 	lib.AddExcludedPath("/exclude")
 	lib.AddExcludedPath("/exclude")
 
-	if len(lib.ExcludedPaths) != 1 {
-		t.Errorf("duplicate should be ignored, got %d", len(lib.ExcludedPaths))
+	if len(lib.ExcludedPaths()) != 1 {
+		t.Errorf("duplicate should be ignored, got %d", len(lib.ExcludedPaths()))
 	}
 }

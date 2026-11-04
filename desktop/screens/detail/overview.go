@@ -280,8 +280,10 @@ func (o *OverviewSection) Build(focus types.FocusManager) *widget.Container {
 				label = "> " + label
 			}
 			handler := func(args *widget.ButtonClickedEventArgs) {
+				// o.game is the detail screen's own copy; keep it in step
+				// with the library
+				o.library.SetSelectedDisc(o.game.GameID, i)
 				o.game.SelectedDisc = i
-				storage.SaveLibrary(o.library)
 				o.callback.RequestRebuild()
 			}
 			var btn *widget.Button

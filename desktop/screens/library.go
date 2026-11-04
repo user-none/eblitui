@@ -43,7 +43,7 @@ type LibraryScreen struct {
 
 	// UI state
 	selectedIndex int
-	games         []*storage.GameEntry
+	games         []storage.GameEntry // copies, rebuilt from the library on each build
 
 	// Selection and scroll preservation (independent for each view)
 	iconSelectedID string  // Game ID of selected game in icon view
@@ -130,7 +130,7 @@ func (s *LibraryScreen) Build() *widget.Container {
 	s.ClearFocusButtons()
 
 	// Get sorted and filtered games
-	s.games = s.library.GetGamesSortedFiltered(s.config.Library.SortBy, s.config.Library.FavoritesFilter, s.searchText, s.callback.GameInfo)
+	s.games = s.library.GamesSortedFiltered(s.config.Library.SortBy, s.config.Library.FavoritesFilter, s.searchText, s.callback.GameInfo)
 
 	// Check if library is truly empty vs filtered empty
 	totalGames := s.library.GameCount()
@@ -501,9 +501,9 @@ func (s *LibraryScreen) buildListView() widget.PreferredSizeLocateableWidget {
 	)
 
 	// Add a row for each game
-	for i, game := range s.games {
+	for i := range s.games {
 		idx := i
-		g := game
+		g := &s.games[i]
 
 		// Track selected index for scroll centering
 		if g.GameID == s.listSelectedID {
@@ -704,8 +704,8 @@ func (s *LibraryScreen) buildIconView(container *widget.Container) int {
 	)
 
 	// Add game cards with calculated dimensions
-	for _, game := range s.games {
-		card := s.buildGameCardSized(game, cardWidth, cardHeight, artHeight)
+	for i := range s.games {
+		card := s.buildGameCardSized(&s.games[i], cardWidth, cardHeight, artHeight)
 		gridContainer.AddChild(card)
 	}
 
@@ -857,7 +857,7 @@ func (s *LibraryScreen) visibleAnchorIndex() int {
 // below and above (anchor row, +1, -1, +2, -2, ...). This prioritizes the
 // on-screen cards when returning to a scrolled position without assuming the
 // user will next scroll up or down. Every game is emitted exactly once.
-func orderCRCsVisibleFirst(games []*storage.GameEntry, columns, anchorIdx int) []string {
+func orderCRCsVisibleFirst(games []storage.GameEntry, columns, anchorIdx int) []string {
 	n := len(games)
 	ordered := make([]string, 0, n)
 	if n == 0 {
@@ -1052,7 +1052,7 @@ func (s *LibraryScreen) SaveScrollPosition() {
 
 // OnEnter is called when entering the library screen
 func (s *LibraryScreen) OnEnter() {
-	s.games = s.library.GetGamesSortedFiltered(s.config.Library.SortBy, s.config.Library.FavoritesFilter, s.searchText, s.callback.GameInfo)
+	s.games = s.library.GamesSortedFiltered(s.config.Library.SortBy, s.config.Library.FavoritesFilter, s.searchText, s.callback.GameInfo)
 	s.SetDefaultFocus("toolbar-icon") // Only sets if no pending focus (preserves game selection when returning)
 }
 

@@ -177,20 +177,19 @@ func (m *SaveStateManager) SaveResume(saveStater coreif.SaveStater) error {
 	return storage.AtomicWriteFile(statePath, state)
 }
 
-// SaveResumeData saves pre-serialized state data as the resume state.
-// Used by the auto-save system where the emu goroutine caches serialized state.
-func (m *SaveStateManager) SaveResumeData(state []byte) error {
+// ResumePath returns the path of the current game's resume state. The
+// auto-save resolves it before writing in the background, so the write
+// is not affected by a game change made meanwhile.
+func (m *SaveStateManager) ResumePath() (string, error) {
 	if m.gameID == "" {
-		return fmt.Errorf("no game set")
+		return "", fmt.Errorf("no game set")
 	}
 
 	saveDir, err := storage.GetGameSaveDir(m.gameID)
 	if err != nil {
-		return err
+		return "", err
 	}
-
-	statePath := filepath.Join(saveDir, "resume.state")
-	return storage.AtomicWriteFile(statePath, state)
+	return filepath.Join(saveDir, "resume.state"), nil
 }
 
 // LoadResume loads the resume state

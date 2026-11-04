@@ -92,7 +92,6 @@ type App struct {
 	errorFile        string
 	errorPath        string
 	configLoadFailed bool // True if config.json failed to load (don't overwrite on exit)
-	libraryLoaded    bool // True once library.json loaded and validated (safe to save on exit)
 
 	// SDL GUIDs already given a baseline mapping attempt this session
 	padMappingTried map[string]bool
@@ -351,7 +350,7 @@ func (a *App) loadLibrary() bool {
 	}
 	a.library = library
 
-	if errs := storage.ValidateLibrary(library); len(errs) > 0 {
+	if errs := library.Validate(); len(errs) > 0 {
 		a.showStartupError("library.json", libraryPath, errs)
 		return false
 	}
@@ -394,8 +393,6 @@ func (a *App) showStartupError(file, path string, details []string) {
 // finishStartup completes startup once config and library are loaded and
 // valid. It runs once, from newApp or from an error screen handler.
 func (a *App) finishStartup() {
-	a.libraryLoaded = true
-
 	a.gameplay = NewGameplayManager(
 		a.factory,
 		a.systemInfo,
@@ -1454,13 +1451,12 @@ func (a *App) handleDeleteAndContinue() {
 			return
 		}
 	case "library.json":
-		if err := storage.DeleteLibrary(); err != nil {
-			log.Printf("Failed to delete library: %v", err)
+		library, err := storage.ResetLibrary()
+		if err != nil {
+			log.Printf("Failed to reset library: %v", err)
+			return
 		}
-		a.library = storage.DefaultLibrary()
-		if err := storage.SaveLibrary(a.library); err != nil {
-			log.Printf("Failed to save library: %v", err)
-		}
+		a.library = library
 	}
 
 	a.finishStartup()
@@ -1486,15 +1482,10 @@ func (a *App) handleResetAndContinue() {
 }
 
 // handleLibraryResetAndContinue handles the reset and continue button for
-// library validation errors. It corrects invalid library-level fields, saves,
-// and proceeds to the library screen.
+// library validation errors. It corrects invalid library-level fields,
+// which saves them, and proceeds to the library screen.
 func (a *App) handleLibraryResetAndContinue() {
-	storage.CorrectLibrary(a.library)
-
-	if err := storage.SaveLibrary(a.library); err != nil {
-		log.Printf("Failed to save corrected library: %v", err)
-	}
-
+	a.library.Correct()
 	a.finishStartup()
 }
 
@@ -1503,14 +1494,10 @@ func (a *App) SaveAndClose() {
 	// Capture current window state before saving
 	a.saveWindowState()
 
-	// Don't overwrite a library that failed to load or validate, or replace
-	// it with the placeholder used by the error screen
-	if !a.libraryLoaded {
-		return
-	}
-	if err := storage.SaveLibrary(a.library); err != nil {
-		log.Printf("Failed to save library: %v", err)
-	}
+	// The library saves itself after each change; wait for those writes.
+	// A library that failed to validate, or the error screen's placeholder,
+	// is never changed and so never written.
+	a.library.Flush()
 }
 
 // preloadConfiguredShaders loads all shaders referenced in config

@@ -94,7 +94,12 @@ func NewDetailScreen(callback ScreenCallback, library *storage.Library, achievem
 
 // SetGame sets the game to display
 func (s *DetailScreen) SetGame(gameID string) {
-	s.game = s.library.GetGame(gameID)
+	// The screen and its sections share one copy of the entry; changes go
+	// through the library and refreshGame brings the copy in step
+	s.game = nil
+	if game, ok := s.library.Game(gameID); ok {
+		s.game = &game
+	}
 	s.files = storage.FileStatus{}
 	s.art.Release()
 	s.artSizeRead = false
@@ -223,8 +228,8 @@ func (s *DetailScreen) Build() *widget.Container {
 		favText = "Remove from Favorites"
 	}
 	favButton := widgets.TextButton(favText, style.ButtonPaddingMedium, func(args *widget.ButtonClickedEventArgs) {
-		s.game.Favorite = !s.game.Favorite
-		storage.SaveLibrary(s.library)
+		s.library.ToggleFavorite(s.game.GameID)
+		s.refreshGame()
 		s.callback.RequestRebuild()
 	})
 	s.RegisterFocusButton("favorite", favButton)
@@ -413,6 +418,14 @@ func (s *DetailScreen) actionKey() string {
 	return "remove"
 }
 
+// refreshGame updates the screen's copy of the game from the library in
+// place, so the sections sharing it see the change
+func (s *DetailScreen) refreshGame() {
+	if game, ok := s.library.Game(s.game.GameID); ok {
+		*s.game = game
+	}
+}
+
 // removeGame moves the game out of the library into the removed games and
 // returns to the library
 func (s *DetailScreen) removeGame() {
@@ -427,10 +440,8 @@ func (s *DetailScreen) removeGame() {
 // removeSelectedDisc removes the selected disc, whose file is missing, and
 // refreshes the screen for the remaining discs
 func (s *DetailScreen) removeSelectedDisc() {
-	s.game.RemoveDisc(s.game.SelectedDiscIndex())
-	if err := storage.SaveLibrary(s.library); err != nil {
-		log.Printf("Failed to save library: %v", err)
-	}
+	s.library.RemoveDisc(s.game.GameID, s.game.SelectedDiscIndex())
+	s.refreshGame()
 	s.files = s.game.CheckFiles()
 	s.overviewPage.SetGame(s.game, s.files)
 	s.SetPendingFocus(s.actionKey())

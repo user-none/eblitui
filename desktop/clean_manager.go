@@ -44,18 +44,10 @@ func NewCleanManager(library *storage.Library, screen *screens.ScanProgressScree
 
 // Start begins checking the library's files in the background
 func (cm *CleanManager) Start() {
-	// The check works on copies so it never reads the library entries
-	// while the UI thread may change them
-	games := make(map[string]storage.GameEntry, len(cm.library.Games))
-	for key, game := range cm.library.Games {
-		entry := *game
-		entry.Discs = append([]storage.GameDisc(nil), game.Discs...)
-		games[key] = entry
-	}
-
+	// Games returns copies, so the check never reads the library itself
 	cm.active = newCleanRun()
 	cm.screen.SetScanner(cm.active)
-	go cm.active.check(games)
+	go cm.active.check(cm.library.Games())
 }
 
 // Update polls for clean progress and completion.

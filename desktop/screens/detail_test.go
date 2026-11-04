@@ -112,7 +112,7 @@ func TestDetailPagesShareGameSettings(t *testing.T) {
 		t.Fatalf("SaveGameSettings: %v", err)
 	}
 	lib := storage.DefaultLibrary()
-	lib.AddGame(&storage.GameEntry{GameID: "aaaa", File: filepath.Join(t.TempDir(), "a.cue")})
+	lib.AddGame(storage.GameEntry{GameID: "aaaa", File: filepath.Join(t.TempDir(), "a.cue")})
 	upscale := coreif.CoreOption{Key: "upscale", Type: coreif.CoreOptionSelect, Values: []string{"1x", "2x"}, Category: coreif.CoreOptionCategoryVideo, PerGame: true}
 	s := NewDetailScreen(&pagesCallback{}, lib, nil, 0, cheats.SystemSaturn, nil, true, []coreif.CoreOption{upscale})
 	s.SetGame("aaaa")
@@ -199,7 +199,7 @@ func TestDetailFrontSize(t *testing.T) {
 	useTempDataDir(t)
 	lib := storage.DefaultLibrary()
 	for _, id := range []string{"T-1", "T-2", "T-3"} {
-		lib.AddGame(&storage.GameEntry{GameID: id})
+		lib.AddGame(storage.GameEntry{GameID: id})
 	}
 	writeArtPNG(t, "T-1", "boxart.webp", 300, 300)
 	dir, err := storage.GetGameArtworkDir("T-3")
@@ -288,7 +288,7 @@ func TestDetailRemoveMissingDisc(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	lib := storage.DefaultLibrary()
-	lib.AddGame(&storage.GameEntry{
+	lib.AddGame(storage.GameEntry{
 		GameID:       "T-1",
 		Discs:        []storage.GameDisc{{Index: 0, File: present}, {Index: 1, File: filepath.Join(roms, "d2.chd")}},
 		SelectedDisc: 1,
@@ -303,7 +303,7 @@ func TestDetailRemoveMissingDisc(t *testing.T) {
 
 	s.removeSelectedDisc()
 
-	g := lib.GetGame("T-1")
+	g, _ := lib.Game("T-1")
 	if len(g.Discs) != 1 || g.Discs[0].File != present || g.SelectedDisc != 0 {
 		t.Errorf("game after remove = %+v, want only the present disc selected", g)
 	}
@@ -318,7 +318,7 @@ func TestDetailRemoveMissingDisc(t *testing.T) {
 func TestDetailRemoveGameMovesToRemoved(t *testing.T) {
 	useTempDataDir(t)
 	lib := storage.DefaultLibrary()
-	lib.AddGame(&storage.GameEntry{GameID: "aaaa", File: filepath.Join(t.TempDir(), "gone.sms"), PlayTimeSeconds: 60})
+	lib.AddGame(storage.GameEntry{GameID: "aaaa", File: filepath.Join(t.TempDir(), "gone.sms"), PlayTimeSeconds: 60})
 	cb := &removeCallback{}
 	s := NewDetailScreen(cb, lib, nil, 0, 0, nil, true, nil)
 	s.SetGame("aaaa")
@@ -329,7 +329,7 @@ func TestDetailRemoveGameMovesToRemoved(t *testing.T) {
 
 	s.removeGame()
 
-	if lib.GetGame("aaaa") != nil {
+	if lib.HasGame("aaaa") {
 		t.Error("game still in library")
 	}
 	if cb.toLibrary != 1 {
@@ -351,7 +351,7 @@ func TestDetailPlayableCartridge(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	lib := storage.DefaultLibrary()
-	lib.AddGame(&storage.GameEntry{GameID: "aaaa", File: path})
+	lib.AddGame(storage.GameEntry{GameID: "aaaa", File: path})
 	s := NewDetailScreen(nil, lib, nil, 0, 0, nil, true, nil)
 	s.SetGame("aaaa")
 

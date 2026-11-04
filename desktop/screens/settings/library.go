@@ -75,7 +75,7 @@ func (l *LibrarySection) Build(focus types.FocusManager) *widget.Container {
 	section.AddChild(l.buildFolderList(focus))
 
 	// Track folder count for navigation setup
-	folderCount := len(l.library.ScanDirectories)
+	folderCount := len(l.library.ScanDirectories())
 
 	// Button row across the full width: the actions that add to the library
 	// (Scan Library, Add Folder) on the left, the ones that take away from
@@ -120,15 +120,14 @@ func (l *LibrarySection) Build(focus types.FocusManager) *widget.Container {
 
 	// Remove Folder button - disabled when nothing selected, removes all selected folders
 	removeBtn := widgets.EnabledTextButton("Remove Folder", style.ButtonPaddingMedium, len(l.selectedDirs) > 0, func(args *widget.ButtonClickedEventArgs) {
-		// Collect paths to remove (iterate in reverse to avoid index shifting issues)
-		for idx := len(l.library.ScanDirectories) - 1; idx >= 0; idx-- {
+		// The selection indexes the list as shown, so remove by path
+		dirs := l.library.ScanDirectories()
+		for idx, dir := range dirs {
 			if l.selectedDirs[idx] {
-				path := l.library.ScanDirectories[idx].Path
-				l.library.RemoveScanDirectory(path)
+				l.library.RemoveScanDirectory(dir.Path)
 			}
 		}
 		l.selectedDirs = make(map[int]bool) // Clear selection
-		storage.SaveLibrary(l.library)
 		l.callback.RequestRebuild()
 	})
 	focus.RegisterFocusButton("lib-remove", removeBtn)
@@ -148,7 +147,7 @@ func (l *LibrarySection) Build(focus types.FocusManager) *widget.Container {
 	section.AddChild(l.buildArtworkDownloadRow(focus))
 
 	// Game count, the last row
-	gameCount := len(l.library.Games)
+	gameCount := l.library.GameCount()
 	countText := "No games in library"
 	if gameCount == 1 {
 		countText = "1 game in library"
@@ -241,7 +240,8 @@ func (l *LibrarySection) buildFolderList(focus types.FocusManager) widget.Prefer
 		)),
 	)
 
-	if len(l.library.ScanDirectories) == 0 {
+	dirs := l.library.ScanDirectories()
+	if len(dirs) == 0 {
 		// Empty state - centered text
 		emptyContainer := widget.NewContainer(
 			widget.ContainerOpts.Layout(widget.NewAnchorLayout()),
@@ -261,7 +261,7 @@ func (l *LibrarySection) buildFolderList(focus types.FocusManager) widget.Prefer
 		emptyContainer.AddChild(emptyLabel)
 		listContent.AddChild(emptyContainer)
 	} else {
-		for i, dir := range l.library.ScanDirectories {
+		for i, dir := range dirs {
 			idx := i
 			dirPath := dir.Path
 			displayPath, wasTruncated := style.TruncateStart(dirPath, maxPathChars)
@@ -374,7 +374,6 @@ func (l *LibrarySection) onAddDirectoryClick(focus types.FocusManager) {
 		Mode:  filebrowser.ModeFolder,
 		OnSelect: func(path string) {
 			l.library.AddScanDirectory(path, true) // recursive=true by default
-			storage.SaveLibrary(l.library)
 			// Trigger auto-scan after adding directory
 			l.pendingScan = true
 		},

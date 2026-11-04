@@ -24,12 +24,6 @@ func CleanGameKey(key string) string {
 	return cleaned
 }
 
-// SanitizeLibraryEntries silently corrects invalid game entry fields.
-// This runs on load so invalid values never reach the UI or emulator.
-func SanitizeLibraryEntries(lib *Library) {
-	sanitizeGameEntries(lib.Games)
-}
-
 // SanitizeRemovedGames silently corrects invalid removed game entries the
 // same way as library entries, and clears any files and added time so a
 // restored entry only gets the files a scan finds and is added when found.
@@ -79,22 +73,27 @@ func sanitizeGameEntries(games map[string]*GameEntry) {
 	}
 }
 
-// ValidateLibrary checks library-level fields against valid ranges and returns
+// Validate checks library-level fields against valid ranges and returns
 // human-readable error descriptions. An empty slice means the library is valid.
-func ValidateLibrary(lib *Library) []string {
+func (lib *Library) Validate() []string {
+	lib.mu.RLock()
+	defer lib.mu.RUnlock()
 	var errors []string
 
-	if lib.Version != libraryVersion {
-		errors = append(errors, fmt.Sprintf("version: %d (valid: %d)", lib.Version, libraryVersion))
+	if lib.data.Version != libraryVersion {
+		errors = append(errors, fmt.Sprintf("version: %d (valid: %d)", lib.data.Version, libraryVersion))
 	}
 
 	return errors
 }
 
-// CorrectLibrary resets any invalid library-level fields to their defaults.
-func CorrectLibrary(lib *Library) *Library {
-	if lib.Version != libraryVersion {
-		lib.Version = libraryVersion
+// Correct resets any invalid library-level fields to their defaults.
+func (lib *Library) Correct() {
+	lib.mu.Lock()
+	changed := lib.data.Version != libraryVersion
+	lib.data.Version = libraryVersion
+	lib.mu.Unlock()
+	if changed {
+		lib.changed()
 	}
-	return lib
 }

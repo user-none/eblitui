@@ -7,10 +7,14 @@ import (
 	"errors"
 	"log"
 	"os"
+	"sync"
 )
 
 // removedVersion is the current removed.json format version
 const removedVersion = 1
+
+// removedMu serializes every read-modify-write of removed.json.
+var removedMu sync.Mutex
 
 // LoadRemovedGames loads removed.json. If the file doesn't exist or can't
 // be read, it returns an empty set, and the next save overwrites the
@@ -48,16 +52,21 @@ func SaveRemovedGames(removed *RemovedGames) error {
 }
 
 // RemoveGames moves the games with the given keys from the library to
-// removed.json and saves both files. removed.json is written first so a
-// failed write never loses a game's user data. Keys not in the library
-// are ignored.
+// removed.json. removed.json is written before the games leave the
+// library, so a failed write never loses a game's user data. Keys not in
+// the library are ignored.
 func (lib *Library) RemoveGames(keys ...string) error {
-	var games []*GameEntry
+	removedMu.Lock()
+	defer removedMu.Unlock()
+
+	lib.mu.RLock()
+	var games []GameEntry
 	for _, key := range keys {
-		if game := lib.GetGame(key); game != nil {
-			games = append(games, game)
+		if game, ok := lib.data.Games[key]; ok {
+			games = append(games, game.clone())
 		}
 	}
+	lib.mu.RUnlock()
 	if len(games) == 0 {
 		return nil
 	}
@@ -67,7 +76,7 @@ func (lib *Library) RemoveGames(keys ...string) error {
 		return err
 	}
 	for _, game := range games {
-		kept := *game
+		kept := game
 		stripRemoved(&kept)
 		removed.Games[kept.GameID] = &kept
 	}
@@ -75,16 +84,75 @@ func (lib *Library) RemoveGames(keys ...string) error {
 		return err
 	}
 
+	lib.mu.Lock()
 	for _, game := range games {
-		delete(lib.Games, game.GameID)
+		delete(lib.data.Games, game.GameID)
 	}
-	return SaveLibrary(lib)
+	lib.mu.Unlock()
+	lib.changed()
+	return nil
 }
 
-// DropRestoredGames removes every game that is back in the library from
-// removed.json. A scan calls it after restoring games and saving the
-// library.
-func DropRestoredGames(lib *Library) error {
+// ScanBase returns copies of the entries whose user data a scan keeps: the
+// library's games, plus removed games not in the library so a scan that
+// finds one again restores it.
+func (lib *Library) ScanBase() map[string]*GameEntry {
+	removedMu.Lock()
+	removed, err := LoadRemovedGames()
+	removedMu.Unlock()
+	if err != nil {
+		log.Printf("Failed to load removed games: %v", err)
+		removed = &RemovedGames{Games: map[string]*GameEntry{}}
+	}
+
+	lib.mu.RLock()
+	defer lib.mu.RUnlock()
+	existing := make(map[string]*GameEntry, len(lib.data.Games)+len(removed.Games))
+	for key, game := range removed.Games {
+		existing[key] = game
+	}
+	for key, game := range lib.data.Games {
+		c := game.clone()
+		existing[key] = &c
+	}
+	return existing
+}
+
+// MergeScanned puts the games a scan found into the library, replacing the
+// entries they update, and returns how many were not in the library
+// before. Restored removed games count as new. Once the library holding
+// them is on disk, restored games are dropped from removed.json in the
+// background, so their user data is never only in memory.
+func (lib *Library) MergeScanned(found map[string]*GameEntry) int {
+	lib.mu.Lock()
+	newGames := 0
+	for key, game := range found {
+		if _, ok := lib.data.Games[key]; !ok {
+			newGames++
+		}
+		c := game.clone()
+		lib.data.Games[key] = &c
+	}
+	lib.mu.Unlock()
+	lib.changed()
+
+	if lib.saver != nil {
+		go func() {
+			lib.Flush()
+			if err := lib.dropRestoredGames(); err != nil {
+				log.Printf("Failed to update removed games: %v", err)
+			}
+		}()
+	}
+	return newGames
+}
+
+// dropRestoredGames removes every game that is back in the library from
+// removed.json.
+func (lib *Library) dropRestoredGames() error {
+	removedMu.Lock()
+	defer removedMu.Unlock()
+
 	removed, err := LoadRemovedGames()
 	if err != nil {
 		return err
@@ -92,7 +160,7 @@ func DropRestoredGames(lib *Library) error {
 
 	changed := false
 	for key := range removed.Games {
-		if lib.GetGame(key) != nil {
+		if lib.HasGame(key) {
 			delete(removed.Games, key)
 			changed = true
 		}
