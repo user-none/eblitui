@@ -99,6 +99,12 @@ var regionCodes = map[string]string{
 	"Brazil":    "br",
 }
 
+// RegionCodeFor returns the code of one metadata region, such as "eu" for
+// "Germany", or "" when the region has no code.
+func RegionCodeFor(region string) string {
+	return regionCodes[region]
+}
+
 // RegionCode returns one region code for a list of regions: USA first,
 // then Japan, then any European region, then the first region that has a
 // code. Returns "" when none of the regions has a code.

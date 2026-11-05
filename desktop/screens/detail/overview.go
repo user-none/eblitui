@@ -252,11 +252,7 @@ func (o *OverviewSection) Build(focus types.FocusManager) *widget.Container {
 	case len(o.game.Discs) > 0:
 		metadataContainer.AddChild(buildMetadataRow("Game ID", o.game.GameID, valueWidth))
 	}
-	region := strings.ToUpper(metadata.RegionCode(md.Regions))
-	if region == "" {
-		region = "Unknown"
-	}
-	metadataContainer.AddChild(buildMetadataRow("Region", region, valueWidth))
+	metadataContainer.AddChild(buildMetadataRow("Region", regionText(md.Regions), valueWidth))
 
 	// Discs section (multi-disc disc-based games only). Each disc is a
 	// focusable selection button; activating it only marks that disc as
@@ -438,6 +434,30 @@ func playersText(maxPlayers int, coop bool) string {
 		s += ", co-op"
 	}
 	return s
+}
+
+// regionText returns the Region row's value: which of USA, Europe and Japan
+// a game's metadata regions include, upper case in that order, such as
+// "US, EU". A game with none of the three shows its one region code as
+// before, or "Unknown" when it has none.
+func regionText(regions []string) string {
+	has := make(map[string]bool, len(regions))
+	for _, r := range regions {
+		has[metadata.RegionCodeFor(r)] = true
+	}
+	var codes []string
+	for _, c := range []string{"us", "eu", "jp"} {
+		if has[c] {
+			codes = append(codes, strings.ToUpper(c))
+		}
+	}
+	if len(codes) == 0 {
+		if c := metadata.RegionCode(regions); c != "" {
+			return strings.ToUpper(c)
+		}
+		return "Unknown"
+	}
+	return strings.Join(codes, ", ")
 }
 
 // buildMetadataRow creates a metadata row with background, label on left, value on right

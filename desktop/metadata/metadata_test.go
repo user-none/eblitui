@@ -117,6 +117,16 @@ func TestRegionCode(t *testing.T) {
 	}
 }
 
+func TestRegionCodeFor(t *testing.T) {
+	for region, want := range map[string]string{
+		"USA": "us", "Germany": "eu", "Australia": "eu", "Japan": "jp", "Korea": "kr", "Nowhere": "", "": "",
+	} {
+		if got := RegionCodeFor(region); got != want {
+			t.Errorf("RegionCodeFor(%q) = %q, want %q", region, got, want)
+		}
+	}
+}
+
 func TestFormatReleaseDate(t *testing.T) {
 	tests := []struct {
 		in, want string

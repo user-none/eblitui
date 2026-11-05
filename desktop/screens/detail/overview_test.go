@@ -11,6 +11,27 @@ import (
 	"github.com/user-none/go-rcheevos"
 )
 
+func TestRegionText(t *testing.T) {
+	for _, tc := range []struct {
+		regions []string
+		want    string
+	}{
+		{[]string{"USA"}, "US"},
+		{[]string{"Europe", "USA"}, "US, EU"},
+		{[]string{"Europe", "Germany", "France"}, "EU"},
+		{[]string{"USA", "Brazil", "Europe", "Korea"}, "US, EU"},
+		{[]string{"Japan", "USA", "Europe"}, "US, EU, JP"},
+		{[]string{"Japan", "Atlantis"}, "JP"},
+		{[]string{"Korea"}, "KR"},
+		{[]string{"Atlantis"}, "Unknown"},
+		{nil, "Unknown"},
+	} {
+		if got := regionText(tc.regions); got != tc.want {
+			t.Errorf("regionText(%v) = %q, want %q", tc.regions, got, tc.want)
+		}
+	}
+}
+
 func TestOverviewFinishLoadDropsRetiredLookup(t *testing.T) {
 	cb := &fakeCallback{}
 	o := NewOverviewSection(cb, storage.DefaultLibrary(), nil, 0, func() int { return 800 })
