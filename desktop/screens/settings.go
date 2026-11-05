@@ -44,13 +44,13 @@ type SettingsScreen struct {
 func NewSettingsScreen(callback ScreenCallback, library *storage.Library, config *storage.Config, achievementMgr *achievements.Manager, serializeSize int, systemInfo coreif.SystemInfo, appName, appVersion string, appIcon []byte, updates types.Updates) *SettingsScreen {
 	s := &SettingsScreen{
 		callback:   callback,
-		library:    settings.NewLibrarySection(callback, library, config),
 		appearance: settings.NewAppearanceSection(callback, config),
 		audio:      settings.NewAudioSection(callback, config, systemInfo),
 		rewind:     settings.NewRewindSection(callback, config, serializeSize),
 		input:      settings.NewInputSection(callback, config, systemInfo),
 		about:      settings.NewAboutSection(callback, config, updates, appName, appVersion, appIcon),
 	}
+	s.library = settings.NewLibrarySection(callback, library, config, s.contentWidth)
 	s.video = settings.NewVideoSection(callback, config, systemInfo, s.contentWidth)
 	s.retroAchievements = settings.NewRetroAchievementsSection(callback, config, achievementMgr, s.contentWidth)
 	s.InitBase()

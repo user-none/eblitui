@@ -25,8 +25,8 @@ const (
 
 // ArtworkSection is the detail Artwork page: the game's artwork on disk in
 // a carousel, one image at a time with a slice of its neighbors beside it,
-// in artwork.LocalFiles order (front, back, discs, flyers, posters) with
-// artwork.Caption labels. The page shows what is on disk; the library's
+// in artwork.LocalFiles order for the box art region (covers, discs,
+// flyers, posters) with artwork.Caption labels. The page shows what is on disk; the library's
 // artwork download setting only limits what scans download. The images
 // load in the background the first time the page is built for a game.
 type ArtworkSection struct {
@@ -35,6 +35,7 @@ type ArtworkSection struct {
 	files    []artwork.LocalFile // the game's artwork files, listed when the load starts
 	listed   bool                // files was listed for game
 	images   *ImageLoader        // one texture per entry of files
+	region   string              // box art region files is ordered for
 
 	index      int       // image shown, among the images the game has
 	from       int       // image the last move started at
@@ -76,6 +77,17 @@ func (s *ArtworkSection) Release() {
 	s.files, s.listed = nil, false
 }
 
+// SetBoxArtRegion sets the box art region, a storage.BoxArtRegion*
+// setting, the images are ordered for. When it changes, the textures are
+// freed so the next Build lists and loads them in the new order.
+func (s *ArtworkSection) SetBoxArtRegion(region string) {
+	if region == s.region {
+		return
+	}
+	s.region = region
+	s.Release()
+}
+
 // NavZones returns the page's navigation zones from the last Build
 func (s *ArtworkSection) NavZones() []string {
 	return s.zones
@@ -94,7 +106,7 @@ func (s *ArtworkSection) load() {
 		log.Printf("Artwork %s: %v", s.game.GameID, err)
 		return
 	}
-	s.files = artwork.LocalFiles(dir)
+	s.files = artwork.LocalFiles(dir, s.region)
 	paths := make([]string, len(s.files))
 	for i, f := range s.files {
 		paths[i] = f.Path

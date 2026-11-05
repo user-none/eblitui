@@ -17,22 +17,25 @@ import (
 )
 
 // LibrarySection manages ROM folder settings and the library's artwork
-// download setting
+// settings
 type LibrarySection struct {
 	callback     types.ScreenCallback
 	library      *storage.Library
 	config       *storage.Config
 	selectedDirs map[int]bool
 	pendingScan  bool
+	contentWidth func() int
 }
 
-// NewLibrarySection creates a new library section
-func NewLibrarySection(callback types.ScreenCallback, library *storage.Library, config *storage.Config) *LibrarySection {
+// NewLibrarySection creates a new library section. contentWidth returns the
+// width of the section content, used to fit the setting descriptions.
+func NewLibrarySection(callback types.ScreenCallback, library *storage.Library, config *storage.Config, contentWidth func() int) *LibrarySection {
 	return &LibrarySection{
 		callback:     callback,
 		library:      library,
 		config:       config,
 		selectedDirs: make(map[int]bool),
+		contentWidth: contentWidth,
 	}
 }
 
@@ -63,8 +66,9 @@ func (l *LibrarySection) Build(focus types.FocusManager) *widget.Container {
 		widget.ContainerOpts.Layout(widget.NewGridLayout(
 			widget.GridLayoutOpts.Columns(1),
 			// Row stretch: folders header=no, list=YES, buttons=no,
-			// options header=no, artwork download=no, count=no
-			widget.GridLayoutOpts.Stretch([]bool{true}, []bool{false, true, false, false, false, false}),
+			// artwork header=no, artwork download=no, box art region=no,
+			// count=no
+			widget.GridLayoutOpts.Stretch([]bool{true}, []bool{false, true, false, false, false, false, false}),
 			widget.GridLayoutOpts.Spacing(0, style.ButtonPaddingMedium),
 		)),
 	)
@@ -142,9 +146,10 @@ func (l *LibrarySection) Build(focus types.FocusManager) *widget.Container {
 
 	section.AddChild(buttonRow)
 
-	// Library options
-	section.AddChild(widgets.SectionHeader("Options"))
+	// Artwork settings
+	section.AddChild(widgets.SectionHeader("Artwork"))
 	section.AddChild(l.buildArtworkDownloadRow(focus))
+	section.AddChild(l.buildBoxArtRegionRow(focus))
 
 	// Game count, the last row
 	gameCount := l.library.GameCount()
@@ -175,26 +180,39 @@ func (l *LibrarySection) Build(focus types.FocusManager) *widget.Container {
 // scan downloads. It only limits downloads; artwork already on disk is
 // kept and shown.
 func (l *LibrarySection) buildArtworkDownloadRow(focus types.FocusManager) *widget.Container {
+	return l.buildCycleRow(focus, "lib-artwork-download", "Artwork download", "Downloaded during library scan",
+		storage.ValidArtworkDownloads, l.config.Values().Library.ArtworkDownload, storage.ArtworkDownloadDisplayName, l.config.SetArtworkDownload)
+}
+
+// buildBoxArtRegionRow creates the row choosing the region whose artwork is
+// shown first for a game released in more than one region
+func (l *LibrarySection) buildBoxArtRegionRow(focus types.FocusManager) *widget.Container {
+	return l.buildCycleRow(focus, "lib-boxart-region", "Preferred box art region", "Which region's cover the library shows when a game has more than one",
+		storage.ValidBoxArtRegions, l.config.Values().Library.BoxArtRegion, storage.BoxArtRegionDisplayName, l.config.SetBoxArtRegion)
+}
+
+// buildCycleRow creates a settings row with a label, a description cut to
+// fit the row, and a cycle button over options starting at current.
+// displayName labels an option and set stores the option chosen.
+func (l *LibrarySection) buildCycleRow(focus types.FocusManager, key, label, description string, options []string, current string, displayName func(string) string, set func(string)) *widget.Container {
 	row := widgets.SettingsRow(2)
 
-	label := widget.NewText(
-		widget.TextOpts.Text("Artwork download", style.FontFace(), style.Text),
-		widget.TextOpts.Position(widget.TextPositionStart, widget.TextPositionCenter),
-	)
-	row.AddChild(label)
-
-	options := storage.ValidArtworkDownloads
-	current := l.config.Values().Library.ArtworkDownload
 	minWidth := 0
 	for _, o := range options {
-		minWidth = max(minWidth, widgets.ButtonWidth(storage.ArtworkDownloadDisplayName(o)))
+		minWidth = max(minWidth, widgets.ButtonWidth(displayName(o)))
 	}
-	cycleBtn := widgets.CycleButton(storage.ArtworkDownloadDisplayName(current), slices.Index(options, current), len(options), minWidth, func(next int) {
-		l.config.SetArtworkDownload(options[next])
-		focus.SetPendingFocus("lib-artwork-download")
+	maxW := float64(widgets.SettingsRowLabelWidth(l.contentWidth(), minWidth))
+	face := *style.FontFace()
+	displayLabel, _ := style.TruncateToWidth(label, face, maxW)
+	displayDesc, _ := style.TruncateToWidth(description, face, maxW)
+	row.AddChild(widgets.LabeledText(displayLabel, displayDesc))
+
+	cycleBtn := widgets.CycleButton(displayName(current), slices.Index(options, current), len(options), minWidth, func(next int) {
+		set(options[next])
+		focus.SetPendingFocus(key)
 		l.callback.RequestRebuild()
 	})
-	focus.RegisterFocusButton("lib-artwork-download", cycleBtn)
+	focus.RegisterFocusButton(key, cycleBtn)
 	row.AddChild(cycleBtn)
 
 	return row
@@ -215,8 +233,8 @@ func (l *LibrarySection) setupNavigation(focus types.FocusManager, folderCount i
 	buttonKeys := []string{"lib-scan", "lib-add", "lib-remove", "lib-clean"}
 	focus.RegisterNavZone("lib-buttons", types.NavZoneHorizontal, buttonKeys, 0)
 
-	// Artwork download row
-	focus.RegisterNavZone("lib-artwork", types.NavZoneVertical, []string{"lib-artwork-download"}, 0)
+	// Artwork rows
+	focus.RegisterNavZone("lib-artwork", types.NavZoneVertical, []string{"lib-artwork-download", "lib-boxart-region"}, 0)
 
 	// Transitions
 	if folderCount > 0 {

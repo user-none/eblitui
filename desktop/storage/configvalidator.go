@@ -66,6 +66,9 @@ func detectPresentKeys(jsonBytes []byte) map[string]bool {
 			if _, ok := library["artworkDownload"]; ok {
 				present["library.artworkDownload"] = true
 			}
+			if _, ok := library["boxArtRegion"]; ok {
+				present["library.boxArtRegion"] = true
+			}
 		}
 	}
 
@@ -128,6 +131,9 @@ func applyMissingDefaults(config *ConfigData, presentKeys map[string]bool) {
 	}
 	if !presentKeys["library.artworkDownload"] {
 		config.Library.ArtworkDownload = defaults.Library.ArtworkDownload
+	}
+	if !presentKeys["library.boxArtRegion"] {
+		config.Library.BoxArtRegion = defaults.Library.BoxArtRegion
 	}
 	if !presentKeys["rewind.bufferSizeMB"] {
 		config.Rewind.BufferSizeMB = defaults.Rewind.BufferSizeMB
@@ -201,6 +207,11 @@ func validateConfig(config *ConfigData, rules ConfigRules) []string {
 	// library.artworkDownload
 	if !slices.Contains(ValidArtworkDownloads, config.Library.ArtworkDownload) {
 		errors = append(errors, fmt.Sprintf("library.artworkDownload: %q (valid: %v)", config.Library.ArtworkDownload, ValidArtworkDownloads))
+	}
+
+	// library.boxArtRegion
+	if !slices.Contains(ValidBoxArtRegions, config.Library.BoxArtRegion) {
+		errors = append(errors, fmt.Sprintf("library.boxArtRegion: %q (valid: %v)", config.Library.BoxArtRegion, ValidBoxArtRegions))
 	}
 
 	// rewind.bufferSizeMB
@@ -404,6 +415,11 @@ func correctConfig(config *ConfigData, rules ConfigRules) *ConfigData {
 	// library.artworkDownload
 	if !slices.Contains(ValidArtworkDownloads, config.Library.ArtworkDownload) {
 		config.Library.ArtworkDownload = defaults.Library.ArtworkDownload
+	}
+
+	// library.boxArtRegion
+	if !slices.Contains(ValidBoxArtRegions, config.Library.BoxArtRegion) {
+		config.Library.BoxArtRegion = defaults.Library.BoxArtRegion
 	}
 
 	// rewind.bufferSizeMB

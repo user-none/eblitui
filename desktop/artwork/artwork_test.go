@@ -363,32 +363,59 @@ func TestSupersededBoxArt(t *testing.T) {
 
 func TestBoxArtPath(t *testing.T) {
 	dir := t.TempDir()
-	if got := BoxArtPath(dir); got != filepath.Join(dir, "boxart.webp") {
+	if got := BoxArtPath(dir, "us"); got != filepath.Join(dir, "boxart.webp") {
 		t.Errorf("none: %s", got)
 	}
 	touch(t, dir, "boxart.png")
-	if got := BoxArtPath(dir); filepath.Base(got) != "boxart.png" {
+	if got := BoxArtPath(dir, "us"); filepath.Base(got) != "boxart.png" {
 		t.Errorf("legacy only: %s", got)
 	}
 	touch(t, dir, "boxart.webp")
-	if got := BoxArtPath(dir); filepath.Base(got) != "boxart.webp" {
+	if got := BoxArtPath(dir, "us"); filepath.Base(got) != "boxart.webp" {
 		t.Errorf("both: %s", got)
 	}
 
-	// Regional fronts: USA, then Japan, then Europe, then any other; a
-	// front with no region comes first
+	// The legacy file is used only when there is no other front
+	dir = t.TempDir()
+	touch(t, dir, "boxart.png", "boxart_eu.webp")
+	if got := BoxArtPath(dir, "us"); filepath.Base(got) != "boxart_eu.webp" {
+		t.Errorf("legacy and regional: %s", got)
+	}
+
+	// With USA preferred: any region before none, then USA, Europe,
+	// Japan, with other regions after those three
 	dir = t.TempDir()
 	steps := []struct{ add, want string }{
-		{"boxart_kr.webp", "boxart_kr.webp"},
-		{"boxart_eu.webp", "boxart_eu.webp"},
-		{"boxart_jp.webp", "boxart_jp.webp"},
-		{"boxart_us.webp", "boxart_us.webp"},
 		{"boxart.webp", "boxart.webp"},
+		{"boxart_kr.webp", "boxart_kr.webp"},
+		{"boxart_jp.webp", "boxart_jp.webp"},
+		{"boxart_eu.webp", "boxart_eu.webp"},
+		{"boxart_us.webp", "boxart_us.webp"},
 	}
 	for _, s := range steps {
 		touch(t, dir, s.add)
-		if got := BoxArtPath(dir); filepath.Base(got) != s.want {
+		if got := BoxArtPath(dir, "us"); filepath.Base(got) != s.want {
 			t.Errorf("after adding %s: %s, want %s", s.add, filepath.Base(got), s.want)
+		}
+	}
+
+	// The preferred region comes first; without it, USA, Europe, Japan
+	for _, tc := range []struct {
+		files     []string
+		preferred string
+		want      string
+	}{
+		{[]string{"boxart_us.webp", "boxart_eu.webp", "boxart_jp.webp"}, "eu", "boxart_eu.webp"},
+		{[]string{"boxart_us.webp", "boxart_eu.webp", "boxart_jp.webp"}, "jp", "boxart_jp.webp"},
+		{[]string{"boxart_us.webp", "boxart_eu.webp"}, "jp", "boxart_us.webp"},
+		{[]string{"boxart_eu.webp", "boxart_jp.webp"}, "us", "boxart_eu.webp"},
+		{[]string{"boxart_jp.webp", "boxart_kr.webp"}, "eu", "boxart_jp.webp"},
+		{[]string{"boxart_jp.webp"}, "eu", "boxart_jp.webp"},
+	} {
+		dir := t.TempDir()
+		touch(t, dir, tc.files...)
+		if got := BoxArtPath(dir, tc.preferred); filepath.Base(got) != tc.want {
+			t.Errorf("%v preferring %s: %s, want %s", tc.files, tc.preferred, filepath.Base(got), tc.want)
 		}
 	}
 }
@@ -397,9 +424,9 @@ func TestLocalFiles(t *testing.T) {
 	dir := t.TempDir()
 	touch(t, dir,
 		"poster.webp", "flyer_b.webp", "flyer_a.webp",
-		"disc_2_eu.webp", "disc_2_us.webp", "disc_1_kr.webp", "disc_1_eu.webp", "disc_1_us.webp", "disc_1_jp.webp",
-		"boxback_eu.webp", "boxback_us.webp",
-		"boxart.png", "boxart.webp",
+		"disc_3.webp", "disc_2_eu.webp", "disc_2_us.webp", "disc_1_kr.webp", "disc_1_eu.webp", "disc_1_us.webp", "disc_1_jp.webp",
+		"boxback.webp", "boxback_jp.webp", "boxback_eu.webp", "boxback_us.webp", "boxart_us.webp", "boxart_eu.webp",
+		"boxart.png",
 		// Not artwork this build shows
 		"notes.txt", "screenshot.webp", "disc_a.webp", "flyer_ab.webp", "flyer_1.webp", "boxart_1.webp",
 		"disc_0.webp", "disc_x_.webp", "boxart.exe", ".hidden.webp")
@@ -407,31 +434,61 @@ func TestLocalFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var got []string
-	for _, f := range LocalFiles(dir) {
-		got = append(got, filepath.Base(f.Path)+"="+Caption(f))
-	}
+	// Covers in front and back pairs and discs grouped, by region with
+	// Europe preferred, then USA, Japan, any other, and no region; the
+	// legacy front is left out when there is another front
 	want := []string{
-		"boxart.webp=Front",
-		"boxback_us.webp=Back (USA)",
+		"boxart_eu.webp=Front (Europe)",
 		"boxback_eu.webp=Back (Europe)",
-		"disc_1_us.webp=Disc 1 (USA)",
-		"disc_1_jp.webp=Disc 1 (Japan)",
+		"boxart_us.webp=Front (USA)",
+		"boxback_us.webp=Back (USA)",
+		"boxback_jp.webp=Back (Japan)",
+		"boxback.webp=Back",
 		"disc_1_eu.webp=Disc 1 (Europe)",
-		"disc_1_kr.webp=Disc 1 (Other)",
-		"disc_2_us.webp=Disc 2 (USA)",
 		"disc_2_eu.webp=Disc 2 (Europe)",
+		"disc_1_us.webp=Disc 1 (USA)",
+		"disc_2_us.webp=Disc 2 (USA)",
+		"disc_1_jp.webp=Disc 1 (Japan)",
+		"disc_1_kr.webp=Disc 1 (Other)",
+		"disc_3.webp=Disc 3",
 		"flyer_a.webp=Flyer A",
 		"flyer_b.webp=Flyer B",
 		"poster.webp=Poster",
 	}
-	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+	if got := localNames(dir, "eu"); strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("LocalFiles =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 
-	if got := LocalFiles(filepath.Join(t.TempDir(), "none")); got != nil {
+	if got := LocalFiles(filepath.Join(t.TempDir(), "none"), "us"); got != nil {
 		t.Errorf("missing directory: %+v", got)
 	}
+}
+
+func TestLocalFilesLegacyBoxArt(t *testing.T) {
+	// The only front: listed after the other covers
+	dir := t.TempDir()
+	touch(t, dir, "boxart.png", "boxback_us.webp", "disc.webp")
+	want := []string{"boxback_us.webp=Back (USA)", "boxart.png=Front", "disc.webp=Disc"}
+	if got := localNames(dir, "us"); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("legacy only front =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+
+	// Left out once there is another front
+	touch(t, dir, "boxart_jp.webp")
+	want = []string{"boxback_us.webp=Back (USA)", "boxart_jp.webp=Front (Japan)", "disc.webp=Disc"}
+	if got := localNames(dir, "us"); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("legacy and regional front =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// localNames returns the base names and captions of LocalFiles(dir,
+// preferred), one "name=caption" per file
+func localNames(dir, preferred string) []string {
+	var out []string
+	for _, f := range LocalFiles(dir, preferred) {
+		out = append(out, filepath.Base(f.Path)+"="+Caption(f))
+	}
+	return out
 }
 
 func TestCaption(t *testing.T) {

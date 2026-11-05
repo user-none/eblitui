@@ -44,6 +44,7 @@ func TestArtworkLoaderCancelAndClearResetsState(t *testing.T) {
 	loader.mu.Unlock()
 	loader.cardWidth = 100
 	loader.artHeight = 75
+	loader.region = "eu"
 
 	loader.CancelAndClear()
 
@@ -52,6 +53,9 @@ func TestArtworkLoaderCancelAndClearResetsState(t *testing.T) {
 	}
 	if loader.artHeight != 0 {
 		t.Errorf("artHeight should be 0, got %d", loader.artHeight)
+	}
+	if loader.region != "" {
+		t.Errorf("region should be empty, got %q", loader.region)
 	}
 	if len(loader.cache) != 0 {
 		t.Errorf("cache should be empty after clear, got %d entries", len(loader.cache))
@@ -68,7 +72,7 @@ func TestArtworkLoaderStartSetsChannels(t *testing.T) {
 	loader := newArtworkLoader(nil, nil)
 
 	// Start with no games - goroutine completes immediately
-	loader.Start(nil, 100, 75)
+	loader.Start(nil, 100, 75, "us")
 
 	// Wait for goroutine to finish
 	if loader.done != nil {
@@ -87,7 +91,7 @@ func TestArtworkLoaderStartNoDuplicateWithSameDimensions(t *testing.T) {
 	loader := newArtworkLoader(nil, nil)
 
 	// First Start
-	loader.Start(nil, 100, 75)
+	loader.Start(nil, 100, 75, "us")
 	// Wait for completion
 	if loader.done != nil {
 		<-loader.done
@@ -99,7 +103,7 @@ func TestArtworkLoaderStartNoDuplicateWithSameDimensions(t *testing.T) {
 	loader.cancel = make(chan struct{})
 
 	// Second Start with same dimensions should be a no-op
-	loader.Start(nil, 100, 75)
+	loader.Start(nil, 100, 75, "us")
 
 	if loader.cardWidth != 100 {
 		t.Errorf("cardWidth should still be 100, got %d", loader.cardWidth)
@@ -110,13 +114,13 @@ func TestArtworkLoaderStartCancelsPrevious(t *testing.T) {
 	loader := newArtworkLoader(nil, nil)
 
 	// Start with one set of dimensions
-	loader.Start(nil, 100, 75)
+	loader.Start(nil, 100, 75, "us")
 	if loader.done != nil {
 		<-loader.done
 	}
 
 	// Start again with different dimensions - should cancel and restart
-	loader.Start(nil, 200, 150)
+	loader.Start(nil, 200, 150, "us")
 	if loader.done != nil {
 		<-loader.done
 	}
@@ -129,6 +133,36 @@ func TestArtworkLoaderStartCancelsPrevious(t *testing.T) {
 	}
 }
 
+func TestArtworkLoaderStartRegionChangeClears(t *testing.T) {
+	loader := newArtworkLoader(nil, nil)
+
+	loader.Start(nil, 100, 75, "us")
+	if loader.done != nil {
+		<-loader.done
+	}
+	loader.mu.Lock()
+	loader.cache["crc_a"] = &iconArtwork{}
+	loader.mu.Unlock()
+
+	// The same dimensions and region keep the cache
+	loader.Start([]string{"crc_a"}, 100, 75, "us")
+	if loader.Get("crc_a") == nil {
+		t.Fatal("same region: cached artwork was cleared")
+	}
+
+	// A different region clears it so every front is chosen again
+	loader.Start(nil, 100, 75, "eu")
+	if loader.done != nil {
+		<-loader.done
+	}
+	if loader.Get("crc_a") != nil {
+		t.Error("region change: cached artwork was kept")
+	}
+	if loader.region != "eu" {
+		t.Errorf("region should be eu, got %q", loader.region)
+	}
+}
+
 func TestArtworkLoaderCancelStopsGoroutine(t *testing.T) {
 	crcs := make([]string, 1000)
 	for i := range crcs {
@@ -136,7 +170,7 @@ func TestArtworkLoaderCancelStopsGoroutine(t *testing.T) {
 	}
 
 	loader := newArtworkLoader(nil, nil)
-	loader.Start(crcs, 100, 75)
+	loader.Start(crcs, 100, 75, "us")
 
 	// Cancel immediately
 	loader.CancelAndClear()
@@ -156,7 +190,7 @@ func TestArtworkLoaderLoadOneStoresMissingForBadFiles(t *testing.T) {
 	loader.mu.Unlock()
 
 	cancel := make(chan struct{})
-	loader.loadOne("nonexistent_crc", 100, 75, cancel)
+	loader.loadOne("nonexistent_crc", 100, 75, "us", cancel)
 
 	got := loader.Get("nonexistent_crc")
 	if got != missing {
@@ -183,7 +217,7 @@ func TestArtworkLoaderHaltPreventsStart(t *testing.T) {
 	}
 
 	// Start after Halt should be a no-op
-	loader.Start(nil, 100, 75)
+	loader.Start(nil, 100, 75, "us")
 
 	if loader.cancel != nil {
 		t.Error("cancel should be nil - Start should not launch after Halt")
@@ -240,6 +274,7 @@ func TestArtworkLoaderStartLoadsMissingCRCsOnFilterChange(t *testing.T) {
 	// Simulate a completed first Start with two CRCs already cached
 	loader.cardWidth = 100
 	loader.artHeight = 75
+	loader.region = "us"
 	loader.cancel = make(chan struct{})
 	loader.done = make(chan struct{})
 	close(loader.done) // goroutine already finished
@@ -252,7 +287,7 @@ func TestArtworkLoaderStartLoadsMissingCRCsOnFilterChange(t *testing.T) {
 	loader.mu.Unlock()
 
 	// Start again with same dimensions but additional CRCs (filter expanded)
-	loader.Start([]string{"crc_a", "crc_b", "crc_c", "crc_d"}, 100, 75)
+	loader.Start([]string{"crc_a", "crc_b", "crc_c", "crc_d"}, 100, 75, "us")
 
 	// Wait for the new goroutine to finish
 	if loader.done != nil {
@@ -282,6 +317,7 @@ func TestArtworkLoaderStartNoOpWhenAllCRCsCached(t *testing.T) {
 	// Simulate completed first Start with all CRCs cached
 	loader.cardWidth = 100
 	loader.artHeight = 75
+	loader.region = "us"
 	loader.cancel = make(chan struct{})
 	oldDone := make(chan struct{})
 	close(oldDone)
@@ -293,7 +329,7 @@ func TestArtworkLoaderStartNoOpWhenAllCRCsCached(t *testing.T) {
 	loader.mu.Unlock()
 
 	// Start with same dimensions and same CRCs - should be no-op
-	loader.Start([]string{"crc_a", "crc_b"}, 100, 75)
+	loader.Start([]string{"crc_a", "crc_b"}, 100, 75, "us")
 
 	// done channel should still be the old one (no new goroutine launched)
 	if loader.done != oldDone {

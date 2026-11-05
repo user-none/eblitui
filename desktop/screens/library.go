@@ -686,7 +686,7 @@ func (s *LibraryScreen) buildIconView(container *widget.Container) int {
 	// on return so a scrolled-into-view list does not wait on off-screen
 	// covers loading first.
 	gameIDs := orderCRCsVisibleFirst(s.games, columns, s.visibleAnchorIndex())
-	s.artLoader.Start(gameIDs, cardWidth, artHeight)
+	s.artLoader.Start(gameIDs, cardWidth, artHeight, s.config.Values().Library.BoxArtRegion)
 
 	// Create stretch array - all columns stretch equally to fill width
 	columnStretches := make([]bool, columns)

@@ -22,7 +22,7 @@ import (
 )
 
 func TestDetailSetGameResetsPageAndScroll(t *testing.T) {
-	s := NewDetailScreen(nil, storage.DefaultLibrary(), nil, 0, 0, nil, true, nil)
+	s := NewDetailScreen(nil, storage.DefaultLibrary(), storage.DefaultConfig(), nil, 0, 0, nil, true, nil)
 	s.pages.selected = 2
 	s.scrollContainer = &widgets.ScrollView{}
 	s.scrollTop = 120
@@ -42,7 +42,7 @@ func TestDetailSetGameResetsPageAndScroll(t *testing.T) {
 
 func TestDetailCheatsPageFollowsSupport(t *testing.T) {
 	for _, sys := range []cheats.System{0, cheats.SystemSaturn} {
-		s := NewDetailScreen(nil, storage.DefaultLibrary(), nil, 0, sys, nil, true, nil)
+		s := NewDetailScreen(nil, storage.DefaultLibrary(), storage.DefaultConfig(), nil, 0, sys, nil, true, nil)
 
 		found := false
 		for _, sec := range s.pages.sections {
@@ -61,7 +61,7 @@ func TestDetailCheatsPageFollowsSupport(t *testing.T) {
 
 func TestDetailScreenshotsPageAlwaysListed(t *testing.T) {
 	for _, sys := range []cheats.System{0, cheats.SystemSaturn} {
-		s := NewDetailScreen(nil, storage.DefaultLibrary(), nil, 0, sys, nil, true, nil)
+		s := NewDetailScreen(nil, storage.DefaultLibrary(), storage.DefaultConfig(), nil, 0, sys, nil, true, nil)
 		if s.screenshotsPage == nil {
 			t.Fatalf("system %v: screenshots section not created", sys)
 		}
@@ -74,7 +74,7 @@ func TestDetailScreenshotsPageAlwaysListed(t *testing.T) {
 
 func TestDetailSettingsPageBeforeScreenshots(t *testing.T) {
 	for _, sys := range []cheats.System{0, cheats.SystemSaturn} {
-		s := NewDetailScreen(nil, storage.DefaultLibrary(), nil, 0, sys, nil, true, nil)
+		s := NewDetailScreen(nil, storage.DefaultLibrary(), storage.DefaultConfig(), nil, 0, sys, nil, true, nil)
 		n := len(s.pages.sections)
 		if got := s.pages.sections[n-2]; got.focusKey != settingsPageKey || got.label != "Settings" {
 			t.Errorf("system %v: page before Screenshots = %q (%s), want Settings", sys, got.label, got.focusKey)
@@ -114,7 +114,7 @@ func TestDetailPagesShareGameSettings(t *testing.T) {
 	lib := storage.DefaultLibrary()
 	lib.AddGame(storage.GameEntry{GameID: "aaaa", File: filepath.Join(t.TempDir(), "a.cue")})
 	upscale := coreif.CoreOption{Key: "upscale", Type: coreif.CoreOptionSelect, Values: []string{"1x", "2x"}, Category: coreif.CoreOptionCategoryVideo, PerGame: true}
-	s := NewDetailScreen(&pagesCallback{}, lib, nil, 0, cheats.SystemSaturn, nil, true, []coreif.CoreOption{upscale})
+	s := NewDetailScreen(&pagesCallback{}, lib, storage.DefaultConfig(), nil, 0, cheats.SystemSaturn, nil, true, []coreif.CoreOption{upscale})
 	s.SetGame("aaaa")
 
 	// A Settings page change followed by a Cheats page change keeps both
@@ -146,7 +146,7 @@ func (c *widthCallback) GetWindowWidth() int { return c.width }
 
 func TestDetailColumnWidthFollowsWindow(t *testing.T) {
 	screen := func(width int) *DetailScreen {
-		return NewDetailScreen(&widthCallback{width: width}, storage.DefaultLibrary(), nil, 0, 0, nil, true, nil)
+		return NewDetailScreen(&widthCallback{width: width}, storage.DefaultLibrary(), storage.DefaultConfig(), nil, 0, 0, nil, true, nil)
 	}
 
 	// The art sits over the sidebar at every width: the column is the art
@@ -170,7 +170,7 @@ func TestDetailColumnWidthFollowsWindow(t *testing.T) {
 }
 
 func TestDetailArtworkPageAfterOverview(t *testing.T) {
-	s := NewDetailScreen(nil, storage.DefaultLibrary(), nil, 0, cheats.SystemSaturn, nil, true, nil)
+	s := NewDetailScreen(nil, storage.DefaultLibrary(), storage.DefaultConfig(), nil, 0, cheats.SystemSaturn, nil, true, nil)
 	if got := s.pages.labels(); len(got) < 2 || got[0] != "Overview" || got[1] != "Artwork" {
 		t.Errorf("pages = %v, want Overview then Artwork", got)
 	}
@@ -212,7 +212,7 @@ func TestDetailFrontSize(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "boxart.webp"), []byte("not an image"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := NewDetailScreen(nil, lib, nil, 0, 0, nil, true, nil)
+	s := NewDetailScreen(nil, lib, storage.DefaultConfig(), nil, 0, 0, nil, true, nil)
 
 	s.SetGame("T-1")
 	if w, h := s.frontSize(); w != 300 || h != 300 {
@@ -294,7 +294,7 @@ func TestDetailRemoveMissingDisc(t *testing.T) {
 		SelectedDisc: 1,
 	})
 	cb := &removeCallback{}
-	s := NewDetailScreen(cb, lib, nil, 0, 0, nil, true, nil)
+	s := NewDetailScreen(cb, lib, storage.DefaultConfig(), nil, 0, 0, nil, true, nil)
 	s.SetGame("T-1")
 
 	if s.playable() || s.actionKey() != "remove" {
@@ -320,7 +320,7 @@ func TestDetailRemoveGameMovesToRemoved(t *testing.T) {
 	lib := storage.DefaultLibrary()
 	lib.AddGame(storage.GameEntry{GameID: "aaaa", File: filepath.Join(t.TempDir(), "gone.sms"), PlayTimeSeconds: 60})
 	cb := &removeCallback{}
-	s := NewDetailScreen(cb, lib, nil, 0, 0, nil, true, nil)
+	s := NewDetailScreen(cb, lib, storage.DefaultConfig(), nil, 0, 0, nil, true, nil)
 	s.SetGame("aaaa")
 
 	if !s.files.Missing || s.actionKey() != "remove" {
@@ -352,7 +352,7 @@ func TestDetailPlayableCartridge(t *testing.T) {
 	}
 	lib := storage.DefaultLibrary()
 	lib.AddGame(storage.GameEntry{GameID: "aaaa", File: path})
-	s := NewDetailScreen(nil, lib, nil, 0, 0, nil, true, nil)
+	s := NewDetailScreen(nil, lib, storage.DefaultConfig(), nil, 0, 0, nil, true, nil)
 	s.SetGame("aaaa")
 
 	if !s.playable() || s.actionKey() != "play" {
@@ -361,7 +361,7 @@ func TestDetailPlayableCartridge(t *testing.T) {
 }
 
 func TestDetailOnExitWithoutGame(t *testing.T) {
-	s := NewDetailScreen(nil, storage.DefaultLibrary(), nil, 0, 0, nil, true, nil)
+	s := NewDetailScreen(nil, storage.DefaultLibrary(), storage.DefaultConfig(), nil, 0, 0, nil, true, nil)
 	s.OnExit() // nothing to release, must not panic
 }
 
@@ -374,7 +374,7 @@ func TestDetailCheatsLabel(t *testing.T) {
 }
 
 func TestDetailUpdateCheatsLabel(t *testing.T) {
-	s := NewDetailScreen(nil, storage.DefaultLibrary(), nil, 0, cheats.SystemSaturn, nil, true, nil)
+	s := NewDetailScreen(nil, storage.DefaultLibrary(), storage.DefaultConfig(), nil, 0, cheats.SystemSaturn, nil, true, nil)
 	idx := -1
 	for i, sec := range s.pages.sections {
 		if sec.focusKey == cheatsPageKey {

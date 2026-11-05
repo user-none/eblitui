@@ -351,6 +351,11 @@ func (c *Config) SetArtworkDownload(setting string) {
 	c.update(func(d *ConfigData) { d.Library.ArtworkDownload = setting })
 }
 
+// SetBoxArtRegion sets the region whose artwork is shown first.
+func (c *Config) SetBoxArtRegion(region string) {
+	c.update(func(d *ConfigData) { d.Library.BoxArtRegion = region })
+}
+
 // Rewind
 
 // ToggleRewind flips rewind and returns the new value.

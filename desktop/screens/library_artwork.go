@@ -19,8 +19,9 @@ import (
 )
 
 // artworkLoader fills the artwork cache asynchronously in a background goroutine.
-// On invalidation events (resize, scan complete), the goroutine is cancelled, the
-// cache is cleared, and a new goroutine is started with updated parameters.
+// On invalidation events (resize, box art region change, scan complete), the
+// goroutine is cancelled, the cache is cleared, and a new goroutine is started
+// with updated parameters.
 //
 // Cache keys:
 //   - "loading": solid-color image shown while artwork is being loaded
@@ -39,6 +40,7 @@ type artworkLoader struct {
 
 	cardWidth int
 	artHeight int
+	region    string // box art region the cache was loaded for
 
 	placeholderData []byte
 	missingArtData  []byte
@@ -121,19 +123,22 @@ func (a *artworkLoader) CancelAndClear() {
 
 	a.cardWidth = 0
 	a.artHeight = 0
+	a.region = ""
 }
 
 // Start cancels any running goroutine and starts a new one to load artwork
-// for the given game CRCs at the specified dimensions. If dimensions match the
-// current run, this is a no-op. If the loader has been halted, this is a no-op.
-func (a *artworkLoader) Start(gameIDs []string, cardWidth, artHeight int) {
+// for the given game CRCs at the specified dimensions, choosing each game's
+// front by region, a storage.BoxArtRegion* setting. If dimensions and region
+// match the current run, only games not yet cached are loaded. If the loader
+// has been halted, this is a no-op.
+func (a *artworkLoader) Start(gameIDs []string, cardWidth, artHeight int, region string) {
 	if a.halted {
 		return
 	}
 
-	if a.cardWidth == cardWidth && a.artHeight == artHeight && a.cancel != nil {
-		// Dimensions match but CRC list may have changed (e.g. filter toggle).
-		// Load any CRCs not yet in the cache.
+	if a.cardWidth == cardWidth && a.artHeight == artHeight && a.region == region && a.cancel != nil {
+		// Dimensions and region match but CRC list may have changed (e.g.
+		// filter toggle). Load any CRCs not yet in the cache.
 		missing := a.findMissing(gameIDs)
 		if len(missing) == 0 {
 			return
@@ -141,7 +146,7 @@ func (a *artworkLoader) Start(gameIDs []string, cardWidth, artHeight int) {
 		a.stop()
 		a.cancel = make(chan struct{})
 		a.done = make(chan struct{})
-		go a.run(missing, cardWidth, artHeight, a.cancel, a.done)
+		go a.run(missing, cardWidth, artHeight, region, a.cancel, a.done)
 		return
 	}
 
@@ -149,6 +154,7 @@ func (a *artworkLoader) Start(gameIDs []string, cardWidth, artHeight int) {
 
 	a.cardWidth = cardWidth
 	a.artHeight = artHeight
+	a.region = region
 
 	// Build loading and missing-art images synchronously so they are
 	// available immediately when buildGameCardSized runs.
@@ -158,12 +164,12 @@ func (a *artworkLoader) Start(gameIDs []string, cardWidth, artHeight int) {
 	a.cancel = make(chan struct{})
 	a.done = make(chan struct{})
 
-	go a.run(gameIDs, cardWidth, artHeight, a.cancel, a.done)
+	go a.run(gameIDs, cardWidth, artHeight, region, a.cancel, a.done)
 }
 
 // run iterates over game CRCs, loading and scaling artwork for each.
 // It checks the cancel channel between each game.
-func (a *artworkLoader) run(gameIDs []string, cardWidth, artHeight int, cancel chan struct{}, done chan struct{}) {
+func (a *artworkLoader) run(gameIDs []string, cardWidth, artHeight int, region string, cancel chan struct{}, done chan struct{}) {
 	defer close(done)
 
 	for _, crc := range gameIDs {
@@ -173,21 +179,21 @@ func (a *artworkLoader) run(gameIDs []string, cardWidth, artHeight int, cancel c
 		default:
 		}
 
-		a.loadOne(crc, cardWidth, artHeight, cancel)
+		a.loadOne(crc, cardWidth, artHeight, region, cancel)
 	}
 }
 
-// loadOne loads, scales, and caches artwork for a single game CRC.
-// On failure the "missing" entry is stored under the CRC so the UI
-// can distinguish "missing" from "still loading" (nil).
-func (a *artworkLoader) loadOne(crc string, cardWidth, artHeight int, cancel chan struct{}) {
+// loadOne loads, scales, and caches the front chosen for region for a
+// single game CRC. On failure the "missing" entry is stored under the CRC
+// so the UI can distinguish "missing" from "still loading" (nil).
+func (a *artworkLoader) loadOne(crc string, cardWidth, artHeight int, region string, cancel chan struct{}) {
 	artDir, err := storage.GetGameArtworkDir(crc)
 	if err != nil {
 		a.storeMissing(crc)
 		return
 	}
 
-	img, err := artwork.Load(artwork.BoxArtPath(artDir))
+	img, err := artwork.Load(artwork.BoxArtPath(artDir, region))
 	if err != nil {
 		a.storeMissing(crc)
 		return

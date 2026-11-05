@@ -30,6 +30,7 @@ type DetailScreen struct {
 
 	callback ScreenCallback
 	library  *storage.Library
+	config   *storage.Config
 	game     *storage.GameEntry
 	files    storage.FileStatus  // Which of the game's files are missing, checked in SetGame
 	art      *detail.ImageLoader // the box art shown over the sidebar
@@ -40,6 +41,7 @@ type DetailScreen struct {
 	// read for the current game.
 	artSize     [2]int
 	artSizeRead bool
+	artRegion   string // box art region the box art is chosen for
 
 	pages sidebarSections // Page sidebar list and selection
 
@@ -65,10 +67,11 @@ const (
 // cheats, nil when the core has none. cheatBigEndian is the byte order of
 // the core's memory, which cheats are converted to. coreOptions are the
 // core's options, of which the Settings page lists the per game ones.
-func NewDetailScreen(callback ScreenCallback, library *storage.Library, achievementManager *achievements.Manager, defaultConsoleID int, cheatSystem cheats.System, cheatProvider content.CheatsSource, cheatBigEndian bool, coreOptions []coreif.CoreOption) *DetailScreen {
+func NewDetailScreen(callback ScreenCallback, library *storage.Library, config *storage.Config, achievementManager *achievements.Manager, defaultConsoleID int, cheatSystem cheats.System, cheatProvider content.CheatsSource, cheatBigEndian bool, coreOptions []coreif.CoreOption) *DetailScreen {
 	s := &DetailScreen{
 		callback: callback,
 		library:  library,
+		config:   config,
 	}
 	s.InitBase()
 	s.art = detail.NewImageLoader(func() { s.callback.RequestRebuild() })
@@ -90,6 +93,11 @@ func NewDetailScreen(callback ScreenCallback, library *storage.Library, achievem
 	s.screenshotsPage = detail.NewScreenshotsSection(callback, s.contentWidth)
 	s.pages.sections = append(s.pages.sections, sectionDescriptor{label: "Screenshots", focusKey: screenshotsPageKey, build: s.screenshotsPage.Build, setupNav: s.setupScreenshotsNav})
 	return s
+}
+
+// SetConfig updates the config reference
+func (s *DetailScreen) SetConfig(config *storage.Config) {
+	s.config = config
 }
 
 // SetGame sets the game to display
@@ -136,6 +144,7 @@ func (s *DetailScreen) SetGame(gameID string) {
 func (s *DetailScreen) Build() *widget.Container {
 	s.ClearFocusButtons()
 	s.updateCheatsLabel()
+	s.applyBoxArtRegion()
 
 	rootContainer := widget.NewContainer(
 		widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Background)),
@@ -534,6 +543,19 @@ func (s *DetailScreen) HandleBack() bool {
 	return false
 }
 
+// applyBoxArtRegion brings the box art and the Artwork page in step with the
+// box art region setting. When the region changed since the box art was
+// chosen, the box art is freed so it is chosen and loaded again.
+func (s *DetailScreen) applyBoxArtRegion() {
+	region := s.config.Values().Library.BoxArtRegion
+	if region != s.artRegion {
+		s.artRegion = region
+		s.art.Release()
+		s.artSizeRead = false
+	}
+	s.artworkPage.SetBoxArtRegion(region)
+}
+
 // boxArt starts loading the current game's box art unless it is loaded or
 // loading, and returns its texture, or nil until it has loaded or when the
 // game has none, and whether it is still loading. The texture is the image
@@ -543,12 +565,13 @@ func (s *DetailScreen) boxArt() (img *ebiten.Image, loading bool) {
 		return nil, false
 	}
 	gameID := s.game.GameID
+	region := s.artRegion
 	s.art.Start(func() []string {
 		dir, err := storage.GetGameArtworkDir(gameID)
 		if err != nil {
 			return nil
 		}
-		return []string{artwork.BoxArtPath(dir)}
+		return []string{artwork.BoxArtPath(dir, region)}
 	})
 	imgs, loading := s.art.Images()
 	if len(imgs) > 0 {
@@ -568,7 +591,7 @@ func (s *DetailScreen) frontSize() (width, height int) {
 		s.artSize = [2]int{}
 		if s.game != nil {
 			if dir, err := storage.GetGameArtworkDir(s.game.GameID); err == nil {
-				if w, h, err := artwork.Size(artwork.BoxArtPath(dir)); err == nil {
+				if w, h, err := artwork.Size(artwork.BoxArtPath(dir, s.artRegion)); err == nil {
 					s.artSize = [2]int{w, h}
 				}
 			}

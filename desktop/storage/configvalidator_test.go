@@ -41,7 +41,7 @@ func TestDetectPresentKeys(t *testing.T) {
 				"video": {"aspectRatio": "dar"},
 				"audio": {"volume": 1.0, "fastForwardMute": true},
 				"window": {"width": 900, "height": 650},
-				"library": {"viewMode": "icon", "sortBy": "title", "artworkDownload": "covers"},
+				"library": {"viewMode": "icon", "sortBy": "title", "artworkDownload": "covers", "boxArtRegion": "eu"},
 				"rewind": {"bufferSizeMB": 40, "frameStep": 1}
 			}`,
 			expected: map[string]bool{
@@ -49,7 +49,7 @@ func TestDetectPresentKeys(t *testing.T) {
 				"video.aspectRatio": true,
 				"audio.volume":      true, "audio.fastForwardMute": true,
 				"window.width": true, "window.height": true,
-				"library.viewMode": true, "library.sortBy": true, "library.artworkDownload": true,
+				"library.viewMode": true, "library.sortBy": true, "library.artworkDownload": true, "library.boxArtRegion": true,
 				"rewind.bufferSizeMB": true, "rewind.frameStep": true,
 			},
 		},
@@ -149,6 +149,9 @@ func TestApplyMissingDefaults(t *testing.T) {
 		}
 		if config.Library.ArtworkDownload != defaults.Library.ArtworkDownload {
 			t.Errorf("library.artworkDownload: got %q, want %q", config.Library.ArtworkDownload, defaults.Library.ArtworkDownload)
+		}
+		if config.Library.BoxArtRegion != defaults.Library.BoxArtRegion {
+			t.Errorf("library.boxArtRegion: got %q, want %q", config.Library.BoxArtRegion, defaults.Library.BoxArtRegion)
 		}
 		if config.Rewind.BufferSizeMB != defaults.Rewind.BufferSizeMB {
 			t.Errorf("rewind.bufferSizeMB: got %d, want %d", config.Rewind.BufferSizeMB, defaults.Rewind.BufferSizeMB)
@@ -372,6 +375,23 @@ func TestValidateConfig(t *testing.T) {
 		}
 	})
 
+	t.Run("boxArtRegion values", func(t *testing.T) {
+		for _, v := range ValidBoxArtRegions {
+			config := newTestConfigData()
+			config.Library.BoxArtRegion = v
+			if errs := validateConfig(config, validTestRules); len(errs) != 0 {
+				t.Errorf("%q: %v", v, errs)
+			}
+		}
+		for _, v := range []string{"", "kr", "US"} {
+			config := newTestConfigData()
+			config.Library.BoxArtRegion = v
+			if errs := validateConfig(config, validTestRules); len(errs) == 0 {
+				t.Errorf("%q: expected error for invalid boxArtRegion", v)
+			}
+		}
+	})
+
 	t.Run("invalid sortBy", func(t *testing.T) {
 		config := newTestConfigData()
 		config.Library.SortBy = "date"
@@ -424,12 +444,12 @@ func TestValidateConfig(t *testing.T) {
 			Video:   VideoConfig{AspectRatio: "16:9"},
 			Audio:   AudioConfig{Volume: 999},
 			Window:  WindowConfig{Width: 0, Height: 0},
-			Library: LibraryView{ViewMode: "grid", SortBy: "date", ArtworkDownload: "everything"},
+			Library: LibraryView{ViewMode: "grid", SortBy: "date", ArtworkDownload: "everything", BoxArtRegion: "kr"},
 			Rewind:  RewindConfig{BufferSizeMB: 0, FrameStep: 0},
 		}
 		errs := validateConfig(config, validTestRules)
-		if len(errs) != 11 {
-			t.Errorf("expected 11 errors, got %d: %v", len(errs), errs)
+		if len(errs) != 12 {
+			t.Errorf("expected 12 errors, got %d: %v", len(errs), errs)
 		}
 	})
 
@@ -591,7 +611,7 @@ func TestCorrectConfig(t *testing.T) {
 			Video:   VideoConfig{AspectRatio: "bad"},
 			Audio:   AudioConfig{Volume: 999},
 			Window:  WindowConfig{Width: 0, Height: 0},
-			Library: LibraryView{ViewMode: "grid", SortBy: "date", ArtworkDownload: "everything"},
+			Library: LibraryView{ViewMode: "grid", SortBy: "date", ArtworkDownload: "everything", BoxArtRegion: "kr"},
 			Rewind:  RewindConfig{BufferSizeMB: 0, FrameStep: 0},
 		}
 
@@ -600,6 +620,9 @@ func TestCorrectConfig(t *testing.T) {
 
 		if corrected.Library.ArtworkDownload != defaults.Library.ArtworkDownload {
 			t.Errorf("artworkDownload: got %q, want %q", corrected.Library.ArtworkDownload, defaults.Library.ArtworkDownload)
+		}
+		if corrected.Library.BoxArtRegion != defaults.Library.BoxArtRegion {
+			t.Errorf("boxArtRegion: got %q, want %q", corrected.Library.BoxArtRegion, defaults.Library.BoxArtRegion)
 		}
 		if corrected.Version != defaults.Version {
 			t.Errorf("version: got %d, want %d", corrected.Version, defaults.Version)

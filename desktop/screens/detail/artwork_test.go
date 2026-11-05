@@ -70,7 +70,10 @@ func TestArtworkLoadsPresentSides(t *testing.T) {
 			[]string{"boxart.webp", "boxback.webp", "disc_1.webp", "disc_2.webp", "flyer.webp", "poster_a.webp", "poster_b.webp"}},
 		{"regional discs",
 			[]string{"disc_2_eu.webp", "disc_1_kr.webp", "disc_1_eu.webp", "disc_1_jp.webp", "disc_1_us.webp", "disc_2_us.webp"},
-			[]string{"disc_1_us.webp", "disc_1_jp.webp", "disc_1_eu.webp", "disc_1_kr.webp", "disc_2_us.webp", "disc_2_eu.webp"}},
+			[]string{"disc_1_us.webp", "disc_2_us.webp", "disc_1_eu.webp", "disc_2_eu.webp", "disc_1_jp.webp", "disc_1_kr.webp"}},
+		{"regional covers in pairs",
+			[]string{"boxback_eu.webp", "boxart_jp.webp", "boxart_eu.webp", "boxback_us.webp", "boxart_us.webp"},
+			[]string{"boxart_us.webp", "boxback_us.webp", "boxart_eu.webp", "boxback_eu.webp", "boxart_jp.webp"}},
 		{"other files skipped",
 			[]string{"boxart.webp", "notes.txt", "screenshot.webp", "flyer_1.webp", "disc_a.webp"},
 			[]string{"boxart.webp"}},
@@ -117,6 +120,38 @@ func TestArtworkLoadsOncePerGame(t *testing.T) {
 	waitRebuilds(t, cb, 3)
 	if got := len(rec.paths()); got != 6 {
 		t.Errorf("after Release decoded %d files in all, want 6", got)
+	}
+}
+
+func TestArtworkBoxArtRegion(t *testing.T) {
+	s, cb, rec, dir := newTestArtworkSection(t, "boxart_us.webp", "boxback_us.webp", "boxart_eu.webp", "boxback_eu.webp")
+	s.SetBoxArtRegion("eu")
+	s.load()
+	waitRebuilds(t, cb, 1)
+	want := []string{"boxart_eu.webp", "boxback_eu.webp", "boxart_us.webp", "boxback_us.webp"}
+	got := rec.paths()
+	if len(got) != len(want) {
+		t.Fatalf("Europe preferred: decoded %v, want %v", got, want)
+	}
+	for i, name := range want {
+		if got[i] != filepath.Join(dir, name) {
+			t.Errorf("Europe preferred: decoded[%d] = %s, want %s", i, got[i], name)
+		}
+	}
+
+	// The same region keeps the images; another lists and loads them again
+	s.SetBoxArtRegion("eu")
+	s.load()
+	time.Sleep(10 * time.Millisecond)
+	if got := len(rec.paths()); got != 4 {
+		t.Fatalf("same region decoded %d files in all, want 4", got)
+	}
+	s.SetBoxArtRegion("us")
+	s.load()
+	waitRebuilds(t, cb, 2)
+	got = rec.paths()
+	if len(got) != 8 || got[4] != filepath.Join(dir, "boxart_us.webp") {
+		t.Errorf("after region change decoded %v, want boxart_us.webp first of the new load", got)
 	}
 }
 

@@ -202,6 +202,9 @@ func TestDefaultConfig(t *testing.T) {
 	if config.Library.ArtworkDownload != ArtworkDownloadAll {
 		t.Errorf("expected artwork download %q, got %q", ArtworkDownloadAll, config.Library.ArtworkDownload)
 	}
+	if config.Library.BoxArtRegion != BoxArtRegionUS {
+		t.Errorf("expected box art region %q, got %q", BoxArtRegionUS, config.Library.BoxArtRegion)
+	}
 }
 
 // TestConfigRemoveBIOSFile tests that removing a variant's file keeps the

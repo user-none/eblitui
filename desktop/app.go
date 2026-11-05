@@ -570,7 +570,7 @@ func (a *App) toggleFullscreen() {
 // initScreens creates all screen instances
 func (a *App) initScreens() {
 	a.libraryScreen = screens.NewLibraryScreen(a, a.library, a.config, a.updates())
-	a.detailScreen = screens.NewDetailScreen(a, a.library, a.achievementManager, a.emu.RetroAchievementsConsoleID, a.cheatSystem(), a.emu.Cheats, a.systemInfo.BigEndianMemory, a.systemInfo.CoreOptions)
+	a.detailScreen = screens.NewDetailScreen(a, a.library, a.config, a.achievementManager, a.emu.RetroAchievementsConsoleID, a.cheatSystem(), a.emu.Cheats, a.systemInfo.BigEndianMemory, a.systemInfo.CoreOptions)
 	a.settingsScreen = screens.NewSettingsScreen(a, a.library, a.config, a.achievementManager, a.systemInfo.SerializeSize, a.systemInfo, a.emu.Name, a.emu.Version, a.emu.Icon, a.updates())
 	a.scanScreen = screens.NewScanProgressScreen()
 	a.errorScreen = screens.NewErrorScreen(a, a.errorFile, a.errorPath, a.handleDeleteAndContinue)
@@ -599,6 +599,7 @@ func (a *App) rebuildCurrentScreen() {
 		if a.ui != nil {
 			a.detailScreen.SaveFocusState(a.ui.GetFocusedWidget())
 		}
+		a.detailScreen.SetConfig(a.config)
 		container = a.detailScreen.Build()
 	case StateSettings:
 		// Save scroll position and focused button before rebuilding

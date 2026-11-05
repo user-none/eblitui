@@ -79,18 +79,11 @@ var typeCaptions = map[string]string{
 	"poster":  "Poster",
 }
 
-// regionOrder is the order regional versions are shown and chosen in:
-// no region first, then these, then any other region
-var regionOrder = []string{"", "us", "jp", "eu"}
-
-// regionNames name the regions shown by name; any other is "Other"
-var regionNames = map[string]string{"us": "USA", "jp": "Japan", "eu": "Europe"}
-
 // httpClient fetches the index and images over HTTPS only.
 var httpClient = netutil.NewClient(netutil.HTTPTimeout)
 
 // legacyBoxArt is the box art file name used before the artwork index.
-// It is shown when a game has no boxart.webp yet, and removed by Clean
+// It is shown only when a game has no other front, and removed by Clean
 // Library once boxart.webp is present.
 const legacyBoxArt = "boxart.png"
 
@@ -115,7 +108,10 @@ var (
 
 // File is one image in the index. Disc, Region and Variant tell images of
 // one type apart; each is set only on the types it applies to (see
-// typeFields) and only when the game has more than one such image.
+// typeFields). Disc is set when the game has more than one disc, Region
+// when the game was released in more than one region (even when only one
+// region's image is available), and Variant when the game has more than
+// one image of that type.
 type File struct {
 	Type    string `json:"type"`
 	Path    string `json:"path"`
@@ -339,12 +335,16 @@ type LocalFile struct {
 }
 
 // LocalFiles returns the artwork images in the game directory dir whose
-// names follow LocalName for a known type, in display order: by type
-// (front, back, disc, flyer, poster), then disc number, then region (none,
-// USA, Japan, Europe, then any other by code), then variant. When two
-// files carry the same values, the .webp one is used. Other files are
-// ignored. A missing or empty directory gives nil.
-func LocalFiles(dir string) []LocalFile {
+// names follow LocalName for a known type, in display order: the covers,
+// then the discs, flyers and posters. Covers are grouped by region, each
+// region's front before its back; discs are grouped by region, each in
+// disc number order; flyers and posters are in variant order. Regions are
+// ordered by regionRank with preferred, a storage.BoxArtRegion* setting,
+// first. The legacy boxart.png is listed only when the game has no other
+// front, after the other covers. When two files carry the same values, the
+// .webp one is used. Other files are ignored. A missing or empty directory
+// gives nil.
+func LocalFiles(dir, preferred string) []LocalFile {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
@@ -371,29 +371,55 @@ func LocalFiles(dir string) []LocalFile {
 		}
 		found[k] = f
 	}
-	if len(found) == 0 {
-		return nil
+	fronts := 0
+	for _, f := range found {
+		if f.Type == "boxart" {
+			fronts++
+		}
 	}
 	out := make([]LocalFile, 0, len(found))
 	for _, f := range found {
+		if isLegacyBoxArt(f) && fronts > 1 {
+			continue
+		}
 		out = append(out, f)
 	}
+	if len(out) == 0 {
+		return nil
+	}
 	slices.SortFunc(out, func(a, b LocalFile) int {
+		if c := cmp.Compare(typeGroup(a.Type), typeGroup(b.Type)); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(fileRank(a, preferred), fileRank(b, preferred)); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.Region, b.Region); c != 0 {
+			return c
+		}
 		if c := cmp.Compare(slices.Index(imageTypes, a.Type), slices.Index(imageTypes, b.Type)); c != 0 {
 			return c
 		}
 		if c := cmp.Compare(a.Disc, b.Disc); c != 0 {
 			return c
 		}
-		if c := cmp.Compare(regionRank(a.Region), regionRank(b.Region)); c != 0 {
-			return c
-		}
-		if c := cmp.Compare(a.Region, b.Region); c != 0 {
-			return c
-		}
 		return cmp.Compare(a.Variant, b.Variant)
 	})
 	return out
+}
+
+// typeGroup returns the display group of an image type: the front and
+// back covers share one, so a region's front and back are listed together
+func typeGroup(typ string) int {
+	if typ == "boxback" {
+		typ = "boxart"
+	}
+	return slices.Index(imageTypes, typ)
+}
+
+// isLegacyBoxArt reports whether f is the legacy box art file
+func isLegacyBoxArt(f LocalFile) bool {
+	return f.Type == "boxart" && filepath.Base(f.Path) == legacyBoxArt
 }
 
 // parseLocalName reads the values from a local file name without its
@@ -420,12 +446,29 @@ func parseLocalName(stem string) (f LocalFile, ok bool) {
 	return LocalFile{}, false
 }
 
-// regionRank orders regions: none, USA, Japan, Europe, then any other
-func regionRank(region string) int {
-	if i := slices.Index(regionOrder, region); i >= 0 {
-		return i
+// fileRank orders the images of one display group: by regionRank, with
+// the legacy box art after every other image
+func fileRank(f LocalFile, preferred string) int {
+	if isLegacyBoxArt(f) {
+		return len(storage.ValidBoxArtRegions) + 3
 	}
-	return len(regionOrder)
+	return regionRank(f.Region, preferred)
+}
+
+// regionRank orders regions: preferred first, then the other box art
+// regions in storage.ValidBoxArtRegions order, then any other region, then
+// no region
+func regionRank(region, preferred string) int {
+	switch {
+	case region == "":
+		return len(storage.ValidBoxArtRegions) + 2
+	case region == preferred:
+		return 0
+	}
+	if i := slices.Index(storage.ValidBoxArtRegions, region); i >= 0 {
+		return i + 1
+	}
+	return len(storage.ValidBoxArtRegions) + 1
 }
 
 // Caption returns the on-screen name of a local image, such as "Front",
@@ -440,9 +483,9 @@ func Caption(f LocalFile) string {
 		s += " " + strings.ToUpper(f.Variant)
 	}
 	if f.Region != "" {
-		name, ok := regionNames[f.Region]
-		if !ok {
-			name = "Other"
+		name := "Other"
+		if slices.Contains(storage.ValidBoxArtRegions, f.Region) {
+			name = storage.BoxArtRegionDisplayName(f.Region)
 		}
 		s += " (" + name + ")"
 	}
@@ -552,12 +595,13 @@ func SupersededBoxArt(dir string) (path string, ok bool) {
 }
 
 // BoxArtPath returns the path of the front cover shown for a game in its
-// game directory dir: the first front in LocalFiles order, so a front with
-// no region, then USA, Japan, Europe and any other. A .webp file is used
-// over the legacy boxart.png. When the game has no front, the boxart.webp
-// path is returned.
-func BoxArtPath(dir string) string {
-	for _, f := range LocalFiles(dir) {
+// game directory dir: the first front in LocalFiles order for preferred,
+// a storage.BoxArtRegion* setting. That is the preferred region's front,
+// then the other regions' in regionRank order, then a front with no
+// region, then the legacy boxart.png. When the game has no front, the
+// boxart.webp path is returned.
+func BoxArtPath(dir, preferred string) string {
+	for _, f := range LocalFiles(dir, preferred) {
 		if f.Type == "boxart" {
 			return f.Path
 		}
