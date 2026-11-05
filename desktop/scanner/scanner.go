@@ -434,10 +434,11 @@ func discLabelFromFilename(filename string) string {
 // artwork download setting includes that are missing locally or differ
 // from the index. No local file is removed. An index that cannot be
 // fetched, does not verify against the artwork keys, or cannot be read is
-// logged; no local file is changed then.
+// logged; no local file is changed then. With the setting at none the
+// index is not fetched.
 func (s *Scanner) resolveArtwork() []resolvedJob {
 	baseURL := s.sources.ArtworkURL
-	if baseURL == "" || s.isCancelled() {
+	if baseURL == "" || s.sources.ArtworkDownload == storage.ArtworkDownloadNone || s.isCancelled() {
 		return nil
 	}
 	keys, keyErrs := signing.ParseKeys(s.sources.ArtworkKeys)

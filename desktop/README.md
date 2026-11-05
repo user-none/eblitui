@@ -84,9 +84,9 @@ The app is a state machine that transitions between screens:
   a valid signature by one of the artwork `Keys`; otherwise no artwork is
   downloaded. A scan downloads the images that are missing or whose size or
   CRC-32 differs from the index, and keeps a download only when its size
-  and SHA-256 match. The Library setting "Artwork download" limits which
-  images a scan downloads (front cover, covers, or all artwork); it never
-  removes artwork already on disk. Images are stored under names built from
+  and SHA-256 match. The Library setting "Artwork Download" limits which
+  images a scan downloads (all artwork, front cover, both covers, or none); with
+  none the index is not fetched. It never removes artwork already on disk. Images are stored under names built from
   the index values, such as `disc_2_eu.webp` or `flyer_b.webp`. Images
   larger than 4096x4096 are not decoded
 - The library and the detail sidebar show the front cover: one without a

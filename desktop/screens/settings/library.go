@@ -179,14 +179,14 @@ func (l *LibrarySection) Build(focus types.FocusManager) *widget.Container {
 // scan downloads. It only limits downloads; artwork already on disk is
 // kept and shown.
 func (l *LibrarySection) buildArtworkDownloadRow(focus types.FocusManager) *widget.Container {
-	return l.buildCycleRow(focus, "lib-artwork-download", "Artwork download", "Downloaded during library scan",
+	return l.buildCycleRow(focus, "lib-artwork-download", "Artwork Download", "Downloaded during library scan",
 		storage.ValidArtworkDownloads, l.config.Values().Library.ArtworkDownload, storage.ArtworkDownloadDisplayName, l.config.SetArtworkDownload)
 }
 
 // buildBoxArtRegionRow creates the row choosing the region whose artwork is
 // shown first for a game released in more than one region
 func (l *LibrarySection) buildBoxArtRegionRow(focus types.FocusManager) *widget.Container {
-	return l.buildCycleRow(focus, "lib-boxart-region", "Preferred box art region", "Which region's cover the library shows when a game has more than one",
+	return l.buildCycleRow(focus, "lib-boxart-region", "Preferred Box Art Region", "Which region's cover the library shows when a game has more than one",
 		storage.ValidBoxArtRegions, l.config.Values().Library.BoxArtRegion, storage.BoxArtRegionDisplayName, l.config.SetBoxArtRegion)
 }
 

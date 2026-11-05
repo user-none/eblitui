@@ -292,11 +292,13 @@ func (ix *Index) Files(gameID string, types []string) []File {
 }
 
 // DownloadTypes returns the image types a scan downloads for an artwork
-// download setting (storage.ArtworkDownload*): the front cover, the
-// covers, or every type this build knows. Any other value downloads every
-// type.
+// download setting (storage.ArtworkDownload*): every type this build
+// knows, the front cover, the covers, or none. Any other value downloads
+// every type.
 func DownloadTypes(setting string) []string {
 	switch setting {
+	case storage.ArtworkDownloadNone:
+		return nil
 	case storage.ArtworkDownloadFront:
 		return []string{"boxart"}
 	case storage.ArtworkDownloadCovers:

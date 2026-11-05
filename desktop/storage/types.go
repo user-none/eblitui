@@ -267,25 +267,28 @@ func BoxArtRegionDisplayName(region string) string {
 // Artwork download settings: which images a library scan downloads. They
 // only limit downloads; artwork already on disk is kept and shown.
 const (
+	ArtworkDownloadAll    = "all"    // the covers, discs, flyers and posters
 	ArtworkDownloadFront  = "front"  // the front cover
 	ArtworkDownloadCovers = "covers" // the front and back covers
-	ArtworkDownloadAll    = "all"    // the covers, discs, flyers and posters
+	ArtworkDownloadNone   = "none"   // nothing
 )
 
-// ValidArtworkDownloads lists the artwork download settings, from least to
-// most downloaded
-var ValidArtworkDownloads = []string{ArtworkDownloadFront, ArtworkDownloadCovers, ArtworkDownloadAll}
+// ValidArtworkDownloads lists the artwork download settings in the order
+// they are offered
+var ValidArtworkDownloads = []string{ArtworkDownloadAll, ArtworkDownloadFront, ArtworkDownloadCovers, ArtworkDownloadNone}
 
 // ArtworkDownloadDisplayName returns a user-facing label for an artwork
 // download setting
 func ArtworkDownloadDisplayName(setting string) string {
 	switch setting {
+	case ArtworkDownloadNone:
+		return "None"
 	case ArtworkDownloadFront:
-		return "Front cover"
+		return "Front Cover"
 	case ArtworkDownloadCovers:
-		return "Covers"
+		return "Both Covers"
 	default:
-		return "All artwork"
+		return "All Artwork"
 	}
 }
 

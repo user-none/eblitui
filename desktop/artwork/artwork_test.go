@@ -249,6 +249,7 @@ func TestFiles(t *testing.T) {
 		level string
 		want  []string
 	}{
+		{storage.ArtworkDownloadNone, nil},
 		{storage.ArtworkDownloadFront, []string{"boxart/T-1.webp"}},
 		{storage.ArtworkDownloadCovers, []string{"boxart/T-1.webp", "boxback/T-1.webp"}},
 		{storage.ArtworkDownloadAll, []string{"boxart/T-1.webp", "boxback/T-1.webp", "disc/T-1.1.eu.webp", "disc/T-1.1.us.webp",
@@ -270,6 +271,7 @@ func TestFiles(t *testing.T) {
 
 func TestDownloadTypes(t *testing.T) {
 	for level, want := range map[string]string{
+		storage.ArtworkDownloadNone:   "",
 		storage.ArtworkDownloadFront:  "boxart",
 		storage.ArtworkDownloadCovers: "boxart boxback",
 		storage.ArtworkDownloadAll:    "boxart boxback disc flyer poster",

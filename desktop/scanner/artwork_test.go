@@ -247,6 +247,24 @@ func TestResolveArtworkIndexFailure(t *testing.T) {
 	}
 }
 
+func TestResolveArtworkNoneSkipsIndex(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dir)
+	t.Setenv("HOME", dir)
+	t.Setenv("APPDATA", dir)
+	_, pub := newSigningKey(t)
+	srv := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("request for %s, want none", r.URL.Path)
+		http.NotFound(w, r)
+	}))
+
+	s := NewScanner(nil, nil, nil, nil, 0, true, nil, Sources{ArtworkURL: srv.URL + "/", ArtworkKeys: []string{pub}, ArtworkDownload: storage.ArtworkDownloadNone})
+	s.games["T-1"] = &storage.GameEntry{GameID: "T-1"}
+	if jobs := s.resolveArtwork(); len(jobs) != 0 {
+		t.Errorf("jobs = %d, want none", len(jobs))
+	}
+}
+
 func TestResolveArtworkRequiresTrustedSignature(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", dir)
