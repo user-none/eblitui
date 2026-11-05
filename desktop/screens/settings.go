@@ -244,7 +244,7 @@ func (s *SettingsScreen) setupInputNav() {
 }
 
 func (s *SettingsScreen) setupLibraryNav() {
-	s.SetNavTransition(sidebarZone, types.DirRight, "lib-folders", types.NavIndexFirst)
+	s.SetNavTransition(sidebarZone, types.DirRight, "lib-artwork", types.NavIndexFirst)
 	s.SetNavTransition("lib-folders", types.DirLeft, sidebarZone, types.NavIndexFirst)
 	s.SetNavTransition("lib-buttons", types.DirLeft, sidebarZone, types.NavIndexFirst)
 	s.SetNavTransition("lib-artwork", types.DirLeft, sidebarZone, types.NavIndexFirst)
