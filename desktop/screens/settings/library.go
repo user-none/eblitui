@@ -10,6 +10,7 @@ import (
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/user-none/eblitui/desktop/filebrowser"
+	"github.com/user-none/eblitui/desktop/region"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/desktop/types"
@@ -187,7 +188,7 @@ func (l *LibrarySection) buildArtworkDownloadRow(focus types.FocusManager) *widg
 // shown first for a game released in more than one region
 func (l *LibrarySection) buildBoxArtRegionRow(focus types.FocusManager) *widget.Container {
 	return l.buildCycleRow(focus, "lib-boxart-region", "Preferred Box Art Region", "Which region's cover the library shows when a game has more than one",
-		storage.ValidBoxArtRegions, l.config.Values().Library.BoxArtRegion, storage.BoxArtRegionDisplayName, l.config.SetBoxArtRegion)
+		region.All, l.config.Values().Library.BoxArtRegion, region.DisplayName, l.config.SetBoxArtRegion)
 }
 
 // buildCycleRow creates a settings row with a label, a description cut to

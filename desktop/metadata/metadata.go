@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/user-none/eblitui/desktop/content"
+	"github.com/user-none/eblitui/desktop/region"
 	"github.com/user-none/eblitui/desktop/storage"
 )
 
@@ -45,11 +46,14 @@ func (m *MetadataManager) Title(game *storage.GameEntry) string {
 	return FallbackName(game)
 }
 
-// Region returns the region code for a library entry, or "" when the core
-// has no metadata for it.
+// Region returns the region code for a library entry: the first of its
+// supported regions in region.All order, or "" when it has none or the
+// core has no metadata for it.
 func (m *MetadataManager) Region(game *storage.GameEntry) string {
 	if g, ok := m.games[game.GameID]; ok {
-		return RegionCode(g.Regions)
+		if codes := region.Codes(g.Regions); len(codes) > 0 {
+			return codes[0]
+		}
 	}
 	return ""
 }
@@ -78,50 +82,6 @@ func FallbackName(game *storage.GameEntry) string {
 		name = strings.TrimSpace(name[:idx])
 	}
 	return name
-}
-
-// regionCodes maps a metadata region to the code shown in the library.
-// Regions not listed here have no code.
-var regionCodes = map[string]string{
-	"USA":       "us",
-	"Japan":     "jp",
-	"Europe":    "eu",
-	"UK":        "eu",
-	"Germany":   "eu",
-	"France":    "eu",
-	"Spain":     "eu",
-	"Italy":     "eu",
-	"Finland":   "eu",
-	"Sweden":    "eu",
-	"Australia": "eu",
-	"Korea":     "kr",
-	"Taiwan":    "tw",
-	"Brazil":    "br",
-}
-
-// RegionCodeFor returns the code of one metadata region, such as "eu" for
-// "Germany", or "" when the region has no code.
-func RegionCodeFor(region string) string {
-	return regionCodes[region]
-}
-
-// RegionCode returns one region code for a list of regions: USA first,
-// then Japan, then any European region, then the first region that has a
-// code. Returns "" when none of the regions has a code.
-func RegionCode(regions []string) string {
-	for _, want := range []string{"us", "jp", "eu"} {
-		for _, r := range regions {
-			if regionCodes[r] == want {
-				return want
-			}
-		}
-	}
-	for _, r := range regions {
-		if c := regionCodes[r]; c != "" {
-			return c
-		}
-	}
-	return ""
 }
 
 var monthNames = [...]string{"January", "February", "March", "April", "May", "June",

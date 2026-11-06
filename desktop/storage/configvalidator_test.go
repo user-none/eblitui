@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/user-none/eblitui/desktop/region"
 )
 
 // validTestThemes is the list of theme names used in tests
@@ -376,7 +378,7 @@ func TestValidateConfig(t *testing.T) {
 	})
 
 	t.Run("boxArtRegion values", func(t *testing.T) {
-		for _, v := range ValidBoxArtRegions {
+		for _, v := range region.All {
 			config := newTestConfigData()
 			config.Library.BoxArtRegion = v
 			if errs := validateConfig(config, validTestRules); len(errs) != 0 {

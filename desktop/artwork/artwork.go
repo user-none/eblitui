@@ -36,6 +36,7 @@ import (
 	_ "image/png"
 
 	"github.com/user-none/eblitui/desktop/netutil"
+	"github.com/user-none/eblitui/desktop/region"
 	"github.com/user-none/eblitui/desktop/signing"
 	"github.com/user-none/eblitui/desktop/storage"
 	_ "golang.org/x/image/webp"
@@ -452,25 +453,24 @@ func parseLocalName(stem string) (f LocalFile, ok bool) {
 // the legacy box art after every other image
 func fileRank(f LocalFile, preferred string) int {
 	if isLegacyBoxArt(f) {
-		return len(storage.ValidBoxArtRegions) + 3
+		return len(region.All) + 3
 	}
 	return regionRank(f.Region, preferred)
 }
 
-// regionRank orders regions: preferred first, then the other box art
-// regions in storage.ValidBoxArtRegions order, then any other region, then
-// no region
-func regionRank(region, preferred string) int {
+// regionRank orders regions: preferred first, then the other supported
+// regions in region.All order, then any other region, then no region
+func regionRank(r, preferred string) int {
 	switch {
-	case region == "":
-		return len(storage.ValidBoxArtRegions) + 2
-	case region == preferred:
+	case r == "":
+		return len(region.All) + 2
+	case r == preferred:
 		return 0
 	}
-	if i := slices.Index(storage.ValidBoxArtRegions, region); i >= 0 {
+	if i := slices.Index(region.All, r); i >= 0 {
 		return i + 1
 	}
-	return len(storage.ValidBoxArtRegions) + 1
+	return len(region.All) + 1
 }
 
 // Caption returns the on-screen name of a local image, such as "Front",
@@ -486,8 +486,8 @@ func Caption(f LocalFile) string {
 	}
 	if f.Region != "" {
 		name := "Other"
-		if slices.Contains(storage.ValidBoxArtRegions, f.Region) {
-			name = storage.BoxArtRegionDisplayName(f.Region)
+		if region.Supported(f.Region) {
+			name = region.DisplayName(f.Region)
 		}
 		s += " (" + name + ")"
 	}
@@ -598,7 +598,7 @@ func SupersededBoxArt(dir string) (path string, ok bool) {
 
 // BoxArtPath returns the path of the front cover shown for a game in its
 // game directory dir: the first front in LocalFiles order for preferred,
-// a storage.BoxArtRegion* setting. That is the preferred region's front,
+// one of region.All. That is the preferred region's front,
 // then the other regions' in regionRank order, then a front with no
 // region, then the legacy boxart.png. When the game has no front, the
 // boxart.webp path is returned.

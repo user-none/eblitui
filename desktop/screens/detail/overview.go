@@ -14,6 +14,7 @@ import (
 	"github.com/user-none/eblitui/desktop/achievements"
 	"github.com/user-none/eblitui/desktop/content"
 	"github.com/user-none/eblitui/desktop/metadata"
+	"github.com/user-none/eblitui/desktop/region"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/desktop/types"
@@ -439,48 +440,33 @@ func playersText(maxPlayers int, coop bool) string {
 	return s
 }
 
-// regionText returns the Region row's value: which of USA, Europe and Japan
-// a game's metadata regions include, upper case in that order, such as
-// "US, EU". A game with none of the three shows its one region code as
-// before, or "Unknown" when it has none.
+// regionText returns the Region row's value: the supported regions a
+// game's metadata regions include, upper case in region.All order, such as
+// "US, EU", or "Unknown" when it has none.
 func regionText(regions []string) string {
-	has := make(map[string]bool, len(regions))
-	for _, r := range regions {
-		has[metadata.RegionCodeFor(r)] = true
-	}
-	var codes []string
-	for _, c := range []string{"us", "eu", "jp"} {
-		if has[c] {
-			codes = append(codes, strings.ToUpper(c))
-		}
-	}
+	codes := region.Codes(regions)
 	if len(codes) == 0 {
-		if c := metadata.RegionCode(regions); c != "" {
-			return strings.ToUpper(c)
-		}
 		return "Unknown"
 	}
-	return strings.Join(codes, ", ")
+	return strings.ToUpper(strings.Join(codes, ", "))
 }
 
 // publisherText lists a game's publisher names, comma separated, in the
 // order of the game's regions: each publisher is listed at the first of
-// its regions, and once. Publishers with no region in regions follow in
-// their own order.
+// its regions, and once. Only supported regions count, so a publisher for
+// any other region is left out.
 func publisherText(publishers []content.Publisher, regions []string) string {
 	var names []string
 	listed := make(map[int]bool, len(publishers))
 	for _, r := range regions {
+		if region.Code(r) == "" {
+			continue
+		}
 		for i, p := range publishers {
 			if !listed[i] && slices.Contains(p.Regions, r) {
 				listed[i] = true
 				names = append(names, p.Name)
 			}
-		}
-	}
-	for i, p := range publishers {
-		if !listed[i] {
-			names = append(names, p.Name)
 		}
 	}
 	return strings.Join(names, ", ")

@@ -23,7 +23,7 @@ func TestRegionText(t *testing.T) {
 		{[]string{"USA", "Brazil", "Europe", "Korea"}, "US, EU"},
 		{[]string{"Japan", "USA", "Europe"}, "US, EU, JP"},
 		{[]string{"Japan", "Atlantis"}, "JP"},
-		{[]string{"Korea"}, "KR"},
+		{[]string{"Korea"}, "Unknown"},
 		{[]string{"Atlantis"}, "Unknown"},
 		{nil, "Unknown"},
 	} {
@@ -44,9 +44,11 @@ func TestPublisherText(t *testing.T) {
 	}{
 		{[]content.Publisher{soa}, []string{"USA"}, "Sega of America"},
 		{[]content.Publisher{se, soa}, []string{"USA", "Europe", "Germany"}, "Sega of America, Sega Europe"},
-		{[]content.Publisher{soa, tec, se}, []string{"USA", "Brazil", "Europe"}, "Sega of America, Tec Toy, Sega Europe"},
+		{[]content.Publisher{soa, tec, se}, []string{"USA", "Brazil", "Europe"}, "Sega of America, Sega Europe"},
 		{[]content.Publisher{se, soa}, []string{"Germany", "USA"}, "Sega Europe, Sega of America"},
-		{[]content.Publisher{tec, soa}, []string{"USA"}, "Sega of America, Tec Toy"},
+		{[]content.Publisher{tec, soa}, []string{"USA"}, "Sega of America"},
+		{[]content.Publisher{tec}, []string{"Brazil"}, ""},
+		{[]content.Publisher{{Name: "Samsung", Regions: []string{"Korea"}}}, []string{"Korea"}, ""},
 		{nil, []string{"USA"}, ""},
 	} {
 		if got := publisherText(tc.publishers, tc.regions); got != tc.want {

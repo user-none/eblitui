@@ -96,33 +96,23 @@ func TestFallbackName(t *testing.T) {
 	}
 }
 
-func TestRegionCode(t *testing.T) {
-	tests := []struct {
+func TestManagerRegion(t *testing.T) {
+	for _, tc := range []struct {
 		regions []string
 		want    string
 	}{
 		{[]string{"Japan"}, "jp"},
 		{[]string{"Germany", "USA", "Europe"}, "us"},
-		{[]string{"France", "Japan"}, "jp"},
+		{[]string{"Japan", "France"}, "eu"},
 		{[]string{"Spain"}, "eu"},
-		{[]string{"Korea"}, "kr"},
-		{[]string{"Taiwan", "Korea"}, "tw"},
-		{[]string{"Nowhere"}, ""},
+		{[]string{"USA", "Brazil"}, "us"},
+		{[]string{"Korea"}, ""},
+		{[]string{"Taiwan", "Brazil"}, ""},
 		{nil, ""},
-	}
-	for _, tc := range tests {
-		if got := RegionCode(tc.regions); got != tc.want {
-			t.Errorf("RegionCode(%v) = %q, want %q", tc.regions, got, tc.want)
-		}
-	}
-}
-
-func TestRegionCodeFor(t *testing.T) {
-	for region, want := range map[string]string{
-		"USA": "us", "Germany": "eu", "Australia": "eu", "Japan": "jp", "Korea": "kr", "Nowhere": "", "": "",
 	} {
-		if got := RegionCodeFor(region); got != want {
-			t.Errorf("RegionCodeFor(%q) = %q, want %q", region, got, want)
+		m := NewMetadataManager(&fakeProvider{games: map[string]content.GameMetadata{"G": {Serial: "G", Regions: tc.regions}}})
+		if got := m.Region(&storage.GameEntry{GameID: "G"}); got != tc.want {
+			t.Errorf("Region(%v) = %q, want %q", tc.regions, got, tc.want)
 		}
 	}
 }

@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"strings"
+
+	"github.com/user-none/eblitui/desktop/region"
 )
 
 // ConfigData is the application configuration stored in config.json. The
@@ -236,32 +238,7 @@ type LibraryView struct {
 	SortBy          string `json:"sortBy"`          // "title", "lastPlayed", "playTime"
 	FavoritesFilter bool   `json:"favoritesFilter"` // Show only favorites
 	ArtworkDownload string `json:"artworkDownload"` // which artwork a scan downloads: one of ValidArtworkDownloads
-	BoxArtRegion    string `json:"boxArtRegion"`    // region whose artwork is shown first: one of ValidBoxArtRegions
-}
-
-// Box art region settings: the region whose artwork is shown first for a
-// game released in more than one region
-const (
-	BoxArtRegionUS = "us" // USA
-	BoxArtRegionEU = "eu" // Europe
-	BoxArtRegionJP = "jp" // Japan
-)
-
-// ValidBoxArtRegions lists the box art region settings, in the order the
-// regions other than the chosen one are shown
-var ValidBoxArtRegions = []string{BoxArtRegionUS, BoxArtRegionEU, BoxArtRegionJP}
-
-// BoxArtRegionDisplayName returns a user-facing label for a box art region
-// setting
-func BoxArtRegionDisplayName(region string) string {
-	switch region {
-	case BoxArtRegionEU:
-		return "Europe"
-	case BoxArtRegionJP:
-		return "Japan"
-	default:
-		return "USA"
-	}
+	BoxArtRegion    string `json:"boxArtRegion"`    // region whose artwork is shown first for a game released in more than one region: one of region.All
 }
 
 // Artwork download settings: which images a library scan downloads. They
@@ -366,7 +343,7 @@ func defaultConfigData() ConfigData {
 			SortBy:          "title",
 			FavoritesFilter: false,
 			ArtworkDownload: ArtworkDownloadAll,
-			BoxArtRegion:    BoxArtRegionUS,
+			BoxArtRegion:    region.US,
 		},
 		Shaders: ShaderConfig{
 			UIShaders:   []string{},

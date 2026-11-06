@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+
+	"github.com/user-none/eblitui/desktop/region"
 )
 
 // detectPresentKeys unmarshals JSON bytes to determine which config keys
@@ -210,8 +212,8 @@ func validateConfig(config *ConfigData, rules ConfigRules) []string {
 	}
 
 	// library.boxArtRegion
-	if !slices.Contains(ValidBoxArtRegions, config.Library.BoxArtRegion) {
-		errors = append(errors, fmt.Sprintf("library.boxArtRegion: %q (valid: %v)", config.Library.BoxArtRegion, ValidBoxArtRegions))
+	if !region.Supported(config.Library.BoxArtRegion) {
+		errors = append(errors, fmt.Sprintf("library.boxArtRegion: %q (valid: %v)", config.Library.BoxArtRegion, region.All))
 	}
 
 	// rewind.bufferSizeMB
@@ -418,7 +420,7 @@ func correctConfig(config *ConfigData, rules ConfigRules) *ConfigData {
 	}
 
 	// library.boxArtRegion
-	if !slices.Contains(ValidBoxArtRegions, config.Library.BoxArtRegion) {
+	if !region.Supported(config.Library.BoxArtRegion) {
 		config.Library.BoxArtRegion = defaults.Library.BoxArtRegion
 	}
 

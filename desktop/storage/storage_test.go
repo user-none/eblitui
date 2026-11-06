@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+
+	"github.com/user-none/eblitui/desktop/region"
 )
 
 // testInfo returns a GameInfo that reads each game's title and region from
@@ -202,8 +204,8 @@ func TestDefaultConfig(t *testing.T) {
 	if config.Library.ArtworkDownload != ArtworkDownloadAll {
 		t.Errorf("expected artwork download %q, got %q", ArtworkDownloadAll, config.Library.ArtworkDownload)
 	}
-	if config.Library.BoxArtRegion != BoxArtRegionUS {
-		t.Errorf("expected box art region %q, got %q", BoxArtRegionUS, config.Library.BoxArtRegion)
+	if config.Library.BoxArtRegion != region.US {
+		t.Errorf("expected box art region %q, got %q", region.US, config.Library.BoxArtRegion)
 	}
 }
 
