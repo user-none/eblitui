@@ -14,6 +14,7 @@ import (
 	"github.com/user-none/eblitui/desktop/achievements"
 	"github.com/user-none/eblitui/desktop/content"
 	"github.com/user-none/eblitui/desktop/metadata"
+	"github.com/user-none/eblitui/desktop/rating"
 	"github.com/user-none/eblitui/desktop/region"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
@@ -303,8 +304,9 @@ func (o *OverviewSection) Build(focus types.FocusManager) *widget.Container {
 	players := playersText(md.MaxPlayers, md.Cooperative)
 	released := metadata.FormatReleaseDate(md.ReleaseDate)
 	publisher := publisherText(md.Publisher, md.Regions)
+	ageRating := rating.Text(md.AgeRatings, md.Regions)
 	hasProduction := md.Developer != "" || publisher != "" ||
-		genre != "" || players != "" || released != "" || md.ESRB != ""
+		genre != "" || players != "" || released != "" || ageRating != ""
 	if hasProduction {
 		metadataContainer.AddChild(widgets.SectionHeader("Production"))
 		if md.Developer != "" {
@@ -322,8 +324,8 @@ func (o *OverviewSection) Build(focus types.FocusManager) *widget.Container {
 		if released != "" {
 			metadataContainer.AddChild(buildMetadataRow("Released", released, valueWidth))
 		}
-		if md.ESRB != "" {
-			metadataContainer.AddChild(buildMetadataRow("ESRB", md.ESRB, valueWidth))
+		if ageRating != "" {
+			metadataContainer.AddChild(buildMetadataRow("Age Rating", ageRating, valueWidth))
 		}
 	}
 

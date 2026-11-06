@@ -14,6 +14,13 @@ type Publisher struct {
 	Regions []string `json:"regions"`
 }
 
+// AgeRating is one age rating of a title: the rating system, such as
+// "ESRB", and the rating code as printed, such as "K-A".
+type AgeRating struct {
+	System string `json:"system"`
+	Rating string `json:"rating"`
+}
+
 // GameMetadata describes one title.
 type GameMetadata struct {
 	Serial      string      `json:"serial"`
@@ -29,7 +36,7 @@ type GameMetadata struct {
 	Genres      []string    `json:"genres"`
 	MaxPlayers  int         `json:"max_players"`
 	Cooperative bool        `json:"cooperative"`
-	ESRB        string      `json:"esrb"`
+	AgeRatings  []AgeRating `json:"age_ratings"`
 	Overview    string      `json:"overview"`
 }
 
