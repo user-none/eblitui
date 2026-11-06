@@ -17,12 +17,13 @@ func TestRegionText(t *testing.T) {
 		regions []string
 		want    string
 	}{
-		{[]string{"USA"}, "US"},
-		{[]string{"Europe", "USA"}, "US, EU"},
-		{[]string{"Europe", "Germany", "France"}, "EU"},
-		{[]string{"USA", "Brazil", "Europe", "Korea"}, "US, EU"},
-		{[]string{"Japan", "USA", "Europe"}, "US, EU, JP"},
-		{[]string{"Japan", "Atlantis"}, "JP"},
+		{[]string{"USA"}, "USA"},
+		{[]string{"Europe", "USA"}, "Europe, USA"},
+		{[]string{"Europe", "Germany", "France"}, "Europe"},
+		{[]string{"Germany", "France"}, "Europe"},
+		{[]string{"USA", "Brazil", "Europe", "Korea"}, "USA, Europe"},
+		{[]string{"Japan", "USA", "Europe"}, "Japan, USA, Europe"},
+		{[]string{"Japan", "Atlantis"}, "Japan"},
 		{[]string{"Korea"}, "Unknown"},
 		{[]string{"Atlantis"}, "Unknown"},
 		{nil, "Unknown"},

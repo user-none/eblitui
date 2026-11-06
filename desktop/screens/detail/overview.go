@@ -440,15 +440,25 @@ func playersText(maxPlayers int, coop bool) string {
 	return s
 }
 
-// regionText returns the Region row's value: the supported regions a
-// game's metadata regions include, upper case in region.All order, such as
-// "US, EU", or "Unknown" when it has none.
+// regionText returns the Region row's value: the names of the supported
+// regions a game's metadata regions belong to, each once, in the order of
+// the metadata regions, such as "USA, Europe" for USA, Germany and France,
+// or "Unknown" when it has none.
 func regionText(regions []string) string {
-	codes := region.Codes(regions)
-	if len(codes) == 0 {
+	var names []string
+	seen := make(map[string]bool, len(region.All))
+	for _, r := range regions {
+		c := region.Code(r)
+		if c == "" || seen[c] {
+			continue
+		}
+		seen[c] = true
+		names = append(names, region.DisplayName(c))
+	}
+	if len(names) == 0 {
 		return "Unknown"
 	}
-	return strings.ToUpper(strings.Join(codes, ", "))
+	return strings.Join(names, ", ")
 }
 
 // publisherText lists a game's publisher names, comma separated, in the
