@@ -445,20 +445,11 @@ func playersText(maxPlayers int, coop bool) string {
 // the metadata regions, such as "USA, Europe" for USA, Germany and France,
 // or "Unknown" when it has none.
 func regionText(regions []string) string {
-	var names []string
-	seen := make(map[string]bool, len(region.All))
-	for _, r := range regions {
-		c := region.Code(r)
-		if c == "" || seen[c] {
-			continue
-		}
-		seen[c] = true
-		names = append(names, region.DisplayName(c))
-	}
-	if len(names) == 0 {
+	names := region.Names(region.Codes(regions))
+	if names == "" {
 		return "Unknown"
 	}
-	return strings.Join(names, ", ")
+	return names
 }
 
 // publisherText lists a game's publisher names, comma separated, in the

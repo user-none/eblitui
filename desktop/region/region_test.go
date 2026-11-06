@@ -25,15 +25,35 @@ func TestCodes(t *testing.T) {
 		want  []string
 	}{
 		{[]string{"Japan"}, []string{JP}},
-		{[]string{"Germany", "USA", "Europe"}, []string{US, EU}},
-		{[]string{"Japan", "France"}, []string{EU, JP}},
-		{[]string{"Japan", "USA", "Europe"}, []string{US, EU, JP}},
+		{[]string{"Germany", "USA", "Europe"}, []string{EU, US}},
+		{[]string{"Japan", "France"}, []string{JP, EU}},
+		{[]string{"Japan", "USA", "Europe"}, []string{JP, US, EU}},
+		{[]string{"USA", "Brazil", "Europe"}, []string{US, EU}},
 		{[]string{"USA", "Brazil", "Korea"}, []string{US}},
 		{[]string{"Korea", "Taiwan"}, nil},
 		{nil, nil},
 	} {
 		if got := Codes(tc.names); !slices.Equal(got, tc.want) {
 			t.Errorf("Codes(%v) = %v, want %v", tc.names, got, tc.want)
+		}
+	}
+}
+
+func TestAbbreviationsAndNames(t *testing.T) {
+	for _, tc := range []struct {
+		codes       []string
+		abbr, names string
+	}{
+		{[]string{US, EU}, "US, EU", "USA, Europe"},
+		{[]string{JP}, "JP", "Japan"},
+		{[]string{JP, US, EU}, "JP, US, EU", "Japan, USA, Europe"},
+		{nil, "", ""},
+	} {
+		if got := Abbreviations(tc.codes); got != tc.abbr {
+			t.Errorf("Abbreviations(%v) = %q, want %q", tc.codes, got, tc.abbr)
+		}
+		if got := Names(tc.codes); got != tc.names {
+			t.Errorf("Names(%v) = %q, want %q", tc.codes, got, tc.names)
 		}
 	}
 }

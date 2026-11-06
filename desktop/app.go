@@ -1393,9 +1393,9 @@ func (a *App) GameTitle(game *storage.GameEntry) string {
 	return a.metadata.Title(game)
 }
 
-// GameInfo returns the title and region code for a library entry, used to
-// sort and search the library.
-func (a *App) GameInfo(game *storage.GameEntry) (string, string) {
+// GameInfo returns the keys a library entry is sorted and searched by: its
+// title and supported region codes.
+func (a *App) GameInfo(game *storage.GameEntry) storage.GameKeys {
 	return a.metadata.Info(game)
 }
 

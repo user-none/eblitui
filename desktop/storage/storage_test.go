@@ -12,13 +12,17 @@ import (
 	"github.com/user-none/eblitui/desktop/region"
 )
 
-// testInfo returns a GameInfo that reads each game's title and region from
-// a map keyed by game ID. Games not in the map have an empty title and
-// region.
+// testInfo returns a GameInfo that reads each game's title and region
+// code from a map keyed by game ID. Games not in the map have an empty
+// title and no regions.
 func testInfo(m map[string][2]string) GameInfo {
-	return func(g *GameEntry) (string, string) {
+	return func(g *GameEntry) GameKeys {
 		v := m[g.GameID]
-		return v[0], v[1]
+		k := GameKeys{Title: v[0]}
+		if v[1] != "" {
+			k.Regions = []string{v[1]}
+		}
+		return k
 	}
 }
 

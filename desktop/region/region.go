@@ -7,7 +7,10 @@
 // ignored wherever regions are shown or chosen.
 package region
 
-import "slices"
+import (
+	"slices"
+	"strings"
+)
 
 // The supported regions
 const (
@@ -43,18 +46,32 @@ func Code(name string) string {
 }
 
 // Codes returns the supported regions that a list of metadata region names
-// includes, each once, in All order.
+// belongs to, each once, in the order the names first reach them. USA,
+// Germany and France give US, EU.
 func Codes(names []string) []string {
 	var out []string
-	for _, c := range All {
-		for _, n := range names {
-			if codes[n] == c {
-				out = append(out, c)
-				break
-			}
+	for _, n := range names {
+		if c := codes[n]; c != "" && !slices.Contains(out, c) {
+			out = append(out, c)
 		}
 	}
 	return out
+}
+
+// Abbreviations returns region codes upper case and comma separated, such
+// as "US, EU", or "" when there are none
+func Abbreviations(codes []string) string {
+	return strings.ToUpper(strings.Join(codes, ", "))
+}
+
+// Names returns the display names of region codes, comma separated, such
+// as "USA, Europe", or "" when there are none
+func Names(codes []string) string {
+	names := make([]string, 0, len(codes))
+	for _, c := range codes {
+		names = append(names, DisplayName(c))
+	}
+	return strings.Join(names, ", ")
 }
 
 // Supported reports whether code is one of All

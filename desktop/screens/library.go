@@ -9,6 +9,7 @@ import (
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/user-none/eblitui/desktop/region"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
 	"github.com/user-none/eblitui/desktop/types"
@@ -515,13 +516,14 @@ func (s *LibraryScreen) buildListView() widget.PreferredSizeLocateableWidget {
 		if g.Favorite {
 			fav = "*"
 		}
-		title, region := s.callback.GameInfo(g)
-		region = strings.ToUpper(region)
-		if region == "" {
-			region = "-"
+		title := s.callback.GameTitle(g)
+		md, _ := s.callback.GameMetadata(g.GameID)
+		regions := region.Abbreviations(region.Codes(md.Regions))
+		if regions == "" {
+			regions = "-"
 		}
 		genre := "-"
-		if md, ok := s.callback.GameMetadata(g.GameID); ok && len(md.Genres) > 0 {
+		if len(md.Genres) > 0 {
 			genre = strings.Join(md.Genres, ", ")
 		}
 		playTime := style.FormatPlayTime(g.PlayTimeSeconds)
@@ -546,7 +548,7 @@ func (s *LibraryScreen) buildListView() widget.PreferredSizeLocateableWidget {
 		// Truncate cell content to fit computed column widths
 		displayName, _ := style.TruncateToWidth(title, fontFace, float64(titleWidth))
 		truncGenre, _ := style.TruncateToWidth(genre, fontFace, float64(genreW))
-		truncRegion, _ := style.TruncateToWidth(region, fontFace, float64(regionW))
+		truncRegion, _ := style.TruncateToWidth(regions, fontFace, float64(regionW))
 		truncPlayTime, _ := style.TruncateToWidth(playTime, fontFace, float64(playTimeW))
 		truncLastPlayed, _ := style.TruncateToWidth(lastPlayed, fontFace, float64(lastPlayedW))
 

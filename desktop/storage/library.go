@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -233,9 +234,15 @@ func legacySaveSlots(data []byte) (map[string]int, error) {
 	return slots, nil
 }
 
-// GameInfo returns the title and region code a game is sorted and
-// searched by.
-type GameInfo func(game *GameEntry) (title, region string)
+// GameKeys is what a game is sorted and searched by: its title and its
+// supported region codes in the order of its metadata regions.
+type GameKeys struct {
+	Title   string
+	Regions []string
+}
+
+// GameInfo returns the keys a game is sorted and searched by.
+type GameInfo func(game *GameEntry) GameKeys
 
 // clone returns a copy of g that shares nothing with it.
 func (g *GameEntry) clone() GameEntry {
@@ -335,20 +342,20 @@ func (lib *Library) RemoveDisc(gameID string, idx int) {
 	lib.update(gameID, func(g *GameEntry) { g.RemoveDisc(idx) })
 }
 
-// sortKey is the title and region a game is sorted by, lowercased once
-// per sort.
+// sortKey is the title, lowercased once per sort, and the region codes a
+// game is sorted by
 type sortKey struct {
-	title  string
-	region string
+	title   string
+	regions []string
 }
 
-// sortGames orders games by sortBy, using info for the title and region.
+// sortGames orders games by sortBy, using info for the title and regions.
 // Unknown sortBy values sort by title.
 func sortGames(games []GameEntry, sortBy string, info GameInfo) {
 	keys := make(map[string]sortKey, len(games))
 	for i := range games {
-		title, region := info(&games[i])
-		keys[games[i].GameID] = sortKey{title: strings.ToLower(title), region: region}
+		k := info(&games[i])
+		keys[games[i].GameID] = sortKey{title: strings.ToLower(k.Title), regions: k.Regions}
 	}
 	byTitle := func(a, b *GameEntry) bool {
 		return compareGamesForSort(a, b, keys[a.GameID], keys[b.GameID])
@@ -386,8 +393,8 @@ func compareGamesForSort(a, b *GameEntry, ak, bk sortKey) bool {
 	if ak.title != bk.title {
 		return ak.title < bk.title
 	}
-	if ak.region != bk.region {
-		return ak.region < bk.region
+	if c := slices.Compare(ak.regions, bk.regions); c != 0 {
+		return c < 0
 	}
 	return a.GameID < b.GameID
 }
@@ -417,8 +424,7 @@ func (lib *Library) GamesSortedFiltered(sortBy string, favoritesOnly bool, searc
 	searchLower := strings.ToLower(searchText)
 	for i := range all {
 		if searchText != "" {
-			title, _ := info(&all[i])
-			if !strings.Contains(strings.ToLower(title), searchLower) {
+			if !strings.Contains(strings.ToLower(info(&all[i]).Title), searchLower) {
 				continue
 			}
 		}

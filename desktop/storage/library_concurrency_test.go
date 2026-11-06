@@ -39,7 +39,7 @@ func TestLibraryConcurrentUse(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			title := func(g *GameEntry) (string, string) { return g.GameID, "" }
+			title := func(g *GameEntry) GameKeys { return GameKeys{Title: g.GameID} }
 			for range games {
 				lib.GamesSortedFiltered("playTime", false, "g", title)
 				lib.Games()
@@ -78,7 +78,7 @@ func TestLibraryReturnsCopies(t *testing.T) {
 	game.Favorite = true
 	game.Discs[0].Name = "changed"
 
-	for _, g := range []GameEntry{lib.Games()["A"], lib.GamesSorted("", false, func(g *GameEntry) (string, string) { return "", "" })[0]} {
+	for _, g := range []GameEntry{lib.Games()["A"], lib.GamesSorted("", false, func(g *GameEntry) GameKeys { return GameKeys{} })[0]} {
 		g.Discs[0].Name = "changed"
 	}
 

@@ -76,9 +76,9 @@ type ScreenCallback interface {
 	// GameTitle returns the title to show for a library entry: its
 	// metadata title, else a name from its file.
 	GameTitle(game *storage.GameEntry) string
-	// GameInfo returns the title and region code for a library entry,
-	// used to sort and search the library.
-	GameInfo(game *storage.GameEntry) (string, string)
+	// GameInfo returns the keys a library entry is sorted and searched
+	// by: its title and supported region codes.
+	GameInfo(game *storage.GameEntry) storage.GameKeys
 }
 
 // UpdateStatus is the update state shown in Settings > About.

@@ -1,6 +1,7 @@
 package metadata
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/user-none/eblitui/desktop/content"
@@ -48,15 +49,15 @@ func TestManagerGameAndTitle(t *testing.T) {
 	if got := m.Title(vf); got != "Virtua Fighter" {
 		t.Errorf("Title(matched) = %q", got)
 	}
-	if got := m.Region(vf); got != "jp" {
-		t.Errorf("Region(matched) = %q", got)
+	if got := m.Info(vf); got.Title != "Virtua Fighter" || !slices.Equal(got.Regions, []string{"jp"}) {
+		t.Errorf("Info(matched) = %+v", got)
 	}
 
 	// An entry with no metadata, or metadata without a title, falls back to
 	// its file name
 	unknown := &storage.GameEntry{GameID: "MISSING", Discs: []storage.GameDisc{{File: "/roms/Some Game (USA) (Disc 1).chd"}}}
-	if title, region := m.Info(unknown); title != "Some Game" || region != "" {
-		t.Errorf("Info(unmatched) = %q, %q", title, region)
+	if got := m.Info(unknown); got.Title != "Some Game" || got.Regions != nil {
+		t.Errorf("Info(unmatched) = %+v", got)
 	}
 	noTitle := &storage.GameEntry{GameID: "NOTITLE", File: "/roms/Other (Europe).zip"}
 	if got := m.Title(noTitle); got != "Other" {
@@ -70,8 +71,8 @@ func TestManagerWithoutProvider(t *testing.T) {
 		t.Error("Game found an entry without a provider")
 	}
 	g := &storage.GameEntry{GameID: "abcd1234", File: "/roms/Sonic (USA).sms"}
-	if title, region := m.Info(g); title != "Sonic" || region != "" {
-		t.Errorf("Info = %q, %q", title, region)
+	if got := m.Info(g); got.Title != "Sonic" || got.Regions != nil {
+		t.Errorf("Info = %+v", got)
 	}
 }
 
@@ -96,23 +97,20 @@ func TestFallbackName(t *testing.T) {
 	}
 }
 
-func TestManagerRegion(t *testing.T) {
+func TestManagerInfoRegions(t *testing.T) {
 	for _, tc := range []struct {
 		regions []string
-		want    string
+		want    []string
 	}{
-		{[]string{"Japan"}, "jp"},
-		{[]string{"Germany", "USA", "Europe"}, "us"},
-		{[]string{"Japan", "France"}, "eu"},
-		{[]string{"Spain"}, "eu"},
-		{[]string{"USA", "Brazil"}, "us"},
-		{[]string{"Korea"}, ""},
-		{[]string{"Taiwan", "Brazil"}, ""},
-		{nil, ""},
+		{[]string{"Japan"}, []string{"jp"}},
+		{[]string{"Germany", "USA", "Europe"}, []string{"eu", "us"}},
+		{[]string{"USA", "Brazil", "Europe"}, []string{"us", "eu"}},
+		{[]string{"Korea"}, nil},
+		{nil, nil},
 	} {
 		m := NewMetadataManager(&fakeProvider{games: map[string]content.GameMetadata{"G": {Serial: "G", Regions: tc.regions}}})
-		if got := m.Region(&storage.GameEntry{GameID: "G"}); got != tc.want {
-			t.Errorf("Region(%v) = %q, want %q", tc.regions, got, tc.want)
+		if got := m.Info(&storage.GameEntry{GameID: "G"}).Regions; !slices.Equal(got, tc.want) {
+			t.Errorf("Info(%v).Regions = %v, want %v", tc.regions, got, tc.want)
 		}
 	}
 }

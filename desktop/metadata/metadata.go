@@ -46,22 +46,15 @@ func (m *MetadataManager) Title(game *storage.GameEntry) string {
 	return FallbackName(game)
 }
 
-// Region returns the region code for a library entry: the first of its
-// supported regions in region.All order, or "" when it has none or the
-// core has no metadata for it.
-func (m *MetadataManager) Region(game *storage.GameEntry) string {
+// Info returns the keys a library entry is sorted and searched by: its
+// title and its supported region codes in the order of its metadata
+// regions, none when the core has no metadata for it.
+func (m *MetadataManager) Info(game *storage.GameEntry) storage.GameKeys {
+	k := storage.GameKeys{Title: m.Title(game)}
 	if g, ok := m.games[game.GameID]; ok {
-		if codes := region.Codes(g.Regions); len(codes) > 0 {
-			return codes[0]
-		}
+		k.Regions = region.Codes(g.Regions)
 	}
-	return ""
-}
-
-// Info returns the title and region code for a library entry, for sorting
-// and searching the library.
-func (m *MetadataManager) Info(game *storage.GameEntry) (string, string) {
-	return m.Title(game), m.Region(game)
+	return k
 }
 
 // FallbackName returns a name for a library entry without metadata: the
