@@ -7,23 +7,30 @@
 // product number read from the disc for disc systems.
 package content
 
+// Publisher is one publisher of a title and the regions, as named in
+// GameMetadata.Regions, it published the title in.
+type Publisher struct {
+	Name    string   `json:"name"`
+	Regions []string `json:"regions"`
+}
+
 // GameMetadata describes one title.
 type GameMetadata struct {
-	Serial      string   `json:"serial"`
-	Title       string   `json:"title"`
-	NativeTitle string   `json:"native_title"`
-	Category    string   `json:"category"`
-	Regions     []string `json:"regions"`
-	Languages   []string `json:"languages"`
-	Barcodes    []string `json:"barcodes"`
-	ReleaseDate string   `json:"release_date"` // YYYY-MM-DD, or YYYY when only the year is known
-	Developer   string   `json:"developer"`
-	Publisher   string   `json:"publisher"`
-	Genres      []string `json:"genres"`
-	MaxPlayers  int      `json:"max_players"`
-	Cooperative bool     `json:"cooperative"`
-	ESRB        string   `json:"esrb"`
-	Overview    string   `json:"overview"`
+	Serial      string      `json:"serial"`
+	Title       string      `json:"title"`
+	NativeTitle string      `json:"native_title"`
+	Category    string      `json:"category"`
+	Regions     []string    `json:"regions"`
+	Languages   []string    `json:"languages"`
+	Barcodes    []string    `json:"barcodes"`
+	ReleaseDate string      `json:"release_date"` // YYYY-MM-DD, or YYYY when only the year is known
+	Developer   string      `json:"developer"`
+	Publisher   []Publisher `json:"publisher"`
+	Genres      []string    `json:"genres"`
+	MaxPlayers  int         `json:"max_players"`
+	Cooperative bool        `json:"cooperative"`
+	ESRB        string      `json:"esrb"`
+	Overview    string      `json:"overview"`
 }
 
 // MetadataSource supplies game metadata.

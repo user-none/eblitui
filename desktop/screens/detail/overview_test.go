@@ -7,6 +7,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/user-none/eblitui/desktop/content"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/go-rcheevos"
 )
@@ -28,6 +29,28 @@ func TestRegionText(t *testing.T) {
 	} {
 		if got := regionText(tc.regions); got != tc.want {
 			t.Errorf("regionText(%v) = %q, want %q", tc.regions, got, tc.want)
+		}
+	}
+}
+
+func TestPublisherText(t *testing.T) {
+	soa := content.Publisher{Name: "Sega of America", Regions: []string{"USA"}}
+	se := content.Publisher{Name: "Sega Europe", Regions: []string{"Europe", "Germany"}}
+	tec := content.Publisher{Name: "Tec Toy", Regions: []string{"Brazil"}}
+	for _, tc := range []struct {
+		publishers []content.Publisher
+		regions    []string
+		want       string
+	}{
+		{[]content.Publisher{soa}, []string{"USA"}, "Sega of America"},
+		{[]content.Publisher{se, soa}, []string{"USA", "Europe", "Germany"}, "Sega of America, Sega Europe"},
+		{[]content.Publisher{soa, tec, se}, []string{"USA", "Brazil", "Europe"}, "Sega of America, Tec Toy, Sega Europe"},
+		{[]content.Publisher{se, soa}, []string{"Germany", "USA"}, "Sega Europe, Sega of America"},
+		{[]content.Publisher{tec, soa}, []string{"USA"}, "Sega of America, Tec Toy"},
+		{nil, []string{"USA"}, ""},
+	} {
+		if got := publisherText(tc.publishers, tc.regions); got != tc.want {
+			t.Errorf("publisherText(%v, %v) = %q, want %q", tc.publishers, tc.regions, got, tc.want)
 		}
 	}
 }

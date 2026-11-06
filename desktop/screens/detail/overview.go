@@ -5,12 +5,14 @@ package detail
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
 	"github.com/ebitenui/ebitenui/image"
 	"github.com/ebitenui/ebitenui/widget"
 	"github.com/user-none/eblitui/desktop/achievements"
+	"github.com/user-none/eblitui/desktop/content"
 	"github.com/user-none/eblitui/desktop/metadata"
 	"github.com/user-none/eblitui/desktop/storage"
 	"github.com/user-none/eblitui/desktop/style"
@@ -299,15 +301,16 @@ func (o *OverviewSection) Build(focus types.FocusManager) *widget.Container {
 	genre := strings.Join(md.Genres, ", ")
 	players := playersText(md.MaxPlayers, md.Cooperative)
 	released := metadata.FormatReleaseDate(md.ReleaseDate)
-	hasProduction := md.Developer != "" || md.Publisher != "" ||
+	publisher := publisherText(md.Publisher, md.Regions)
+	hasProduction := md.Developer != "" || publisher != "" ||
 		genre != "" || players != "" || released != "" || md.ESRB != ""
 	if hasProduction {
 		metadataContainer.AddChild(widgets.SectionHeader("Production"))
 		if md.Developer != "" {
 			metadataContainer.AddChild(buildMetadataRow("Developer", md.Developer, valueWidth))
 		}
-		if md.Publisher != "" {
-			metadataContainer.AddChild(buildMetadataRow("Publisher", md.Publisher, valueWidth))
+		if publisher != "" {
+			metadataContainer.AddChild(buildMetadataRow("Publisher", publisher, valueWidth))
 		}
 		if genre != "" {
 			metadataContainer.AddChild(buildMetadataRow("Genre", genre, valueWidth))
@@ -458,6 +461,29 @@ func regionText(regions []string) string {
 		return "Unknown"
 	}
 	return strings.Join(codes, ", ")
+}
+
+// publisherText lists a game's publisher names, comma separated, in the
+// order of the game's regions: each publisher is listed at the first of
+// its regions, and once. Publishers with no region in regions follow in
+// their own order.
+func publisherText(publishers []content.Publisher, regions []string) string {
+	var names []string
+	listed := make(map[int]bool, len(publishers))
+	for _, r := range regions {
+		for i, p := range publishers {
+			if !listed[i] && slices.Contains(p.Regions, r) {
+				listed[i] = true
+				names = append(names, p.Name)
+			}
+		}
+	}
+	for i, p := range publishers {
+		if !listed[i] {
+			names = append(names, p.Name)
+		}
+	}
+	return strings.Join(names, ", ")
 }
 
 // buildMetadataRow creates a metadata row with background, label on left, value on right
