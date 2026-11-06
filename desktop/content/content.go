@@ -21,23 +21,42 @@ type AgeRating struct {
 	Rating string `json:"rating"`
 }
 
+// CriticRating is one critic rating of a title: the source, such as "GamePro",
+// the region, as named in GameMetadata.Regions, whose release it reviewed,
+// the scale its scores are out of, and the scores as printed.
+type CriticRating struct {
+	Source string        `json:"source"`
+	Region string        `json:"region"`
+	Scale  float64       `json:"scale"`
+	Scores []CriticScore `json:"scores"`
+}
+
+// CriticScore is one printed score of a review: a reviewer's score, or a
+// category's score for a source that scores categories, such as
+// "FunFactor".
+type CriticScore struct {
+	Category string  `json:"category,omitempty"`
+	Score    float64 `json:"score"`
+}
+
 // GameMetadata describes one title.
 type GameMetadata struct {
-	Serial      string      `json:"serial"`
-	Title       string      `json:"title"`
-	NativeTitle string      `json:"native_title"`
-	Category    string      `json:"category"`
-	Regions     []string    `json:"regions"`
-	Languages   []string    `json:"languages"`
-	Barcodes    []string    `json:"barcodes"`
-	ReleaseDate string      `json:"release_date"` // YYYY-MM-DD, or YYYY when only the year is known
-	Developer   string      `json:"developer"`
-	Publisher   []Publisher `json:"publisher"`
-	Genres      []string    `json:"genres"`
-	MaxPlayers  int         `json:"max_players"`
-	Cooperative bool        `json:"cooperative"`
-	AgeRatings  []AgeRating `json:"age_ratings"`
-	Overview    string      `json:"overview"`
+	Serial        string         `json:"serial"`
+	Title         string         `json:"title"`
+	NativeTitle   string         `json:"native_title"`
+	Category      string         `json:"category"`
+	Regions       []string       `json:"regions"`
+	Languages     []string       `json:"languages"`
+	Barcodes      []string       `json:"barcodes"`
+	ReleaseDate   string         `json:"release_date"` // YYYY-MM-DD, or YYYY when only the year is known
+	Developer     string         `json:"developer"`
+	Publisher     []Publisher    `json:"publisher"`
+	Genres        []string       `json:"genres"`
+	MaxPlayers    int            `json:"max_players"`
+	Cooperative   bool           `json:"cooperative"`
+	AgeRatings    []AgeRating    `json:"age_ratings"`
+	CriticRatings []CriticRating `json:"critic_ratings"`
+	Overview      string         `json:"overview"`
 }
 
 // MetadataSource supplies game metadata.

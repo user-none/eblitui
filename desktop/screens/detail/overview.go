@@ -304,7 +304,7 @@ func (o *OverviewSection) Build(focus types.FocusManager) *widget.Container {
 	players := playersText(md.MaxPlayers, md.Cooperative)
 	released := metadata.FormatReleaseDate(md.ReleaseDate)
 	publisher := publisherText(md.Publisher, md.Regions)
-	ageRating := rating.Text(md.AgeRatings, md.Regions)
+	ageRating := rating.Age(md.AgeRatings, md.Regions)
 	hasProduction := md.Developer != "" || publisher != "" ||
 		genre != "" || players != "" || released != "" || ageRating != ""
 	if hasProduction {
@@ -326,6 +326,14 @@ func (o *OverviewSection) Build(focus types.FocusManager) *widget.Container {
 		}
 		if ageRating != "" {
 			metadataContainer.AddChild(buildMetadataRow("Age Rating", ageRating, valueWidth))
+		}
+	}
+
+	// Critic Ratings section: one row per source
+	if critics := rating.Critic(md.CriticRatings, md.Regions); len(critics) > 0 {
+		metadataContainer.AddChild(widgets.SectionHeader("Critic Ratings"))
+		for _, r := range critics {
+			metadataContainer.AddChild(buildMetadataRow(r.Source, r.Score, valueWidth))
 		}
 	}
 
