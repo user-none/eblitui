@@ -56,10 +56,11 @@ type LibraryScreen struct {
 	iconScrollContainer *widgets.ScrollView
 	listScrollContainer *widgets.ScrollView
 
-	// Set when the selected icon-view card still needs to be top-aligned once
-	// real layout rects are known (one frame after a rebuild). The card is
-	// identified by iconSelectedID.
-	pendingIconScroll bool
+	// Set when the selected game still needs to be scrolled into place once
+	// real layout rects are known (one frame after a rebuild): top-aligned in
+	// the icon view (identified by iconSelectedID) or centered in the list
+	// view (identified by listSelectedID).
+	pendingScroll bool
 
 	// Async artwork loader
 	artLoader *artworkLoader
@@ -616,10 +617,15 @@ func (s *LibraryScreen) buildListView() widget.PreferredSizeLocateableWidget {
 
 	// Scroll so the selected row is visible (centered); otherwise restore the
 	// preserved scroll position. Keeping the selection visible matters when a
-	// sort change (e.g. Last Played) moves the selected game.
-	if selectedIndex >= 0 && len(s.games) > 0 {
+	// sort change (e.g. Last Played) moves the selected game. The exact
+	// centering needs the real layout rects, which are not known until after
+	// the first render, so set an estimate now and refine it next frame in
+	// ApplyPendingScroll.
+	s.pendingScroll = false
+	if selectedIndex >= 0 {
 		scrollContainer.SetScrollTop(centerScrollFraction(selectedIndex*style.ListRowHeight, style.ListRowHeight,
 			len(s.games)*style.ListRowHeight, style.EstimatedViewportHeight))
+		s.pendingScroll = true
 	} else if s.listScrollTop > 0 {
 		scrollContainer.SetScrollTop(s.listScrollTop)
 	}
@@ -727,7 +733,7 @@ func (s *LibraryScreen) buildIconView(container *widget.Container) int {
 	// matters when a sort change (e.g. Last Played) moves the selected game.
 	// The exact top-alignment needs the real layout rects, which are not known
 	// until after the first render, so set an estimate now and refine it next
-	// frame in ApplyPendingIconScroll.
+	// frame in ApplyPendingScroll.
 	selectedIndex := -1
 	if s.iconSelectedID != "" {
 		for i, g := range s.games {
@@ -742,13 +748,13 @@ func (s *LibraryScreen) buildIconView(container *widget.Container) int {
 		totalRows := (len(s.games) + columns - 1) / columns
 		scrollContainer.SetScrollTop(topAlignScrollFraction((selectedIndex/columns)*rowPitch,
 			totalRows*rowPitch, style.EstimatedViewportHeight))
-		s.pendingIconScroll = true
+		s.pendingScroll = true
 	} else if s.iconScrollTop > 0 {
 		scrollContainer.SetScrollTop(s.iconScrollTop)
-		s.pendingIconScroll = false
+		s.pendingScroll = false
 		s.iconSelectedID = ""
 	} else {
-		s.pendingIconScroll = false
+		s.pendingScroll = false
 		s.iconSelectedID = ""
 	}
 
@@ -756,53 +762,63 @@ func (s *LibraryScreen) buildIconView(container *widget.Container) int {
 	return columns
 }
 
-// ApplyPendingIconScroll finishes top-aligning the selected icon card using the
-// real scroll-container rects. buildIconView can only estimate the position
-// because widget layout is unknown until the first render after a rebuild, so
-// this runs each frame and applies the exact alignment once the rects are
-// available, then clears the request.
-func (s *LibraryScreen) ApplyPendingIconScroll() {
-	if !s.pendingIconScroll {
-		return
-	}
-	if s.config.Values().Library.ViewMode != "icon" || s.iconScrollContainer == nil {
-		s.pendingIconScroll = false
-		s.iconSelectedID = ""
+// ApplyPendingScroll finishes scrolling the selected game into place using the
+// real scroll-container rects: top-aligning the card in the icon view and
+// centering the row in the list view. The build functions can only estimate
+// the position because widget layout is unknown until the first render after a
+// rebuild, so this runs each frame and applies the exact position once the
+// rects are available, then clears the request.
+func (s *LibraryScreen) ApplyPendingScroll() {
+	if !s.pendingScroll {
 		return
 	}
 
-	btn := s.target("game-" + s.iconSelectedID)
+	isList := s.config.Values().Library.ViewMode == "list"
+	scrollContainer := s.iconScrollContainer
+	selectedID := s.iconSelectedID
+	if isList {
+		scrollContainer = s.listScrollContainer
+		selectedID = s.listSelectedID
+	}
+
+	var btn widget.Focuser
+	if scrollContainer != nil && selectedID != "" {
+		btn = s.target("game-" + selectedID)
+	}
 	if btn == nil {
-		s.pendingIconScroll = false
-		s.iconSelectedID = ""
+		s.pendingScroll = false
+		if !isList {
+			s.iconSelectedID = ""
+		}
 		return
 	}
 
 	// Wait until the layout rects are known (the frame after a rebuild).
-	if s.iconScrollContainer.ContentRect().Dy() <= 0 || s.iconScrollContainer.ViewRect().Dy() <= 0 {
+	if scrollContainer.ContentRect().Dy() <= 0 || scrollContainer.ViewRect().Dy() <= 0 {
 		return
 	}
 
-	s.pendingIconScroll = false
+	s.pendingScroll = false
+	if isList {
+		scrollContainer.ScrollRectToCenter(btn.GetWidget().Rect)
+		return
+	}
 	s.iconSelectedID = ""
-	s.iconScrollContainer.ScrollRectToTop(btn.GetWidget().Rect)
+	scrollContainer.ScrollRectToTop(btn.GetWidget().Rect)
 }
 
 // centerScrollFraction returns the scroll fraction (0..1) that centers an item
 // of height itemHeight whose top edge is at itemY within content of height
-// totalHeight, for the given viewport height. Returns 0 when content is empty.
+// totalHeight, for the given viewport height. The scroll view offsets content
+// by (totalHeight-viewportHeight)*fraction, so the divisor is the scroll range,
+// not the full content height. Returns 0 when the content fits.
 func centerScrollFraction(itemY, itemHeight, totalHeight, viewportHeight int) float64 {
-	if totalHeight <= 0 {
+	scrollRange := totalHeight - viewportHeight
+	if scrollRange <= 0 {
 		return 0
 	}
 	target := itemY - viewportHeight/2 + itemHeight/2
-	if target < 0 {
-		target = 0
-	}
-	if totalHeight > viewportHeight && target > totalHeight-viewportHeight {
-		target = totalHeight - viewportHeight
-	}
-	f := float64(target) / float64(totalHeight)
+	f := float64(target) / float64(scrollRange)
 	if f < 0 {
 		f = 0
 	}

@@ -797,9 +797,9 @@ func (a *App) Update() error {
 		if !a.rebuildPending.Load() {
 			a.restorePendingFocus(a.libraryScreen)
 		}
-		// Finish top-aligning the selected icon card once real layout rects
+		// Finish scrolling the selected game into place once real layout rects
 		// are available (one frame after a rebuild).
-		a.libraryScreen.ApplyPendingIconScroll()
+		a.libraryScreen.ApplyPendingScroll()
 		if nav.FocusChanged {
 			a.ensureFocusedVisible()
 		}

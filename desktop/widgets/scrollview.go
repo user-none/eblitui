@@ -215,6 +215,20 @@ func (s *ScrollView) ScrollRectToTop(rect img.Rectangle) {
 	s.SetScrollTop(float64(offset+topInView) / float64(maxScroll))
 }
 
+// ScrollRectToCenter scrolls so rect (in screen coordinates) is vertically
+// centered in the viewport, clamped to the scroll range. Does nothing when the
+// content fits.
+func (s *ScrollView) ScrollRectToCenter(rect img.Rectangle) {
+	maxScroll := s.scrollRange()
+	if maxScroll == 0 {
+		return
+	}
+	viewRect := s.ViewRect()
+	offset := int(s.ScrollTop * float64(maxScroll))
+	centerInView := (rect.Min.Y+rect.Max.Y)/2 - viewRect.Min.Y
+	s.SetScrollTop(float64(offset+centerInView-viewRect.Dy()/2) / float64(maxScroll))
+}
+
 // positionContent places the content according to the scroll fraction, so the
 // scrolled-away portion sits above the viewport and gets clipped on render.
 func (s *ScrollView) positionContent() {

@@ -60,3 +60,36 @@ func TestScrollViewContains(t *testing.T) {
 		t.Error("outside widget contained")
 	}
 }
+
+func TestScrollViewScrollRectToCenter(t *testing.T) {
+	tests := []struct {
+		name  string
+		top   int
+		start float64
+		want  float64
+	}{
+		{"middle", 240, 0, 200.0 / 400},
+		{"middle from scrolled", 40, 0.5, 200.0 / 400},
+		{"clamped at top", 20, 0, 0},
+		{"clamped at bottom", 480, 0, 1},
+		{"clamped at bottom from scrolled", 80, 1, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _ := testScrollView(500) // 400 px of scroll range
+			s.SetScrollTop(tt.start)
+			s.ScrollRectToCenter(goimage.Rect(0, tt.top, 50, tt.top+20))
+			if s.ScrollTop != tt.want {
+				t.Errorf("ScrollTop %v, want %v", s.ScrollTop, tt.want)
+			}
+		})
+	}
+}
+
+func TestScrollViewScrollRectToCenterFits(t *testing.T) {
+	s, _ := testScrollView(80)
+	s.ScrollRectToCenter(goimage.Rect(0, 60, 50, 80))
+	if s.ScrollTop != 0 {
+		t.Errorf("ScrollTop %v, want 0 for content that fits", s.ScrollTop)
+	}
+}
