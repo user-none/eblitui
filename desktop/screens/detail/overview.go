@@ -374,11 +374,11 @@ func (o *OverviewSection) Build(focus types.FocusManager) *widget.Container {
 		metadataContainer.AddChild(warningRow)
 	}
 
-	// Overview: the game's description, wrapped, last on the page. Each
+	// Description: the game's description, wrapped, last on the page. Each
 	// line is its own text so the lines can be spaced apart; an empty line
 	// holds a space to keep its height.
 	if md.Overview != "" {
-		metadataContainer.AddChild(widgets.SectionHeader("Overview"))
+		metadataContainer.AddChild(widgets.SectionHeader("Description"))
 		overviewRow := widget.NewContainer(
 			widget.ContainerOpts.BackgroundImage(image.NewNineSliceColor(style.Surface)),
 			widget.ContainerOpts.Layout(widget.NewRowLayout(
