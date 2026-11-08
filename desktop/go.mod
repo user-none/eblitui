@@ -6,10 +6,10 @@ require (
 	github.com/ebitengine/oto/v3 v3.5.1
 	github.com/ebitenui/ebitenui v0.7.3
 	github.com/hajimehoshi/ebiten/v2 v2.10.6
-	github.com/user-none/eblitui/coreif v0.9.0
-	github.com/user-none/eblitui/romloader v0.4.1
-	github.com/user-none/eblitui/rumble v1.0.0
-	github.com/user-none/go-rcheevos v0.1.0
+	github.com/user-none/eblitui/coreif v0.10.0
+	github.com/user-none/eblitui/romloader v0.4.2
+	github.com/user-none/eblitui/rumble v1.0.1
+	github.com/user-none/go-rcheevos v0.2.0
 	golang.design/x/clipboard v0.11.0
 	golang.org/x/image v0.47.0
 	golang.org/x/sys v0.49.0
