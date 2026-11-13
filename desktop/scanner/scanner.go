@@ -318,7 +318,9 @@ func (s *Scanner) processDisc(path string) {
 	if s.discID == nil {
 		return
 	}
-	d, derr := romloader.OpenDisc(path)
+	// Identifying a disc reads little of it, so it is opened without
+	// preparing the whole image.
+	d, derr := romloader.OpenDiscLazy(path)
 	if derr != nil {
 		return
 	}

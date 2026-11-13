@@ -15,6 +15,7 @@ func TestAppStateString(t *testing.T) {
 		{StateError, "Error"},
 		{StatePlaying, "Playing"},
 		{StateFilePicker, "FilePicker"},
+		{StateLoading, "Loading"},
 		{AppState(99), "Unknown"},
 	}
 

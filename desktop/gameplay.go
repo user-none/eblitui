@@ -52,6 +52,10 @@ type GameplayManager struct {
 	disc            *romloader.Disc // open streaming disc (disc-based systems)
 	gameShaders     []string        // game shaders of the running game, its overrides applied
 
+	// The launch in progress, nil once the game runs or the launch has
+	// failed. Ebiten thread only.
+	pending *gameLaunch
+
 	// Emulation goroutine control
 	emuControl        *EmuControl
 	sharedInput       *SharedInput
@@ -223,96 +227,169 @@ func (gm *GameplayManager) GameShaders() []string {
 	return gm.gameShaders
 }
 
-// Launch starts the emulator with the specified game. discIndex selects
-// which disc of a multi-disc game to launch; -1, or any index out of
-// range, uses the entry's remembered SelectedDisc. Ignored for single-disc
-// and cartridge games.
+// gameLaunch is a game start in progress. Opening the game's content,
+// starting the emulator and loading the game's achievements can take
+// seconds, so they run on the emulation goroutine while the Ebiten thread
+// keeps drawing. The Ebiten thread fills in what the goroutine needs and
+// starts it. The goroutine prepares the emulator and sends the outcome on
+// result, then waits for the answer on begin before it runs any frame. The
+// goroutine owns emu, disc, romData and achievements until it has sent on
+// result, and the Ebiten thread owns them after.
+type gameLaunch struct {
+	gameID    string
+	game      *storage.GameEntry // gameplay's own copy of the entry
+	resume    bool
+	discIndex int // index into game.Discs, for a disc game
+	cfg       storage.ConfigData
+	overrides *storage.OverrideSettings
+
+	emu     coreif.Emulator
+	disc    *romloader.Disc // the open disc, for a disc game
+	romData []byte          // the ROM, for a cartridge game
+
+	achievements bool // the game is loaded in the achievements manager
+
+	result chan *launchFailure // nil once the emulator is started
+	begin  chan bool           // true to run frames, false to exit
+}
+
+// launchFailure is why a launch stopped: the message to show and the error
+// behind it, when there is one.
+type launchFailure struct {
+	message string
+	err     error
+}
+
+// Launch begins starting the emulator with the specified game and reports
+// whether it began. The game is not running when it returns: PollLaunch
+// reports when it is. discIndex selects which disc of a multi-disc game to
+// launch; -1, or any index out of range, uses the entry's remembered
+// SelectedDisc. Ignored for single-disc and cartridge games.
 func (gm *GameplayManager) Launch(gameID string, resume bool, discIndex int) bool {
 	cfg := gm.config.Values()
 
 	// Rebuild input mappings from current config (settings may have changed)
 	gm.mappings = buildPlayerMappings(gm.systemInfo, &cfg.Input)
 
-	// currentGame is gameplay's own copy of the entry; changes to the stored
-	// entry go through the library
+	// The launch keeps gameplay's own copy of the entry; changes to the
+	// stored entry go through the library
 	entry, ok := gm.library.Game(gameID)
 	if !ok {
 		gm.notification.ShowDefault("Game not found")
 		return false
 	}
-	game := &entry
 
-	// Create emulator
-	emu := gm.factory.CreateEmulator()
-	gm.emulator = emu
-	gm.currentGame = game
-	gm.saveStateManager.SetGame(gameID)
-
-	// Any failure path below must release the emulator (and the disc
-	// handle for disc-based systems). The success path sets launched.
-	launched := false
-	defer func() {
-		if launched {
-			return
-		}
-		if gm.disc != nil {
-			gm.disc.Close()
-			gm.disc = nil
-		}
-		emu.Close()
-		gm.emulator = nil
-	}()
-
-	// Provide content: disc-based systems stream from disk via SetDisc;
-	// cartridge systems load the ROM bytes via SetRom.
-	var romData []byte
+	l := &gameLaunch{
+		gameID:    gameID,
+		game:      &entry,
+		resume:    resume,
+		cfg:       cfg,
+		overrides: loadOverrides(gameID),
+		result:    make(chan *launchFailure, 1),
+		begin:     make(chan bool, 1),
+	}
 	if gm.systemInfo.Disc {
 		// Resolve which disc to load. Disc games carry a Discs list and
 		// SelectedDisc is the slice index into it; a discIndex out of
 		// range, such as -1, uses the remembered SelectedDisc.
-		if len(game.Discs) == 0 {
+		if len(entry.Discs) == 0 {
 			gm.notification.ShowDefault("Failed to load disc")
 			return false
 		}
-		idx := game.SelectedDiscIndex()
-		if discIndex >= 0 && discIndex < len(game.Discs) {
-			idx = discIndex
+		l.discIndex = entry.SelectedDiscIndex()
+		if discIndex >= 0 && discIndex < len(entry.Discs) {
+			l.discIndex = discIndex
 		}
-		disc, derr := romloader.OpenDisc(game.Discs[idx].File)
-		if derr != nil {
-			gm.notification.ShowDefault("Failed to load disc")
-			return false
-		}
-		gm.disc = disc
-		emu.SetDisc(disc)
-		// Persist the chosen disc so it is remembered next launch.
-		gm.library.SetSelectedDisc(gameID, idx)
-		game.SelectedDisc = idx
-	} else {
-		data, _, lerr := romloader.Load(game.File, gm.systemInfo.Extensions)
-		if lerr != nil {
-			gm.notification.ShowDefault("Failed to load ROM")
-			return false
-		}
-		romData = data
-		emu.SetRom(romData)
 	}
 
-	// Apply core options and resolve the game shaders, with the game's
-	// overrides of the global settings
-	overrides := loadOverrides(gameID)
-	for _, opt := range gm.systemInfo.CoreOptions {
-		emu.SetOption(opt.Key, launchCoreOption(opt, cfg.CoreOptions, overrides))
+	l.emu = gm.factory.CreateEmulator()
+	gm.pending = l
+	gm.emuDone = make(chan struct{})
+	go gm.emulationLoop(l)
+	return true
+}
+
+// PollLaunch reports on the launch Launch began. done is set once the launch
+// has ended, and ok when it ended with the game running. A failed launch has
+// shown its message and released everything it made. Called from the Ebiten
+// thread every update until done.
+func (gm *GameplayManager) PollLaunch() (done, ok bool) {
+	l := gm.pending
+	if l == nil {
+		return true, false
 	}
-	gm.gameShaders = launchGameShaders(cfg.Shaders.GameShaders, overrides)
+	select {
+	case failure := <-l.result:
+		if failure == nil {
+			gm.finishLaunch(l)
+			return true, true
+		}
+		// The goroutine exits after reporting a failure.
+		<-gm.emuDone
+		gm.releaseLaunch(l)
+		if failure.err != nil {
+			log.Printf("%s: %v", failure.message, failure.err)
+		}
+		gm.notification.ShowDefault(failure.message)
+		return true, false
+	default:
+		return false, false
+	}
+}
+
+// releaseLaunch frees what a launch that will not run made. The emulation
+// goroutine must have exited.
+func (gm *GameplayManager) releaseLaunch(l *gameLaunch) {
+	// Unloading also drops the emulator a failed achievements load was
+	// given. It does nothing more when no game was loaded.
+	if gm.achievementManager != nil {
+		gm.achievementManager.UnloadGame()
+	}
+	if l.disc != nil {
+		l.disc.Close()
+	}
+	l.emu.Close()
+	gm.pending = nil
+	gm.emuDone = nil
+}
+
+// prepareLaunch gives the emulator its content, options and BIOS files,
+// starts it, and loads the game's achievements. It runs on the emulation
+// goroutine and touches only the launch, the achievements manager, and
+// values that do not change while the application runs.
+func (gm *GameplayManager) prepareLaunch(l *gameLaunch) *launchFailure {
+	emu := l.emu
+	cfg := l.cfg
+
+	// Provide content: disc-based systems stream from disk via SetDisc;
+	// cartridge systems load the ROM bytes via SetRom.
+	if gm.systemInfo.Disc {
+		disc, err := romloader.OpenDisc(l.game.Discs[l.discIndex].File)
+		if err != nil {
+			return &launchFailure{"Failed to load disc", err}
+		}
+		l.disc = disc
+		emu.SetDisc(disc)
+	} else {
+		data, _, err := romloader.Load(l.game.File, gm.systemInfo.Extensions)
+		if err != nil {
+			return &launchFailure{"Failed to load ROM", err}
+		}
+		l.romData = data
+		emu.SetRom(data)
+	}
+
+	// Apply core options, with the game's overrides of the global settings
+	for _, opt := range gm.systemInfo.CoreOptions {
+		emu.SetOption(opt.Key, launchCoreOption(opt, cfg.CoreOptions, l.overrides))
+	}
 
 	// Load BIOS files
 	for _, opt := range gm.systemInfo.BIOSOptions {
 		bc, hasCfg := cfg.BIOS[opt.Key]
 		if !hasCfg || bc.Active == "" {
 			if opt.Required {
-				gm.notification.ShowDefault("BIOS required: " + opt.Label)
-				return false
+				return &launchFailure{"BIOS required: " + opt.Label, nil}
 			}
 			continue
 		}
@@ -322,16 +399,14 @@ func (gm *GameplayManager) Launch(gameID string, resume bool, discIndex int) boo
 		}
 		if filePath == "" {
 			if opt.Required {
-				gm.notification.ShowDefault("BIOS file not set: " + opt.Label)
-				return false
+				return &launchFailure{"BIOS file not set: " + opt.Label, nil}
 			}
 			continue
 		}
 		data, err := romloader.LoadBIOS(filePath)
 		if err != nil {
 			if opt.Required {
-				gm.notification.ShowDefault("Failed to read BIOS: " + opt.Label)
-				return false
+				return &launchFailure{"Failed to read BIOS: " + opt.Label, err}
 			}
 			continue
 		}
@@ -349,21 +424,107 @@ func (gm *GameplayManager) Launch(gameID string, resume bool, discIndex int) boo
 		}
 		if !hashValid {
 			if opt.Required {
-				gm.notification.ShowDefault("BIOS hash mismatch: " + opt.Label)
-				return false
+				return &launchFailure{"BIOS hash mismatch: " + opt.Label, nil}
 			}
 			continue
 		}
 		if err := emu.SetBIOS(opt.Key, data); err != nil {
 			if opt.Required {
-				gm.notification.ShowDefault("BIOS rejected: " + opt.Label)
-				return false
+				return &launchFailure{"BIOS rejected: " + opt.Label, err}
 			}
 			continue
 		}
 	}
 
+	// Starting the emulator and loading the game's achievements can be the
+	// longest steps, so each is skipped when the launch is no longer wanted.
+	if l.stopRequested() {
+		return &launchFailure{message: "Launch stopped"}
+	}
 	emu.Start()
+
+	if l.stopRequested() {
+		return &launchFailure{message: "Launch stopped"}
+	}
+	l.achievements = gm.loadAchievements(l)
+	return nil
+}
+
+// stopRequested reports whether Exit has asked the launch to stop. Exit's
+// answer is the only one sent on begin before the outcome is reported.
+func (l *gameLaunch) stopRequested() bool {
+	select {
+	case <-l.begin:
+		return true
+	default:
+		return false
+	}
+}
+
+// loadAchievements loads the game of a launch into the achievements manager
+// when achievements are enabled and the user is logged in, and reports
+// whether it loaded. Loading hashes the game's content and waits on the
+// server. It runs on the emulation goroutine, after the emulator is started
+// and before any frame.
+func (gm *GameplayManager) loadAchievements(l *gameLaunch) bool {
+	am := gm.achievementManager
+	if am == nil || !am.IsEnabled() || !am.IsLoggedIn() {
+		return false
+	}
+
+	// The screenshot is taken from the final drawn frame, so it carries
+	// the unlock notification.
+	am.SetScreenshotFunc(func(title string, id uint32) {
+		gm.screenshotManager.Queue(achievementTag(title, id))
+	})
+	if mem, ok := l.emu.(coreif.Memory); ok {
+		am.SetEmulator(mem)
+	}
+
+	// The game's own console ID, when it has one, overrides the system's
+	consoleID := uint32(gm.raConsoleID)
+	if l.game.ConsoleID != 0 {
+		consoleID = uint32(l.game.ConsoleID)
+	}
+
+	// Disc cores hash by reading sectors through the open disc (rcheevos
+	// handles the system-specific hashing); cartridge cores hash the ROM.
+	var err error
+	if gm.systemInfo.Disc {
+		err = am.LoadGameFromDisc(l.disc, consoleID)
+	} else {
+		err = am.LoadGame(l.romData, l.game.File, "", consoleID)
+	}
+	if err != nil {
+		log.Printf("Failed to load achievements: %v", err)
+		return false
+	}
+	return true
+}
+
+// finishLaunch takes over the started emulator of a launch, sets up what
+// runs the game around it, and lets the emulation goroutine begin running
+// frames. It runs on the Ebiten thread.
+func (gm *GameplayManager) finishLaunch(l *gameLaunch) {
+	emu := l.emu
+	game := l.game
+	gameID := l.gameID
+	cfg := l.cfg
+	resume := l.resume
+
+	gm.emulator = emu
+	gm.currentGame = game
+	gm.saveStateManager.SetGame(gameID)
+	gm.disc = l.disc
+	if gm.systemInfo.Disc {
+		// Persist the chosen disc so it is remembered next launch.
+		gm.library.SetSelectedDisc(gameID, l.discIndex)
+		game.SelectedDisc = l.discIndex
+	}
+
+	// Resolve the game shaders, with the game's overrides of the global
+	// settings
+	gm.gameShaders = launchGameShaders(cfg.Shaders.GameShaders, l.overrides)
 
 	// Detect optional interfaces
 	gm.saveStater, _ = emu.(coreif.SaveStater)
@@ -379,7 +540,6 @@ func (gm *GameplayManager) Launch(gameID string, resume bool, discIndex int) boo
 	gm.sharedInput = &SharedInput{}
 	gm.sharedFramebuffer = NewSharedFramebuffer(gm.systemInfo.ScreenWidth, gm.systemInfo.ScreenHeight)
 	gm.emuControl = NewEmuControl()
-	gm.emuDone = make(chan struct{})
 
 	// The emulation loop is paced by the framePacer (an absolute-deadline
 	// timer locked to the audio ring fill), not by audio drain. The pacer
@@ -427,36 +587,9 @@ func (gm *GameplayManager) Launch(gameID string, resume bool, discIndex int) boo
 	// Initialize pause menu
 	gm.pauseMenu.Hide()
 
-	// Set up RetroAchievements if enabled and logged in
-	if gm.achievementManager != nil && gm.achievementManager.IsEnabled() && gm.achievementManager.IsLoggedIn() {
-		// Set up screenshot callback. The capture is taken from the final
-		// drawn frame, so it carries the unlock notification.
-		gm.achievementManager.SetScreenshotFunc(func(title string, id uint32) {
-			gm.screenshotManager.Queue(achievementTag(title, id))
-		})
-
-		if gm.memoryInspector != nil {
-			gm.achievementManager.SetEmulator(gm.memoryInspector)
-		}
-		// Resolve per-game console ID for achievements
-		gameConsoleID := uint32(gm.raConsoleID)
-		if game.ConsoleID != 0 {
-			gameConsoleID = uint32(game.ConsoleID)
-		}
-		// Disc cores hash by reading sectors through the open disc (rcheevos
-		// handles the system-specific hashing); cartridge cores hash romData.
-		var loadErr error
-		if gm.systemInfo.Disc {
-			loadErr = gm.achievementManager.LoadGameFromDisc(gm.disc, gameConsoleID)
-		} else {
-			loadErr = gm.achievementManager.LoadGame(romData, game.File, "", gameConsoleID)
-		}
-		if loadErr != nil {
-			log.Printf("Failed to load achievements: %v", loadErr)
-		} else {
-			// Initialize overlay with achievement data for this game
-			gm.achievementOverlay.InitForGame()
-		}
+	// Initialize the overlay for the achievements loaded with the game
+	if l.achievements {
+		gm.achievementOverlay.InitForGame()
 	}
 
 	// Initialize rumble if any assigned controller profile has a non-zero
@@ -470,11 +603,9 @@ func (gm *GameplayManager) Launch(gameID string, resume bool, discIndex int) boo
 		gm.cheatEngine = gm.loadCheatEngine(game.GameID)
 	}
 
-	// Start the emulation goroutine
-	launched = true
-	go gm.emulationLoop()
-
-	return true
+	// Let the emulation goroutine run frames
+	gm.pending = nil
+	l.begin <- true
 }
 
 // currentPAR returns the pixel aspect ratio to deliver with the frame:
@@ -508,14 +639,22 @@ func (gm *GameplayManager) runEmulatorFrame() {
 	}
 }
 
-// emulationLoop runs on a dedicated goroutine. It executes emulator
-// frames, queues audio, and updates the shared framebuffer. Pacing comes
+// emulationLoop runs on a dedicated goroutine. It first prepares the
+// emulator of the launch, reports the outcome, and waits to be told to
+// begin. It then executes emulator frames, queues audio, and updates the
+// shared framebuffer. Pacing comes
 // from the framePacer: each iteration sleeps to an absolute frame deadline,
 // with the interval slowly corrected from the audio ring fill so long-term
 // rate stays locked to the device. Turbo runs several emulated frames per
 // pacer step, so audio plays at 1x while emulation runs faster.
-func (gm *GameplayManager) emulationLoop() {
+func (gm *GameplayManager) emulationLoop(l *gameLaunch) {
 	defer close(gm.emuDone)
+
+	failure := gm.prepareLaunch(l)
+	l.result <- failure
+	if failure != nil || !<-l.begin {
+		return
+	}
 
 	autoSaveTimer := time.Now().Add(time.Second) // First serialize after 1 second
 
@@ -831,6 +970,15 @@ func (gm *GameplayManager) resumeFromAchievementOverlay() {
 
 // Exit cleans up when exiting gameplay
 func (gm *GameplayManager) Exit(saveResume bool) {
+	if l := gm.pending; l != nil {
+		// A launch is still in progress. Tell the goroutine not to run
+		// frames, wait for it to finish the step it is on, and release
+		// what it made. Nothing of the game has run, so nothing is saved.
+		l.begin <- false
+		<-gm.emuDone
+		gm.releaseLaunch(l)
+		return
+	}
 	if gm.emulator == nil {
 		return
 	}

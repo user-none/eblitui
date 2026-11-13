@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"archive/zip"
 	"fmt"
 	"hash/crc32"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/user-none/eblitui/coreif"
 	"github.com/user-none/eblitui/desktop/storage"
 )
 
@@ -349,6 +351,101 @@ func TestProcessCartridgeUsesExistingEntry(t *testing.T) {
 			}
 			if !tt.keepAdded && got.Added < start {
 				t.Errorf("Added = %d, want the scan time (>= %d)", got.Added, start)
+			}
+		})
+	}
+}
+
+// testDiscIdentifier reads a product number from the start of a disc's
+// first sector, standing in for a core's own header layout.
+type testDiscIdentifier struct{}
+
+func (testDiscIdentifier) DiscInfo(disc coreif.DiscReader) (coreif.DiscInfo, bool) {
+	sector, err := disc.ReadSector(0)
+	if err != nil {
+		return coreif.DiscInfo{}, false
+	}
+	return coreif.DiscInfo{ProductNumber: string(sector[:8]), DiscNumber: 1, DiscTotal: 1}, true
+}
+
+// TestProcessDiscFormats tests that a disc is found and keyed by its
+// product number whether it is a cue sheet with its bin or a zip of both.
+func TestProcessDiscFormats(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dir)
+	t.Setenv("HOME", dir)
+	t.Setenv("APPDATA", dir)
+
+	const sectorSize = 2352
+	bin := make([]byte, 4*sectorSize)
+	copy(bin, "T-12345G")
+	cue := []byte("FILE \"Game (USA).bin\" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\n")
+
+	cuePath := filepath.Join(dir, "Game (USA).cue")
+	if err := os.WriteFile(cuePath, cue, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "Game (USA).bin"), bin, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	zipPath := filepath.Join(dir, "Game (USA).zip")
+	zf, err := os.Create(zipPath)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	zw := zip.NewWriter(zf)
+	for name, data := range map[string][]byte{"Game (USA).cue": cue, "Game (USA).bin": bin} {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("zip Create: %v", err)
+		}
+		if _, err := w.Write(data); err != nil {
+			t.Fatalf("zip Write: %v", err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip Close: %v", err)
+	}
+	if err := zf.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	// A zip that holds no disc is skipped.
+	otherPath := filepath.Join(dir, "notes.zip")
+	of, err := os.Create(otherPath)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	ow := zip.NewWriter(of)
+	if w, err := ow.Create("readme.txt"); err != nil {
+		t.Fatalf("zip Create: %v", err)
+	} else if _, err := w.Write([]byte("not a disc")); err != nil {
+		t.Fatalf("zip Write: %v", err)
+	}
+	if err := ow.Close(); err != nil {
+		t.Fatalf("zip Close: %v", err)
+	}
+	if err := of.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	for _, path := range []string{cuePath, zipPath} {
+		t.Run(filepath.Ext(path), func(t *testing.T) {
+			s := NewScanner(nil, nil, nil, nil, 0, true, testDiscIdentifier{}, Sources{})
+			s.processROM(otherPath)
+			s.processROM(path)
+
+			games := s.Games()
+			if len(games) != 1 {
+				t.Fatalf("found %d games, want 1", len(games))
+			}
+			got := games["T-12345G"]
+			if got == nil {
+				t.Fatal("disc not found by scan")
+			}
+			if len(got.Discs) != 1 || got.Discs[0].File != path || got.Discs[0].Name != "(USA)" {
+				t.Errorf("Discs = %+v, want one disc at %q named (USA)", got.Discs, path)
 			}
 		})
 	}

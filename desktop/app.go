@@ -65,9 +65,13 @@ type App struct {
 	scanScreen     *screens.ScanProgressScreen
 	errorScreen    *screens.ErrorScreen
 	filePicker     *screens.FilePickerScreen
+	loadingScreen  *screens.LoadingScreen
 
 	// State to return to when the file picker closes
 	pickerReturnState AppState
+
+	// State a launch began from, returned to when it fails
+	loadingReturnState AppState
 
 	// Game metadata from the emulator's metadata source
 	metadata *metadata.MetadataManager
@@ -575,6 +579,7 @@ func (a *App) initScreens() {
 	a.scanScreen = screens.NewScanProgressScreen()
 	a.errorScreen = screens.NewErrorScreen(a, a.errorFile, a.errorPath, a.handleDeleteAndContinue)
 	a.filePicker = screens.NewFilePickerScreen(a, a.closeFilePicker)
+	a.loadingScreen = screens.NewLoadingScreen()
 }
 
 // rebuildCurrentScreen rebuilds the UI for the current state
@@ -618,6 +623,8 @@ func (a *App) rebuildCurrentScreen() {
 			a.filePicker.SaveFocusState(a.ui.GetFocusedWidget())
 		}
 		container = a.filePicker.Build()
+	case StateLoading:
+		container = a.loadingScreen.Build()
 	default:
 		// For StatePlaying, no UI container needed
 		return
@@ -709,6 +716,15 @@ func (a *App) Update() error {
 		ebitenuiInput.AfterUpdate()
 		_, err := a.gameplay.Update()
 		return err
+	case StateLoading:
+		// Input is not processed while a game loads. ui.Update lays the
+		// screen out and keeps ebitenui's input state current.
+		a.loadingScreen.Update()
+		a.ui.Update()
+		if done, ok := a.gameplay.PollLaunch(); done {
+			a.finishLoading(ok)
+		}
+		return nil
 	case StateScanProgress:
 		nav := a.processUIInput()
 		a.ui.Update()
@@ -1332,22 +1348,60 @@ func (a *App) SwitchToCleanProgress() {
 // LaunchGame starts the emulator with the specified game. discIndex
 // selects the disc of a multi-disc game; -1 uses the remembered
 // SelectedDisc. Ignored for single-disc and cartridge games.
+//
+// Starting a game can take seconds, so the loading screen shows until the
+// game is ready to play. A launch that fails returns to the screen it began
+// from.
 func (a *App) LaunchGame(gameID string, resume bool, discIndex int) {
 	// Reset shader buffers to avoid stale data from previous game
 	a.shaderManager.ResetBuffers()
 	a.shaderManager.SetAspectRatioMode(a.config.Values().Video.AspectRatio)
 
-	if a.gameplay.Launch(gameID, resume, discIndex) {
-		a.leaveDetail()
-		a.previousState = a.state
-		a.state = StatePlaying
+	if !a.gameplay.Launch(gameID, resume, discIndex) {
+		return
+	}
 
-		// Free the library cover textures while playing; they are rebuilt when
-		// the icon view is shown again on return. Only done for large libraries,
-		// where the thumbnail cache is large enough to be worth reclaiming.
-		if a.library.GameCount() > thumbnailCacheClearThreshold {
-			a.libraryScreen.ClearArtworkCache()
+	title := gameID
+	if game, ok := a.library.Game(gameID); ok {
+		title = a.GameTitle(&game)
+	}
+
+	// Keep the detail screen's place for a return to it. It is not left
+	// until the game is running.
+	if a.state == StateDetail {
+		a.detailScreen.SaveScrollPosition()
+		if a.ui != nil {
+			a.detailScreen.SaveFocusState(a.ui.GetFocusedWidget())
 		}
+	}
+	a.loadingReturnState = a.state
+	a.previousState = a.state
+	a.state = StateLoading
+	a.loadingScreen.OnEnter(title)
+	a.rebuildCurrentScreen()
+}
+
+// finishLoading leaves the loading screen once a launch has ended: for the
+// game when it is running, otherwise back to the screen the launch began
+// from, where the failure is shown.
+func (a *App) finishLoading(running bool) {
+	a.previousState = a.loadingReturnState
+	if !running {
+		a.state = a.loadingReturnState
+		a.rebuildCurrentScreen()
+		return
+	}
+
+	if a.loadingReturnState == StateDetail {
+		a.detailScreen.OnExit()
+	}
+	a.state = StatePlaying
+
+	// Free the library cover textures while playing; they are rebuilt when
+	// the icon view is shown again on return. Only done for large libraries,
+	// where the thumbnail cache is large enough to be worth reclaiming.
+	if a.library.GameCount() > thumbnailCacheClearThreshold {
+		a.libraryScreen.ClearArtworkCache()
 	}
 }
 

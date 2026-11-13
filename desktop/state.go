@@ -23,6 +23,8 @@ const (
 	StatePlaying
 	// StateFilePicker shows the full-screen file and folder picker
 	StateFilePicker
+	// StateLoading shows a game being started, before it plays
+	StateLoading
 )
 
 // String returns the string representation of the state
@@ -44,6 +46,8 @@ func (s AppState) String() string {
 		return "Playing"
 	case StateFilePicker:
 		return "FilePicker"
+	case StateLoading:
+		return "Loading"
 	default:
 		return "Unknown"
 	}

@@ -167,7 +167,9 @@ func (o *OverviewSection) loadAchievementProgress(req progressRequest) {
 	var md5Hash string
 	switch {
 	case req.discFile != "":
-		disc, err := romloader.OpenDisc(req.discFile)
+		// Hashing reads part of the disc, so it is opened without
+		// preparing the whole image.
+		disc, err := romloader.OpenDiscLazy(req.discFile)
 		if err != nil {
 			o.finishLoad(req.gen, false, nil, err)
 			return
