@@ -7,7 +7,7 @@ import (
 
 func TestDiscExtensions(t *testing.T) {
 	got := DiscExtensions()
-	want := []string{".chd", ".cue"}
+	want := []string{".chd", ".cue", ".zip"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("DiscExtensions() = %v, want %v", got, want)
 	}

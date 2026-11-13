@@ -95,7 +95,7 @@ func openTestCue(t *testing.T, dir, cue string) (*binCueBackend, error) {
 	if err := os.WriteFile(cuePath, []byte(cue), 0644); err != nil {
 		t.Fatalf("Failed to create cue file: %v", err)
 	}
-	backend, err := openBinCue(cuePath)
+	backend, err := openBinCue(cuePath, false)
 	if err != nil {
 		return nil, err
 	}
@@ -119,8 +119,8 @@ func TestOpenBinCue_AliasesShareHandle(t *testing.T) {
 	}
 	defer bc.Close()
 
-	if len(bc.fds) != 1 {
-		t.Fatalf("open handles = %d, want 1", len(bc.fds))
+	if len(bc.bins) != 1 {
+		t.Fatalf("open handles = %d, want 1", len(bc.bins))
 	}
 	if len(bc.tracks) != 3 {
 		t.Fatalf("tracks = %d, want 3", len(bc.tracks))
@@ -141,8 +141,8 @@ func TestOpenBinCue_UnusedFileNotOpened(t *testing.T) {
 	}
 	defer bc.Close()
 
-	if len(bc.fds) != 1 {
-		t.Fatalf("open handles = %d, want 1", len(bc.fds))
+	if len(bc.bins) != 1 {
+		t.Fatalf("open handles = %d, want 1", len(bc.bins))
 	}
 }
 
@@ -243,7 +243,7 @@ func TestOpenBinCue_TrackTable(t *testing.T) {
 func TestOpenBinCue_TooLarge(t *testing.T) {
 	path := writeTestCue(t, maxCueSize+1)
 
-	_, err := openBinCue(path)
+	_, err := openBinCue(path, false)
 	if !errors.Is(err, ErrFileTooLarge) {
 		t.Fatalf("expected ErrFileTooLarge, got %v", err)
 	}
@@ -254,7 +254,7 @@ func TestOpenBinCue_TooLarge(t *testing.T) {
 func TestOpenBinCue_AtLimit(t *testing.T) {
 	path := writeTestCue(t, maxCueSize)
 
-	_, err := openBinCue(path)
+	_, err := openBinCue(path, false)
 	if err == nil {
 		t.Fatal("expected an error for a cue sheet with no tracks")
 	}

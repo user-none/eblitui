@@ -12,8 +12,8 @@ import (
 )
 
 // ErrUnsupportedDisc is returned by OpenDisc when the path's extension is
-// neither .chd nor .cue.
-var ErrUnsupportedDisc = errors.New("romloader: unsupported disc format (expected .chd or .cue)")
+// not one of DiscExtensions.
+var ErrUnsupportedDisc = errors.New("romloader: unsupported disc format (expected " + strings.Join(DiscExtensions(), ", ") + ")")
 
 // discBackend is the internal contract a concrete disc format implements. The
 // public Disc delegates to it. Every signature uses only stdlib types and no
@@ -30,8 +30,8 @@ type discBackend interface {
 
 // Disc is a streaming reader over a disc image. It owns the open file handles
 // and decodes sectors on demand, so the whole image is never read into memory.
-// Internally it is a facade over a format-specific backend (CHD or bin/cue);
-// OpenDisc selects the backend. Its method set uses only stdlib types so it
+// Internally it is a facade over a format-specific backend (CHD, bin/cue, or
+// bin/cue in a zip); OpenDisc selects the backend. Its method set uses only stdlib types so it
 // satisfies a disc-reader interface structurally without a shared type.
 type Disc struct {
 	backend discBackend
@@ -40,14 +40,17 @@ type Disc struct {
 // discOpeners maps a lowercase file extension (with leading dot) to the backend
 // opener for that disc format. It is the single place the set of supported disc
 // image formats is defined: OpenDisc dispatches through it and DiscExtensions
-// reports its keys, so the two cannot drift.
-var discOpeners = map[string]func(path string) (discBackend, error){
+// reports its keys, so the two cannot drift. lazy asks the opener to leave
+// until a read needs it any preparation for random access that it would
+// otherwise do before returning. A format with none ignores it.
+var discOpeners = map[string]func(path string, lazy bool) (discBackend, error){
 	".chd": openCHD,
 	".cue": openBinCue,
+	".zip": openZipCue,
 }
 
 // DiscExtensions returns the lowercase file extensions OpenDisc accepts, each
-// with a leading dot (".chd", ".cue"), sorted ascending. Callers that scan a
+// with a leading dot (".chd", ".cue", ".zip"), sorted ascending. Callers that scan a
 // directory or filter a file list use it to discover which files are disc images
 // without hardcoding the set. Unlike ROM images, where the core declares the
 // extensions it understands, the disc formats are owned by romloader: a core
@@ -64,15 +67,36 @@ func DiscExtensions() []string {
 
 // OpenDisc opens a disc image for streaming, selected by extension: ".chd" is
 // opened as a CHD image, ".cue" as a cue sheet whose referenced bin track files
-// are opened and held for the disc's lifetime. Any other extension returns
+// are opened and held for the disc's lifetime, ".zip" as a zip holding one cue
+// sheet and its bin track files. Any other extension returns
 // ErrUnsupportedDisc. File handles are held open for on-demand sector reads
 // until Close is called.
+//
+// The image is prepared for random access before OpenDisc returns, so no read
+// waits on more than a small decode. That makes opening a zip take longer than
+// the other formats: its compressed bins are each decoded once to index them,
+// which also checks them against the zip's checksums. Use it for play.
 func OpenDisc(path string) (*Disc, error) {
+	return openDisc(path, false)
+}
+
+// OpenDiscLazy opens a disc image as OpenDisc does, but prepares it for random
+// access only as far as reads reach. Opening is immediate. A read past the
+// furthest point read so far in a compressed bin of a zip waits while the bin
+// is decoded up to it, and a bin is checked against the zip's checksum only if
+// its end is read. The disc reads the same data either way. Use it when only
+// part of the disc will be read. For ".chd" and ".cue" it is the same as
+// OpenDisc.
+func OpenDiscLazy(path string) (*Disc, error) {
+	return openDisc(path, true)
+}
+
+func openDisc(path string, lazy bool) (*Disc, error) {
 	open, ok := discOpeners[strings.ToLower(filepath.Ext(path))]
 	if !ok {
 		return nil, ErrUnsupportedDisc
 	}
-	b, err := open(path)
+	b, err := open(path, lazy)
 	if err != nil {
 		return nil, err
 	}

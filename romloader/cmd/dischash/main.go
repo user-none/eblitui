@@ -3,8 +3,8 @@
 
 // Command dischash hashes a disc image's track data to match it against a
 // reference (redump-style) breakdown. It reads the disc through romloader, so
-// it supports every container format romloader handles (CHD and cue/bin). It is
-// not tied to a single file type.
+// it supports every container format romloader handles (CHD, cue/bin, and
+// cue/bin in a zip). It is not tied to a single file type.
 //
 // For each disc it prints an overall CRC-32 taken over the concatenation of
 // every track's raw sectors in track order (pregaps excluded, matching the
@@ -78,7 +78,7 @@ type discResult struct {
 
 func main() {
 	filePath := flag.String("file", "", "path to a single disc image")
-	dirPath := flag.String("dir", "", "directory to scan for disc images (.chd, .cue)")
+	dirPath := flag.String("dir", "", "directory to scan for disc images (.chd, .cue, .zip)")
 	verbose := flag.Bool("v", false, "print the full per-track hash table")
 	jobs := flag.Int("j", runtime.NumCPU(), "max discs to hash concurrently (-dir)")
 	flag.Parse()
@@ -240,9 +240,11 @@ func runVerbose(out io.Writer, paths []string, workers int) int {
 }
 
 // openAndHash opens a disc through romloader and hashes it, always closing the
-// disc before returning.
+// disc before returning. Hashing reads every sector once in order, so the disc
+// is opened lazily: an image that has to be decoded is decoded as it is read
+// rather than once to open it and again to read it.
 func openAndHash(path string, verbose bool) (*discResult, error) {
-	disc, err := romloader.OpenDisc(path)
+	disc, err := romloader.OpenDiscLazy(path)
 	if err != nil {
 		return nil, err
 	}

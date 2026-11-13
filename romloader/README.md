@@ -2,7 +2,8 @@
 
 A shared ROM loading utility for eblitui UIs. Handles loading ROM files
 from raw files and compressed archives (ZIP, 7z, gzip/tar.gz, RAR), and
-streaming disc images for disc-based systems (CHD and cue/bin).
+streaming disc images for disc-based systems (CHD, cue/bin, and cue/bin in a
+ZIP).
 
 Valid ROM extensions are passed by the caller rather than being hardcoded.
 Extensions come from `SystemInfo.Extensions` at the call site.
@@ -70,6 +71,7 @@ The backend is selected by file extension:
 
 - `.chd` - a CHD (V5) disc image.
 - `.cue` - a cue sheet referencing one or more raw `.bin` track files.
+- `.zip` - a ZIP holding one cue sheet and the `.bin` track files it references.
 
 Any other extension returns `ErrUnsupportedDisc`. A bare `.bin` is not an
 openable disc. It is only a component referenced by a cue sheet.
@@ -89,8 +91,8 @@ num, typ, frames, pregap, startLBA, control := disc.Track(0)
 The reader is streaming: file handles are held open and sectors are decoded on
 demand, so the whole image is never read into memory.
 
-`DiscExtensions` reports the file extensions `OpenDisc` accepts (`.chd`, `.cue`),
-each with a leading dot, sorted. Callers that scan a directory or filter a file
+`DiscExtensions` reports the file extensions `OpenDisc` accepts (`.chd`, `.cue`,
+`.zip`), each with a leading dot, sorted. Callers that scan a directory or filter a file
 list use it to find disc images without hardcoding the set. Unlike ROM images,
 where the core declares the extensions it understands, disc formats are owned by
 romloader: a core reads a disc through a format-agnostic interface and never sees
@@ -100,6 +102,7 @@ the file, so romloader is the only component that knows which containers it open
 
 ```go
 func OpenDisc(path string) (*Disc, error)
+func OpenDiscLazy(path string) (*Disc, error)
 func DiscExtensions() []string
 
 func (d *Disc) ReadSector(lba int) ([]byte, error)
@@ -109,6 +112,17 @@ func (d *Disc) NumTrackIndexes(i int) int
 func (d *Disc) TrackIndex(i, n int) (indexNumber int, lba int)
 func (d *Disc) Close() error
 ```
+
+`OpenDisc` and `OpenDiscLazy` return the same kind of disc, which reads the same
+data. They differ in when an image that needs preparing for random access is
+prepared, which today means a ZIP with deflated track files:
+
+- `OpenDisc` prepares the whole image before it returns, so no read waits on
+  more than a small decode. Use it for play.
+- `OpenDiscLazy` prepares the image as far as reads reach. Opening is immediate,
+  and a read past the furthest point read so far in a track file waits while the
+  file is decoded up to it. Use it when only part of the disc will be read, such
+  as identifying it.
 
 `NumTrackIndexes`/`TrackIndex` expose the per-track index map (index numbers
 `>= 1`, absolute LBA); `n` is a 0-based ordinal into that list, not the index
@@ -128,10 +142,31 @@ single `INDEX 01` per track from the pregap. A cue sheet supplies the real
 - Sector bytes are returned verbatim (data tracks big-endian on disc, audio
   little-endian).
 
+### cue / bin in a ZIP
+
+- The ZIP must hold exactly one `.cue`. The cue / bin rules above apply, with
+  `FILE` names resolved relative to the cue sheet's directory inside the ZIP.
+- Entries under a top-level `__MACOSX/` directory and files named with a `._`
+  prefix are ignored. Both are macOS metadata.
+- Backslashes in entry names are read as path separators.
+- Track files may be stored or deflated. Other compression methods and
+  encrypted entries are rejected.
+- A deflate stream can only be decoded forward, so a deflated track file is
+  indexed: decoded once, recording restart points about every 1 MiB. Reads then
+  decode from the nearest restart point, and recently decoded regions are
+  cached. The image is never held in memory as a whole.
+- `OpenDisc` indexes every deflated track file before it returns, so opening a
+  ZIP takes longer than the other formats. `OpenDiscLazy` indexes each one as
+  far as reads reach.
+- A deflated track file is checked against the size and CRC-32 in the ZIP
+  directory when its index reaches its end: at open for `OpenDisc`, and when a
+  read reaches the end of the file for `OpenDiscLazy`.
+- The track files together may not exceed the raw size of a 99:59:74 disc.
+
 ### Disc Errors
 
 ```go
-var ErrUnsupportedDisc // path extension is neither .chd nor .cue
+var ErrUnsupportedDisc // path extension is not one DiscExtensions reports
 ```
 
 
@@ -139,7 +174,7 @@ var ErrUnsupportedDisc // path extension is neither .chd nor .cue
 
 `cmd/dischash` identifies disc images and prints a CRC-32 over their track data,
 for matching a disc against a reference (redump-style) breakdown. It reads any
-image `OpenDisc` accepts (CHD or cue/bin), recognizes Sega Saturn, Sega
+image `OpenDisc` accepts (CHD, cue/bin, or cue/bin in a ZIP), recognizes Sega Saturn, Sega
 Dreamcast, and PlayStation 1 discs (showing product ID and title where the
 format provides them), and marks an unreadable disc as `ERROR` rather than
 dropping it. A cue and its matching CHD produce identical per-track hashes.
@@ -161,7 +196,8 @@ go run ./cmd/dischash -dir path/to/discs  # scan a folder, discs hashed in paral
 - `github.com/klauspost/compress` - zstd decompression used by the CHD backend
 
 ZIP and gzip archive support use Go's standard library. The cue/bin disc backend
-uses only the standard library. The CHD backend's remaining codecs (zlib, LZMA,
+uses only the standard library. The ZIP disc backend reads the ZIP directory with
+the standard library and decodes deflated track files in-package. The CHD backend's remaining codecs (zlib, LZMA,
 FLAC) are stdlib or implemented in-package.
 
 

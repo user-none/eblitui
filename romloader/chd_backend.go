@@ -19,7 +19,7 @@ type chdBackend struct {
 	tracks []chd.Track
 }
 
-func openCHD(path string) (discBackend, error) {
+func openCHD(path string, _ bool) (discBackend, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
